@@ -30,8 +30,7 @@ async function initializeAndStartGame() {
         );
         window.scene.add(backgroundSphere);
 
-        // Initial data load and scene creation - REMOVED SERVER INTERACTION
-        // let initialTileData = await fetchTileDataFromServer(); // Removed
+        // Initial data load and scene creation - No server interaction
         let initialTileData = null; // Always start with no data from server        // Always call createScene as if no server data is available.
         // createScene will generate its own data if null is passed.
         
@@ -74,9 +73,7 @@ async function initializeAndStartGame() {
             updateDashboard // Pass the dashboard update function
         );
 
-        // if (generatedData && generatedData.length > 0) { // Removed
-            // await postInitialDataToServer(generatedData); // Removed
-        // }
+        // Server data posting removed
         
         window.sceneInitialized = true;
         

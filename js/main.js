@@ -1,7 +1,7 @@
 // Main Application Entry Point - Modularized GridWorld
 // Coordinates all modules and initializes the application
 
-const { fetchTileDataFromServer, postInitialDataToServer, clearServerData, exportTileDataToServer } = require('./data');
+// Data.js dependency removed
 const { initializeAndStartGame } = require('./init');
 const CameraController = require('./camera-controller');
 const InputHandler = require('./input-handler');
@@ -195,7 +195,8 @@ class GridWorldApp {
     }
 
     exportData() {
-        return exportTileDataToServer();
+        console.log("Data export functionality removed");
+        return Promise.resolve(false);
     }
 
     getSelectedTile() {
