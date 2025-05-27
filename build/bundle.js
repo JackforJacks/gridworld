@@ -128,30 +128,6 @@ class CameraController {
 module.exports = CameraController;
 
 },{}],2:[function(require,module,exports){
-/**
- * hexaSphereGlobal.js
- * This file exposes THREE and Hexasphere globally and handles module exports
- * The bundling is handled by Grunt/Browserify
- */
-
-// Import dependencies
-window.THREE = require('three');
-const Hexasphere = require('../src/hexaSphere');
-
-// Expose Hexasphere globally for browser access
-window.Hexasphere = Hexasphere;
-
-// Export for CommonJS environments
-if (typeof module !== 'undefined' && module.exports) {
-    module.exports = Hexasphere;
-}
-
-// Export for ES modules
-if (typeof exports !== 'undefined') {
-    exports.default = Hexasphere;
-}
-
-},{"../src/hexaSphere":13,"three":11}],3:[function(require,module,exports){
 // Initialization logic for GridWorld
 const { createScene, tick } = require('./scene');
 const { terrainColors, isLand, updateDashboard } = require('./utils');
@@ -248,7 +224,7 @@ if (typeof window !== 'undefined') {
 
 module.exports = { initializeAndStartGame };
 
-},{"./scene":7,"./utils":10}],4:[function(require,module,exports){
+},{"./scene":6,"./utils":9}],3:[function(require,module,exports){
 // Input Handler Module
 // Centralizes all input event handling (mouse, keyboard, touch)
 
@@ -389,7 +365,7 @@ class InputHandler {
 
 module.exports = InputHandler;
 
-},{}],5:[function(require,module,exports){
+},{}],4:[function(require,module,exports){
 // Main Application Entry Point - Modularized GridWorld
 // Coordinates all modules and initializes the application
 
@@ -618,7 +594,7 @@ window.createScene = (...args) => {
 
 module.exports = GridWorldApp;
 
-},{"./camera-controller":1,"./init":3,"./input-handler":4,"./scene-manager":6,"./tile-selector":8,"./ui-manager":9}],6:[function(require,module,exports){
+},{"./camera-controller":1,"./init":2,"./input-handler":3,"./scene-manager":5,"./tile-selector":7,"./ui-manager":8}],5:[function(require,module,exports){
 // Scene Manager Module
 // Handles scene creation, tile generation, and rendering
 
@@ -836,7 +812,7 @@ class SceneManager {
 
 module.exports = SceneManager;
 
-},{"./utils":10}],7:[function(require,module,exports){
+},{"./utils":9}],6:[function(require,module,exports){
 // Three.js/scene/tile helpers
 function createScene(
     radius,               // e.g., 30, the radius of the sphere
@@ -1331,7 +1307,7 @@ module.exports = {
     checkTileIntersection
 };
 
-},{}],8:[function(require,module,exports){
+},{}],7:[function(require,module,exports){
 // Tile Selector Module
 // Handles tile selection, borders, and popups
 
@@ -1526,7 +1502,7 @@ class TileSelector {
 
 module.exports = TileSelector;
 
-},{}],9:[function(require,module,exports){
+},{}],8:[function(require,module,exports){
 // UI Manager Module
 // Handles UI setup, controls panel, and user interface interactions
 
@@ -1758,7 +1734,7 @@ class UIManager {
 
 module.exports = UIManager;
 
-},{}],10:[function(require,module,exports){
+},{}],9:[function(require,module,exports){
 // Utility functions for GridWorld
 
 // Define terrain colors and land function globally
@@ -1805,7 +1781,7 @@ function updateDashboard(hexasphere) {
 
 module.exports = { updateDashboard, terrainColors, isLand };
 
-},{}],11:[function(require,module,exports){
+},{}],10:[function(require,module,exports){
 /**
  * @license
  * Copyright 2010-2024 Three.js Authors
@@ -55253,7 +55229,7 @@ exports.ZeroSlopeEnding = ZeroSlopeEnding;
 exports.ZeroStencilOp = ZeroStencilOp;
 exports.createCanvasElement = createCanvasElement;
 
-},{}],12:[function(require,module,exports){
+},{}],11:[function(require,module,exports){
 var Point = require('./point');
 
 var _faceCount = 0;
@@ -55330,7 +55306,18 @@ Face.prototype.getCentroid = function(clear){
 
 module.exports = Face;
 
-},{"./point":14}],13:[function(require,module,exports){
+},{"./point":13}],12:[function(require,module,exports){
+/**
+ * hexaSphere.js
+ * A library for creating and manipulating geodesic spheres with hexagonal tiles
+ */
+
+// Import THREE.js and expose it globally if in a browser environment
+if (typeof window !== 'undefined') {
+    window.THREE = require('three');
+}
+
+// Import dependencies
 var Tile = require('./tile'),
     Face = require('./face'),
     Point = require('./point');
@@ -55494,9 +55481,20 @@ Hexasphere.prototype.toObj = function() {
     return objText;
 }
 
+// Expose Hexasphere globally for browser access if in a browser environment
+if (typeof window !== 'undefined') {
+    window.Hexasphere = Hexasphere;
+}
+
+// Export for CommonJS environments
 module.exports = Hexasphere;
 
-},{"./face":12,"./point":14,"./tile":15}],14:[function(require,module,exports){
+// Export for ES modules
+if (typeof exports !== 'undefined') {
+    exports.default = Hexasphere;
+}
+
+},{"./face":11,"./point":13,"./tile":14,"three":10}],13:[function(require,module,exports){
 var Point = function(x,y,z){
     if(x !== undefined && y !== undefined && z !== undefined){
         this.x = x.toFixed(3);
@@ -55620,7 +55618,7 @@ Point.prototype.toString = function(){
 
 module.exports = Point;
 
-},{}],15:[function(require,module,exports){
+},{}],14:[function(require,module,exports){
 var Point = require('./point');
 
 function vector(p1, p2){
@@ -55757,4 +55755,4 @@ Tile.prototype.toString = function(){
 
 module.exports = Tile;
 
-},{"./point":14}]},{},[2,5]);
+},{"./point":13}]},{},[12,4]);

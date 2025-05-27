@@ -4,7 +4,7 @@ module.exports = function(grunt) {
         browserify: {
             dist: {
                 files: {
-                    'build/bundle.js': ['js/hexaSphereGlobal.js', 'js/main.js'] // Include hexaSphereGlobal first to ensure proper global exposure
+                    'build/bundle.js': ['src/hexaSphere.js', 'js/main.js'] // Include hexaSphere.js first to ensure proper global exposure
                 }
             }
         },

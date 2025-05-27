@@ -1,3 +1,14 @@
+/**
+ * hexaSphere.js
+ * A library for creating and manipulating geodesic spheres with hexagonal tiles
+ */
+
+// Import THREE.js and expose it globally if in a browser environment
+if (typeof window !== 'undefined') {
+    window.THREE = require('three');
+}
+
+// Import dependencies
 var Tile = require('./tile'),
     Face = require('./face'),
     Point = require('./point');
@@ -161,4 +172,15 @@ Hexasphere.prototype.toObj = function() {
     return objText;
 }
 
+// Expose Hexasphere globally for browser access if in a browser environment
+if (typeof window !== 'undefined') {
+    window.Hexasphere = Hexasphere;
+}
+
+// Export for CommonJS environments
 module.exports = Hexasphere;
+
+// Export for ES modules
+if (typeof exports !== 'undefined') {
+    exports.default = Hexasphere;
+}
