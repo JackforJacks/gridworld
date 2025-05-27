@@ -5,7 +5,7 @@
 const { initializeAndStartGame } = require('./init');
 const CameraController = require('./camera-controller');
 const InputHandler = require('./input-handler');
-const TileSelector = require('./tile-selector');
+const TileSelector = require('./Sphere/tile-selector');
 const SceneManager = require('./scene-manager');
 const UIManager = require('./ui-manager');
 

@@ -43,7 +43,7 @@ Face.prototype.isAdjacentTo = function(face2){
     // adjacent if 2 of the points are the same
     
     var count = 0;
-    for(var i = 0; i< this.points.length; i++){
+    for(var i =0; i< this.points.length; i++){
         for(var j =0 ; j< face2.points.length; j++){
             if(this.points[i].toString() == face2.points[j].toString()){
                 count++;

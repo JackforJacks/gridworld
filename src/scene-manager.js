@@ -2,6 +2,7 @@
 // Handles scene creation, tile generation, and rendering
 
 const { terrainColors, isLand } = require('./utils');
+const Hexasphere = require('./Sphere/hexaSphere');
 
 class SceneManager {
     constructor() {

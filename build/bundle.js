@@ -53447,135 +53447,6 @@ exports.ZeroStencilOp = ZeroStencilOp;
 exports.createCanvasElement = createCanvasElement;
 
 },{}],2:[function(require,module,exports){
-// Camera Controller Module
-// Handles camera movement, zoom, and rotation logic
-
-class CameraController {
-    constructor(camera, initialDistance = 65) {
-        this.camera = camera;
-        this.distance = initialDistance;
-        this.minDistance = 40;
-        this.maxDistance = 120;
-        
-        this.rotation = { x: 0, y: 0 };
-        this.targetRotation = { x: 0, y: 0 };
-        this.autoRotate = true;
-        this.rotationSpeed = 0.005;
-        this.autoRotateSpeed = 0.001;
-    }
-
-    // Update camera position based on current rotation and distance
-    updatePosition() {
-        this.camera.position.set(0, 0, this.distance);
-        this.camera.lookAt(0, 0, 0);
-        
-        // Apply rotations
-        this.camera.position.applyAxisAngle(new THREE.Vector3(1, 0, 0), this.rotation.x);
-        this.camera.position.applyAxisAngle(new THREE.Vector3(0, 1, 0), this.rotation.y);
-        this.camera.lookAt(0, 0, 0);
-    }
-
-    // Smooth rotation interpolation
-    tick(deltaTime) {
-        const lerpFactor = 0.1;
-        
-        // Auto-rotation
-        if (this.autoRotate) {
-            this.targetRotation.y += this.autoRotateSpeed * deltaTime;
-        }
-        
-        // Smooth interpolation to target rotation
-        this.rotation.x += (this.targetRotation.x - this.rotation.x) * lerpFactor;
-        this.rotation.y += (this.targetRotation.y - this.rotation.y) * lerpFactor;
-        
-        this.updatePosition();
-    }
-
-    // Handle mouse drag rotation
-    handleMouseDrag(deltaX, deltaY) {
-        this.targetRotation.y -= deltaX * this.rotationSpeed;
-        this.targetRotation.x += deltaY * this.rotationSpeed;
-        this.targetRotation.x = Math.max(-Math.PI/2, Math.min(Math.PI/2, this.targetRotation.x));
-        this.autoRotate = false;
-    }
-
-    // Handle zoom
-    zoom(delta) {
-        this.distance = Math.max(this.minDistance, Math.min(this.maxDistance, this.distance + delta));
-        this.updatePosition();
-    }
-
-    // Reset camera to default position
-    reset() {
-        this.targetRotation.x = 0;
-        this.targetRotation.y = 0;
-        this.distance = 65;
-        this.autoRotate = true;
-        this.updatePosition();
-    }
-
-    // Handle keyboard controls
-    handleKeyboard(key, step = 0.1, zoomStep = 2) {
-        switch(key.toLowerCase()) {
-            case 'w':
-            case 'arrowup':
-                this.targetRotation.x -= step;
-                this.targetRotation.x = Math.max(-Math.PI/2, this.targetRotation.x);
-                this.autoRotate = false;
-                break;
-                
-            case 's':
-            case 'arrowdown':
-                this.targetRotation.x += step;
-                this.targetRotation.x = Math.min(Math.PI/2, this.targetRotation.x);
-                this.autoRotate = false;
-                break;
-                
-            case 'a':
-            case 'arrowleft':
-                this.targetRotation.y -= step;
-                this.autoRotate = false;
-                break;
-                
-            case 'd':
-            case 'arrowright':
-                this.targetRotation.y += step;
-                this.autoRotate = false;
-                break;
-                
-            case '=':
-            case '+':
-                this.zoom(-zoomStep);
-                break;
-                
-            case '-':
-            case '_':
-                this.zoom(zoomStep);
-                break;
-                
-            case 'r':
-                this.reset();
-                break;
-                
-            case 'c':
-                this.distance = 65;
-                this.targetRotation.x = 0;
-                this.targetRotation.y = 0;
-                this.updatePosition();
-                break;
-        }
-    }
-
-    // Handle window resize
-    handleResize(width, height) {
-        this.camera.aspect = width / height;
-        this.camera.updateProjectionMatrix();
-    }
-}
-
-module.exports = CameraController;
-
-},{}],3:[function(require,module,exports){
 var Point = require('./point');
 
 var _faceCount = 0;
@@ -53621,7 +53492,7 @@ Face.prototype.isAdjacentTo = function(face2){
     // adjacent if 2 of the points are the same
     
     var count = 0;
-    for(var i = 0; i< this.points.length; i++){
+    for(var i =0; i< this.points.length; i++){
         for(var j =0 ; j< face2.points.length; j++){
             if(this.points[i].toString() == face2.points[j].toString()){
                 count++;
@@ -53652,7 +53523,7 @@ Face.prototype.getCentroid = function(clear){
 
 module.exports = Face;
 
-},{"./point":8}],4:[function(require,module,exports){
+},{"./point":4}],3:[function(require,module,exports){
 /**
  * hexaSphere.js
  * A library for creating and manipulating geodesic spheres with hexagonal tiles
@@ -53840,7 +53711,592 @@ if (typeof exports !== 'undefined') {
     exports.default = Hexasphere;
 }
 
-},{"./face":3,"./point":8,"./tile":12,"three":1}],5:[function(require,module,exports){
+},{"./face":2,"./point":4,"./tile":6,"three":1}],4:[function(require,module,exports){
+var Point = function(x,y,z){
+    if(x !== undefined && y !== undefined && z !== undefined){
+        this.x = x.toFixed(3);
+        this.y = y.toFixed(3);
+        this.z = z.toFixed(3);
+    }
+
+    this.faces = [];
+}
+
+Point.prototype.subdivide = function(point, count, checkPoint){
+
+    var segments = [];
+    segments.push(this);
+
+    for(var i = 1; i< count; i++){
+        var np = new Point(this.x * (1-(i/count)) + point.x * (i/count),
+            this.y * (1-(i/count)) + point.y * (i/count),
+            this.z * (1-(i/count)) + point.z * (i/count));
+        np = checkPoint(np);
+        segments.push(np);
+    }
+
+    segments.push(point);
+
+    return segments;
+
+}
+
+Point.prototype.segment = function(point, percent){
+    percent = Math.max(0.01, Math.min(1, percent));
+
+    var x = point.x * (1-percent) + this.x * percent;
+    var y = point.y * (1-percent) + this.y * percent;
+    var z = point.z * (1-percent) + this.z * percent;
+
+    var newPoint = new Point(x,y,z);
+    return newPoint;
+
+};
+
+Point.prototype.midpoint = function(point, location){
+    return this.segment(point, .5);
+}
+
+
+Point.prototype.project = function(radius, percent){
+    if(percent == undefined){
+        percent = 1.0;
+    }
+
+    percent = Math.max(0, Math.min(1, percent));
+    var yx = this.y / this.x;
+    var zx = this.z / this.x;
+    var yz = this.z / this.y;
+
+    var mag = Math.sqrt(Math.pow(this.x, 2) + Math.pow(this.y, 2) + Math.pow(this.z, 2));
+    var ratio = radius/ mag;
+
+    this.x = this.x * ratio * percent;
+    this.y = this.y * ratio * percent;
+    this.z = this.z * ratio * percent;
+    return this;
+
+};
+
+Point.prototype.registerFace = function(face){
+    this.faces.push(face);
+}
+
+Point.prototype.getOrderedFaces = function(){
+    var workingArray = this.faces.slice();
+    var ret = [];
+
+    var i = 0;
+    while(i < this.faces.length){
+        if(i == 0){
+            ret.push(workingArray[i]);
+            workingArray.splice(i,1);
+        } else {
+            var hit = false;
+            var j = 0;
+            while(j < workingArray.length && !hit){
+                if(workingArray[j].isAdjacentTo(ret[i-1])){
+                    hit = true;
+                    ret.push(workingArray[j]);
+                    workingArray.splice(j, 1);
+                }
+                j++;
+            }
+        }
+        i++;
+    }
+
+    return ret;
+}
+
+Point.prototype.findCommonFace = function(other, notThisFace){
+    for(var i = 0; i< this.faces.length; i++){
+        for(var j = 0; j< other.faces.length; j++){
+            if(this.faces[i].id === other.faces[j].id && this.faces[i].id !== notThisFace.id){
+                return this.faces[i];
+            }
+        }
+    }
+
+    return null;
+}
+
+Point.prototype.toJson = function(){
+    return {
+        x: this.x,
+        y: this.y,
+        z: this.z
+    };
+}
+
+Point.prototype.toString = function(){
+    return '' + this.x + ',' + this.y + ',' + this.z;
+}
+
+module.exports = Point;
+
+},{}],5:[function(require,module,exports){
+// Tile Selector Module
+// Handles tile selection, borders, and popups
+
+class TileSelector {
+    constructor(scene, camera) {
+        this.scene = scene;
+        this.camera = camera;
+        this.raycaster = new THREE.Raycaster();
+        this.selectedTile = null;
+        this.borderLines = null;
+        this.tilePopup = document.getElementById('tilePopup');
+        
+        this.borderMaterial = new THREE.LineBasicMaterial({
+            color: 0xff0000,
+            depthTest: false,
+            transparent: true,
+            opacity: 1
+        });
+    }
+
+    handleClick(event) {
+        const rect = event.target.getBoundingClientRect();
+        const mouseX = ((event.clientX - rect.left) / rect.width) * 2 - 1;
+        const mouseY = -((event.clientY - rect.top) / rect.height) * 2 + 1;
+        
+        this.raycaster.setFromCamera({ x: mouseX, y: mouseY }, this.camera);
+        
+        // Get current tiles from window
+        const currentTiles = window.currentTiles || [];
+        const intersects = this.raycaster.intersectObjects(currentTiles);
+        
+        if (intersects.length > 0) {
+            const intersectionPoint = intersects[0].point;
+            const closestTile = this.findClosestTile(intersectionPoint);
+            
+            if (closestTile) {
+                this.selectTile(closestTile, event);
+            }
+        } else {
+            this.deselectAll();
+        }
+    }
+
+    findClosestTile(intersectionPoint) {
+        if (!window.hexasphere || !window.hexasphere.tiles) {
+            return null;
+        }
+        
+        let closestTile = null;
+        let minDistance = Infinity;
+        
+        window.hexasphere.tiles.forEach(tile => {
+            const tileCenter = new THREE.Vector3(tile.centerPoint.x, tile.centerPoint.y, tile.centerPoint.z);
+            const distance = intersectionPoint.distanceTo(tileCenter);
+            
+            if (distance < minDistance) {
+                minDistance = distance;
+                closestTile = tile;
+            }
+        });
+        
+        return closestTile;
+    }
+
+    selectTile(tile, event) {
+        // Check if clicking the same tile again
+        if (this.selectedTile && this.selectedTile.id === tile.id) {
+            this.deselectAll();
+            return;
+        }
+        
+        // Remove previous border
+        this.removeBorder();
+        
+        // Create new border
+        this.createBorder(tile);
+        
+        // Show popup
+        this.showPopup(tile, event);
+        
+        this.selectedTile = tile;
+    }
+
+    createBorder(tile) {
+        const borderGroup = new THREE.Group();
+        
+        // Create multiple thin lines offset slightly to simulate thickness
+        for (let offset = 0; offset < 3; offset++) {
+            const borderGeometry = new THREE.BufferGeometry();
+            const borderVertices = [];
+            const offsetScale = offset * 0.01;
+            
+            // Create lines around the tile boundary with validation
+            for (let i = 0; i < tile.boundary.length; i++) {
+                const current = tile.boundary[i];
+                const next = tile.boundary[(i + 1) % tile.boundary.length];
+                
+                // Validate coordinates
+                if (current && next && 
+                    !isNaN(current.x) && !isNaN(current.y) && !isNaN(current.z) &&
+                    !isNaN(next.x) && !isNaN(next.y) && !isNaN(next.z)) {
+                    
+                    // Apply small offset to create thickness effect
+                    const currentVec = new THREE.Vector3(current.x, current.y, current.z);
+                    const nextVec = new THREE.Vector3(next.x, next.y, next.z);
+                    
+                    // Normalize and apply offset
+                    currentVec.normalize().multiplyScalar(30 + offsetScale);
+                    nextVec.normalize().multiplyScalar(30 + offsetScale);
+                    
+                    borderVertices.push(currentVec.x, currentVec.y, currentVec.z);
+                    borderVertices.push(nextVec.x, nextVec.y, nextVec.z);
+                }
+            }
+            
+            if (borderVertices.length > 0) {
+                borderGeometry.setAttribute('position', new THREE.Float32BufferAttribute(borderVertices, 3));
+                
+                const borderMaterial = new THREE.LineBasicMaterial({
+                    color: 0xff0000,
+                    depthTest: false,
+                    transparent: true,
+                    opacity: 0.8 - (offset * 0.1)
+                });
+                
+                const borderLine = new THREE.LineSegments(borderGeometry, borderMaterial);
+                borderGroup.add(borderLine);
+            }
+        }
+        
+        this.borderLines = borderGroup;
+        this.scene.add(this.borderLines);
+    }
+
+    removeBorder() {
+        if (this.borderLines) {
+            this.scene.remove(this.borderLines);
+            this.borderLines = null;
+        }
+    }
+
+    showPopup(tile, event) {
+        if (!this.tilePopup) return;
+        
+        let lat = 0, lon = 0;
+        
+        try {
+            if (tile.centerPoint && typeof tile.centerPoint.getLatLon === 'function') {
+                const latLon = tile.centerPoint.getLatLon(1);
+                lat = latLon.lat;
+                lon = latLon.lon;
+            } else {
+                // Fallback calculation
+                const r = Math.sqrt(
+                    tile.centerPoint.x * tile.centerPoint.x + 
+                    tile.centerPoint.y * tile.centerPoint.y + 
+                    tile.centerPoint.z * tile.centerPoint.z
+                );
+                lat = Math.asin(tile.centerPoint.y / r) * 180 / Math.PI;
+                lon = Math.atan2(tile.centerPoint.z, tile.centerPoint.x) * 180 / Math.PI;
+            }
+        } catch (e) {
+            console.warn("Could not get lat/lon for tile:", tile.id, e);
+        }
+        
+        this.tilePopup.innerHTML = `
+            <strong>Tile ${tile.id}</strong><br>
+            Lat: ${lat.toFixed(4)}°, Lon: ${lon.toFixed(4)}°<br>
+            Boundary points: ${tile.boundary.length}
+        `;
+        this.tilePopup.style.display = 'block';
+        this.tilePopup.style.left = (event.clientX + 10) + 'px';
+        this.tilePopup.style.top = (event.clientY + 10) + 'px';
+    }
+
+    hidePopup() {
+        if (this.tilePopup) {
+            this.tilePopup.style.display = 'none';
+        }
+    }
+
+    deselectAll() {
+        this.removeBorder();
+        this.hidePopup();
+        this.selectedTile = null;
+    }
+
+    getSelectedTile() {
+        return this.selectedTile;
+    }
+}
+
+module.exports = TileSelector;
+
+},{}],6:[function(require,module,exports){
+var Point = require('./point');
+
+function vector(p1, p2){
+    return {
+        x: p2.x - p1.x,
+        y: p2.y - p1.y,
+        z: p2.z - p1.z
+    }
+
+}
+
+// https://www.khronos.org/opengl/wiki/Calculating_a_Surface_Normal
+// Set Vector U to (Triangle.p2 minus Triangle.p1)
+// Set Vector V to (Triangle.p3 minus Triangle.p1)
+// Set Normal.x to (multiply U.y by V.z) minus (multiply U.z by V.y)
+// Set Normal.y to (multiply U.z by V.x) minus (multiply U.x by V.z)
+// Set Normal.z to (multiply U.x by V.y) minus (multiply U.y by V.x)
+function calculateSurfaceNormal(p1, p2, p3){
+
+    U = vector(p1, p2)
+    V = vector(p1, p3)
+    
+    N = {
+        x: U.y * V.z - U.z * V.y,
+        y: U.z * V.x - U.x * V.z,
+        z: U.x * V.y - U.y * V.x
+    };
+
+    return N;
+
+}
+
+function pointingAwayFromOrigin(p, v){
+    return ((p.x * v.x) >= 0) && ((p.y * v.y) >= 0) && ((p.z * v.z) >= 0)
+}
+
+function normalizeVector(v){
+    var m = Math.sqrt((v.x * v.x) + (v.y * v.y) + (v.z * v.z));
+
+    return {
+        x: (v.x/m),
+        y: (v.y/m),
+        z: (v.z/m)
+    };
+
+}
+
+var Tile = function(centerPoint, hexSize){
+    
+    if(hexSize == undefined){
+        hexSize = 1;
+    }
+
+    hexSize = Math.max(.01, Math.min(1.0, hexSize));
+
+    this.centerPoint = centerPoint;
+    this.faces = centerPoint.getOrderedFaces();
+    this.boundary = [];
+    this.neighborIds = []; // this holds the centerpoints, will resolve to references after
+    this.neighbors = []; // this is filled in after all the tiles have been created
+
+    var neighborHash = {};
+    for(var f=0; f< this.faces.length; f++){
+        // build boundary
+        this.boundary.push(this.faces[f].getCentroid().segment(this.centerPoint, hexSize));
+
+        // get neighboring tiles
+        var otherPoints = this.faces[f].getOtherPoints(this.centerPoint);
+        for(var o = 0; o < 2; o++){
+            neighborHash[otherPoints[o]] = 1;
+        }
+
+    }
+
+    this.neighborIds = Object.keys(neighborHash);
+
+    // Some of the faces are pointing in the wrong direction
+    // Fix this.  Should be a better way of handling it
+    // than flipping them around afterwards
+
+    var normal = calculateSurfaceNormal(this.boundary[1], this.boundary[2], this.boundary[3]);
+
+    if(!pointingAwayFromOrigin(this.centerPoint, normal)){
+        this.boundary.reverse();
+    }
+
+
+
+};
+
+Tile.prototype.getLatLon = function(radius, boundaryNum){
+    var point = this.centerPoint;
+    if(typeof boundaryNum == "number" && boundaryNum < this.boundary.length){
+        point = this.boundary[boundaryNum];
+    }
+    var phi = Math.acos(point.y / radius); //lat 
+    var theta = (Math.atan2(point.x, point.z) + Math.PI + Math.PI / 2) % (Math.PI * 2) - Math.PI; // lon
+    
+    // theta is a hack, since I want to rotate by Math.PI/2 to start.  sorryyyyyyyyyyy
+    return {
+        lat: 180 * phi / Math.PI - 90,
+        lon: 180 * theta / Math.PI
+    };
+};
+
+
+
+Tile.prototype.scaledBoundary = function(scale){
+
+    scale = Math.max(0, Math.min(1, scale));
+
+    var ret = [];
+    for(var i = 0; i < this.boundary.length; i++){
+        ret.push(this.centerPoint.segment(this.boundary[i], 1 - scale));
+    }
+
+    return ret;
+};
+
+Tile.prototype.toJson = function(){
+    // this.centerPoint = centerPoint;
+    // this.faces = centerPoint.getOrderedFaces();
+    // this.boundary = [];
+    return {
+        centerPoint: this.centerPoint.toJson(),
+        boundary: this.boundary.map(function(point){return point.toJson()})
+    };
+
+}
+
+Tile.prototype.toString = function(){
+    return this.centerPoint.toString();
+};
+
+module.exports = Tile;
+
+},{"./point":4}],7:[function(require,module,exports){
+// Camera Controller Module
+// Handles camera movement, zoom, and rotation logic
+
+class CameraController {
+    constructor(camera, initialDistance = 65) {
+        this.camera = camera;
+        this.distance = initialDistance;
+        this.minDistance = 40;
+        this.maxDistance = 120;
+        
+        this.rotation = { x: 0, y: 0 };
+        this.targetRotation = { x: 0, y: 0 };
+        this.autoRotate = true;
+        this.rotationSpeed = 0.005;
+        this.autoRotateSpeed = 0.001;
+    }
+
+    // Update camera position based on current rotation and distance
+    updatePosition() {
+        this.camera.position.set(0, 0, this.distance);
+        this.camera.lookAt(0, 0, 0);
+        
+        // Apply rotations
+        this.camera.position.applyAxisAngle(new THREE.Vector3(1, 0, 0), this.rotation.x);
+        this.camera.position.applyAxisAngle(new THREE.Vector3(0, 1, 0), this.rotation.y);
+        this.camera.lookAt(0, 0, 0);
+    }
+
+    // Smooth rotation interpolation
+    tick(deltaTime) {
+        const lerpFactor = 0.1;
+        
+        // Auto-rotation
+        if (this.autoRotate) {
+            this.targetRotation.y += this.autoRotateSpeed * deltaTime;
+        }
+        
+        // Smooth interpolation to target rotation
+        this.rotation.x += (this.targetRotation.x - this.rotation.x) * lerpFactor;
+        this.rotation.y += (this.targetRotation.y - this.rotation.y) * lerpFactor;
+        
+        this.updatePosition();
+    }
+
+    // Handle mouse drag rotation
+    handleMouseDrag(deltaX, deltaY) {
+        this.targetRotation.y -= deltaX * this.rotationSpeed;
+        this.targetRotation.x += deltaY * this.rotationSpeed;
+        this.targetRotation.x = Math.max(-Math.PI/2, Math.min(Math.PI/2, this.targetRotation.x));
+        this.autoRotate = false;
+    }
+
+    // Handle zoom
+    zoom(delta) {
+        this.distance = Math.max(this.minDistance, Math.min(this.maxDistance, this.distance + delta));
+        this.updatePosition();
+    }
+
+    // Reset camera to default position
+    reset() {
+        this.targetRotation.x = 0;
+        this.targetRotation.y = 0;
+        this.distance = 65;
+        this.autoRotate = true;
+        this.updatePosition();
+    }
+
+    // Handle keyboard controls
+    handleKeyboard(key, step = 0.1, zoomStep = 2) {
+        switch(key.toLowerCase()) {
+            case 'w':
+            case 'arrowup':
+                this.targetRotation.x -= step;
+                this.targetRotation.x = Math.max(-Math.PI/2, this.targetRotation.x);
+                this.autoRotate = false;
+                break;
+                
+            case 's':
+            case 'arrowdown':
+                this.targetRotation.x += step;
+                this.targetRotation.x = Math.min(Math.PI/2, this.targetRotation.x);
+                this.autoRotate = false;
+                break;
+                
+            case 'a':
+            case 'arrowleft':
+                this.targetRotation.y -= step;
+                this.autoRotate = false;
+                break;
+                
+            case 'd':
+            case 'arrowright':
+                this.targetRotation.y += step;
+                this.autoRotate = false;
+                break;
+                
+            case '=':
+            case '+':
+                this.zoom(-zoomStep);
+                break;
+                
+            case '-':
+            case '_':
+                this.zoom(zoomStep);
+                break;
+                
+            case 'r':
+                this.reset();
+                break;
+                
+            case 'c':
+                this.distance = 65;
+                this.targetRotation.x = 0;
+                this.targetRotation.y = 0;
+                this.updatePosition();
+                break;
+        }
+    }
+
+    // Handle window resize
+    handleResize(width, height) {
+        this.camera.aspect = width / height;
+        this.camera.updateProjectionMatrix();
+    }
+}
+
+module.exports = CameraController;
+
+},{}],8:[function(require,module,exports){
 // Initialization logic for GridWorld
 const { createScene, tick } = require('./scene');
 const { terrainColors, isLand, updateDashboard } = require('./utils');
@@ -53937,7 +54393,7 @@ if (typeof window !== 'undefined') {
 
 module.exports = { initializeAndStartGame };
 
-},{"./scene":10,"./utils":14}],6:[function(require,module,exports){
+},{"./scene":12,"./utils":14}],9:[function(require,module,exports){
 // Input Handler Module
 // Centralizes all input event handling (mouse, keyboard, touch)
 
@@ -54078,7 +54534,7 @@ class InputHandler {
 
 module.exports = InputHandler;
 
-},{}],7:[function(require,module,exports){
+},{}],10:[function(require,module,exports){
 // Main Application Entry Point - Modularized GridWorld
 // Coordinates all modules and initializes the application
 
@@ -54086,7 +54542,7 @@ module.exports = InputHandler;
 const { initializeAndStartGame } = require('./init');
 const CameraController = require('./camera-controller');
 const InputHandler = require('./input-handler');
-const TileSelector = require('./tile-selector');
+const TileSelector = require('./Sphere/tile-selector');
 const SceneManager = require('./scene-manager');
 const UIManager = require('./ui-manager');
 
@@ -54307,135 +54763,12 @@ window.createScene = (...args) => {
 
 module.exports = GridWorldApp;
 
-},{"./camera-controller":2,"./init":5,"./input-handler":6,"./scene-manager":9,"./tile-selector":11,"./ui-manager":13}],8:[function(require,module,exports){
-var Point = function(x,y,z){
-    if(x !== undefined && y !== undefined && z !== undefined){
-        this.x = x.toFixed(3);
-        this.y = y.toFixed(3);
-        this.z = z.toFixed(3);
-    }
-
-    this.faces = [];
-}
-
-Point.prototype.subdivide = function(point, count, checkPoint){
-
-    var segments = [];
-    segments.push(this);
-
-    for(var i = 1; i< count; i++){
-        var np = new Point(this.x * (1-(i/count)) + point.x * (i/count),
-            this.y * (1-(i/count)) + point.y * (i/count),
-            this.z * (1-(i/count)) + point.z * (i/count));
-        np = checkPoint(np);
-        segments.push(np);
-    }
-
-    segments.push(point);
-
-    return segments;
-
-}
-
-Point.prototype.segment = function(point, percent){
-    percent = Math.max(0.01, Math.min(1, percent));
-
-    var x = point.x * (1-percent) + this.x * percent;
-    var y = point.y * (1-percent) + this.y * percent;
-    var z = point.z * (1-percent) + this.z * percent;
-
-    var newPoint = new Point(x,y,z);
-    return newPoint;
-
-};
-
-Point.prototype.midpoint = function(point, location){
-    return this.segment(point, .5);
-}
-
-
-Point.prototype.project = function(radius, percent){
-    if(percent == undefined){
-        percent = 1.0;
-    }
-
-    percent = Math.max(0, Math.min(1, percent));
-    var yx = this.y / this.x;
-    var zx = this.z / this.x;
-    var yz = this.z / this.y;
-
-    var mag = Math.sqrt(Math.pow(this.x, 2) + Math.pow(this.y, 2) + Math.pow(this.z, 2));
-    var ratio = radius/ mag;
-
-    this.x = this.x * ratio * percent;
-    this.y = this.y * ratio * percent;
-    this.z = this.z * ratio * percent;
-    return this;
-
-};
-
-Point.prototype.registerFace = function(face){
-    this.faces.push(face);
-}
-
-Point.prototype.getOrderedFaces = function(){
-    var workingArray = this.faces.slice();
-    var ret = [];
-
-    var i = 0;
-    while(i < this.faces.length){
-        if(i == 0){
-            ret.push(workingArray[i]);
-            workingArray.splice(i,1);
-        } else {
-            var hit = false;
-            var j = 0;
-            while(j < workingArray.length && !hit){
-                if(workingArray[j].isAdjacentTo(ret[i-1])){
-                    hit = true;
-                    ret.push(workingArray[j]);
-                    workingArray.splice(j, 1);
-                }
-                j++;
-            }
-        }
-        i++;
-    }
-
-    return ret;
-}
-
-Point.prototype.findCommonFace = function(other, notThisFace){
-    for(var i = 0; i< this.faces.length; i++){
-        for(var j = 0; j< other.faces.length; j++){
-            if(this.faces[i].id === other.faces[j].id && this.faces[i].id !== notThisFace.id){
-                return this.faces[i];
-            }
-        }
-    }
-
-    return null;
-}
-
-Point.prototype.toJson = function(){
-    return {
-        x: this.x,
-        y: this.y,
-        z: this.z
-    };
-}
-
-Point.prototype.toString = function(){
-    return '' + this.x + ',' + this.y + ',' + this.z;
-}
-
-module.exports = Point;
-
-},{}],9:[function(require,module,exports){
+},{"./Sphere/tile-selector":5,"./camera-controller":7,"./init":8,"./input-handler":9,"./scene-manager":11,"./ui-manager":13}],11:[function(require,module,exports){
 // Scene Manager Module
 // Handles scene creation, tile generation, and rendering
 
 const { terrainColors, isLand } = require('./utils');
+const Hexasphere = require('./Sphere/hexaSphere');
 
 class SceneManager {
     constructor() {
@@ -54649,8 +54982,10 @@ class SceneManager {
 
 module.exports = SceneManager;
 
-},{"./utils":14}],10:[function(require,module,exports){
+},{"./Sphere/hexaSphere":3,"./utils":14}],12:[function(require,module,exports){
 // Three.js/scene/tile helpers
+const Hexasphere = require('./Sphere/hexaSphere');
+
 function createScene(
     radius,               // e.g., 30, the radius of the sphere
     subdivisions,         // e.g., 10, how many times to subdivide the icosahedron
@@ -55144,339 +55479,7 @@ module.exports = {
     checkTileIntersection
 };
 
-},{}],11:[function(require,module,exports){
-// Tile Selector Module
-// Handles tile selection, borders, and popups
-
-class TileSelector {
-    constructor(scene, camera) {
-        this.scene = scene;
-        this.camera = camera;
-        this.raycaster = new THREE.Raycaster();
-        this.selectedTile = null;
-        this.borderLines = null;
-        this.tilePopup = document.getElementById('tilePopup');
-        
-        this.borderMaterial = new THREE.LineBasicMaterial({
-            color: 0xff0000,
-            depthTest: false,
-            transparent: true,
-            opacity: 1
-        });
-    }
-
-    handleClick(event) {
-        const rect = event.target.getBoundingClientRect();
-        const mouseX = ((event.clientX - rect.left) / rect.width) * 2 - 1;
-        const mouseY = -((event.clientY - rect.top) / rect.height) * 2 + 1;
-        
-        this.raycaster.setFromCamera({ x: mouseX, y: mouseY }, this.camera);
-        
-        // Get current tiles from window
-        const currentTiles = window.currentTiles || [];
-        const intersects = this.raycaster.intersectObjects(currentTiles);
-        
-        if (intersects.length > 0) {
-            const intersectionPoint = intersects[0].point;
-            const closestTile = this.findClosestTile(intersectionPoint);
-            
-            if (closestTile) {
-                this.selectTile(closestTile, event);
-            }
-        } else {
-            this.deselectAll();
-        }
-    }
-
-    findClosestTile(intersectionPoint) {
-        if (!window.hexasphere || !window.hexasphere.tiles) {
-            return null;
-        }
-        
-        let closestTile = null;
-        let minDistance = Infinity;
-        
-        window.hexasphere.tiles.forEach(tile => {
-            const tileCenter = new THREE.Vector3(tile.centerPoint.x, tile.centerPoint.y, tile.centerPoint.z);
-            const distance = intersectionPoint.distanceTo(tileCenter);
-            
-            if (distance < minDistance) {
-                minDistance = distance;
-                closestTile = tile;
-            }
-        });
-        
-        return closestTile;
-    }
-
-    selectTile(tile, event) {
-        // Check if clicking the same tile again
-        if (this.selectedTile && this.selectedTile.id === tile.id) {
-            this.deselectAll();
-            return;
-        }
-        
-        // Remove previous border
-        this.removeBorder();
-        
-        // Create new border
-        this.createBorder(tile);
-        
-        // Show popup
-        this.showPopup(tile, event);
-        
-        this.selectedTile = tile;
-    }
-
-    createBorder(tile) {
-        const borderGroup = new THREE.Group();
-        
-        // Create multiple thin lines offset slightly to simulate thickness
-        for (let offset = 0; offset < 3; offset++) {
-            const borderGeometry = new THREE.BufferGeometry();
-            const borderVertices = [];
-            const offsetScale = offset * 0.01;
-            
-            // Create lines around the tile boundary with validation
-            for (let i = 0; i < tile.boundary.length; i++) {
-                const current = tile.boundary[i];
-                const next = tile.boundary[(i + 1) % tile.boundary.length];
-                
-                // Validate coordinates
-                if (current && next && 
-                    !isNaN(current.x) && !isNaN(current.y) && !isNaN(current.z) &&
-                    !isNaN(next.x) && !isNaN(next.y) && !isNaN(next.z)) {
-                    
-                    // Apply small offset to create thickness effect
-                    const currentVec = new THREE.Vector3(current.x, current.y, current.z);
-                    const nextVec = new THREE.Vector3(next.x, next.y, next.z);
-                    
-                    // Normalize and apply offset
-                    currentVec.normalize().multiplyScalar(30 + offsetScale);
-                    nextVec.normalize().multiplyScalar(30 + offsetScale);
-                    
-                    borderVertices.push(currentVec.x, currentVec.y, currentVec.z);
-                    borderVertices.push(nextVec.x, nextVec.y, nextVec.z);
-                }
-            }
-            
-            if (borderVertices.length > 0) {
-                borderGeometry.setAttribute('position', new THREE.Float32BufferAttribute(borderVertices, 3));
-                
-                const borderMaterial = new THREE.LineBasicMaterial({
-                    color: 0xff0000,
-                    depthTest: false,
-                    transparent: true,
-                    opacity: 0.8 - (offset * 0.1)
-                });
-                
-                const borderLine = new THREE.LineSegments(borderGeometry, borderMaterial);
-                borderGroup.add(borderLine);
-            }
-        }
-        
-        this.borderLines = borderGroup;
-        this.scene.add(this.borderLines);
-    }
-
-    removeBorder() {
-        if (this.borderLines) {
-            this.scene.remove(this.borderLines);
-            this.borderLines = null;
-        }
-    }
-
-    showPopup(tile, event) {
-        if (!this.tilePopup) return;
-        
-        let lat = 0, lon = 0;
-        
-        try {
-            if (tile.centerPoint && typeof tile.centerPoint.getLatLon === 'function') {
-                const latLon = tile.centerPoint.getLatLon(1);
-                lat = latLon.lat;
-                lon = latLon.lon;
-            } else {
-                // Fallback calculation
-                const r = Math.sqrt(
-                    tile.centerPoint.x * tile.centerPoint.x + 
-                    tile.centerPoint.y * tile.centerPoint.y + 
-                    tile.centerPoint.z * tile.centerPoint.z
-                );
-                lat = Math.asin(tile.centerPoint.y / r) * 180 / Math.PI;
-                lon = Math.atan2(tile.centerPoint.z, tile.centerPoint.x) * 180 / Math.PI;
-            }
-        } catch (e) {
-            console.warn("Could not get lat/lon for tile:", tile.id, e);
-        }
-        
-        this.tilePopup.innerHTML = `
-            <strong>Tile ${tile.id}</strong><br>
-            Lat: ${lat.toFixed(4)}°, Lon: ${lon.toFixed(4)}°<br>
-            Boundary points: ${tile.boundary.length}
-        `;
-        this.tilePopup.style.display = 'block';
-        this.tilePopup.style.left = (event.clientX + 10) + 'px';
-        this.tilePopup.style.top = (event.clientY + 10) + 'px';
-    }
-
-    hidePopup() {
-        if (this.tilePopup) {
-            this.tilePopup.style.display = 'none';
-        }
-    }
-
-    deselectAll() {
-        this.removeBorder();
-        this.hidePopup();
-        this.selectedTile = null;
-    }
-
-    getSelectedTile() {
-        return this.selectedTile;
-    }
-}
-
-module.exports = TileSelector;
-
-},{}],12:[function(require,module,exports){
-var Point = require('./point');
-
-function vector(p1, p2){
-    return {
-        x: p2.x - p1.x,
-        y: p2.y - p1.y,
-        z: p2.z - p1.z
-    }
-
-}
-
-// https://www.khronos.org/opengl/wiki/Calculating_a_Surface_Normal
-// Set Vector U to (Triangle.p2 minus Triangle.p1)
-// Set Vector V to (Triangle.p3 minus Triangle.p1)
-// Set Normal.x to (multiply U.y by V.z) minus (multiply U.z by V.y)
-// Set Normal.y to (multiply U.z by V.x) minus (multiply U.x by V.z)
-// Set Normal.z to (multiply U.x by V.y) minus (multiply U.y by V.x)
-function calculateSurfaceNormal(p1, p2, p3){
-
-    U = vector(p1, p2)
-    V = vector(p1, p3)
-    
-    N = {
-        x: U.y * V.z - U.z * V.y,
-        y: U.z * V.x - U.x * V.z,
-        z: U.x * V.y - U.y * V.x
-    };
-
-    return N;
-
-}
-
-function pointingAwayFromOrigin(p, v){
-    return ((p.x * v.x) >= 0) && ((p.y * v.y) >= 0) && ((p.z * v.z) >= 0)
-}
-
-function normalizeVector(v){
-    var m = Math.sqrt((v.x * v.x) + (v.y * v.y) + (v.z * v.z));
-
-    return {
-        x: (v.x/m),
-        y: (v.y/m),
-        z: (v.z/m)
-    };
-
-}
-
-var Tile = function(centerPoint, hexSize){
-    
-    if(hexSize == undefined){
-        hexSize = 1;
-    }
-
-    hexSize = Math.max(.01, Math.min(1.0, hexSize));
-
-    this.centerPoint = centerPoint;
-    this.faces = centerPoint.getOrderedFaces();
-    this.boundary = [];
-    this.neighborIds = []; // this holds the centerpoints, will resolve to references after
-    this.neighbors = []; // this is filled in after all the tiles have been created
-
-    var neighborHash = {};
-    for(var f=0; f< this.faces.length; f++){
-        // build boundary
-        this.boundary.push(this.faces[f].getCentroid().segment(this.centerPoint, hexSize));
-
-        // get neighboring tiles
-        var otherPoints = this.faces[f].getOtherPoints(this.centerPoint);
-        for(var o = 0; o < 2; o++){
-            neighborHash[otherPoints[o]] = 1;
-        }
-
-    }
-
-    this.neighborIds = Object.keys(neighborHash);
-
-    // Some of the faces are pointing in the wrong direction
-    // Fix this.  Should be a better way of handling it
-    // than flipping them around afterwards
-
-    var normal = calculateSurfaceNormal(this.boundary[1], this.boundary[2], this.boundary[3]);
-
-    if(!pointingAwayFromOrigin(this.centerPoint, normal)){
-        this.boundary.reverse();
-    }
-
-
-
-};
-
-Tile.prototype.getLatLon = function(radius, boundaryNum){
-    var point = this.centerPoint;
-    if(typeof boundaryNum == "number" && boundaryNum < this.boundary.length){
-        point = this.boundary[boundaryNum];
-    }
-    var phi = Math.acos(point.y / radius); //lat 
-    var theta = (Math.atan2(point.x, point.z) + Math.PI + Math.PI / 2) % (Math.PI * 2) - Math.PI; // lon
-    
-    // theta is a hack, since I want to rotate by Math.PI/2 to start.  sorryyyyyyyyyyy
-    return {
-        lat: 180 * phi / Math.PI - 90,
-        lon: 180 * theta / Math.PI
-    };
-};
-
-
-
-Tile.prototype.scaledBoundary = function(scale){
-
-    scale = Math.max(0, Math.min(1, scale));
-
-    var ret = [];
-    for(var i = 0; i < this.boundary.length; i++){
-        ret.push(this.centerPoint.segment(this.boundary[i], 1 - scale));
-    }
-
-    return ret;
-};
-
-Tile.prototype.toJson = function(){
-    // this.centerPoint = centerPoint;
-    // this.faces = centerPoint.getOrderedFaces();
-    // this.boundary = [];
-    return {
-        centerPoint: this.centerPoint.toJson(),
-        boundary: this.boundary.map(function(point){return point.toJson()})
-    };
-
-}
-
-Tile.prototype.toString = function(){
-    return this.centerPoint.toString();
-};
-
-module.exports = Tile;
-
-},{"./point":8}],13:[function(require,module,exports){
+},{"./Sphere/hexaSphere":3}],13:[function(require,module,exports){
 // UI Manager Module
 // Handles UI setup, controls panel, and user interface interactions
 
@@ -55755,4 +55758,4 @@ function updateDashboard(hexasphere) {
 
 module.exports = { updateDashboard, terrainColors, isLand };
 
-},{}]},{},[4,7]);
+},{}]},{},[10]);

@@ -1,4 +1,6 @@
 // Three.js/scene/tile helpers
+const Hexasphere = require('./Sphere/hexaSphere');
+
 function createScene(
     radius,               // e.g., 30, the radius of the sphere
     subdivisions,         // e.g., 10, how many times to subdivide the icosahedron

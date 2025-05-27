@@ -1,2 +1,2 @@
 window.THREE = require('three');
-window.Hexasphere = require('./hexaSphere');
+window.Hexasphere = require('./Sphere/hexaSphere');
