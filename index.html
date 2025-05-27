@@ -1,0 +1,64 @@
+<!DOCTYPE html>
+<html lang="en">
+    <head>
+        <meta charset="utf-8">
+        <title>Hexasphere.js</title>
+
+        <meta name="Description" content="Javascript library to generate a sphere covered in hexagons." />
+        <meta name="Keywords" content="hexasphere, hexasphere.js, geodesic sphere, geodesic polyhedron, javascript, hexagons" />
+
+        <!-- these are just for the demo page / options -->
+
+        <link href="css/styles.css" rel="stylesheet" type="text/css" />
+        <link href="css/background.css" rel="stylesheet" type="text/css" />
+
+        <!-- required for the application -->
+        <script src="include/FileSaver.min.js"></script>
+        <script src="js/hexasphere.js" defer></script>
+        <script src="build/bundle.js" defer></script>
+        <script src="src/BackgroundStars.js" defer></script>
+
+    </head>
+    <body>
+        <div id="stars" class="stars"></div>
+        <div id="dashboard">
+            <!-- Dashboard content will go here -->
+            <p>Total Population: <span id="totalPopulationDisplay">Calculating...</span> Land Tiles: <span id="landTileCountDisplay">Calculating...</span></p>
+            <!-- Start/Stop buttons removed - scene initializes automatically -->
+            <!-- <button id="exportDataButton">Export Tile Data</button> -->
+            <!-- <button id="clearServerDataButton">Clear Server Data</button> -->
+        </div>
+        <div id="controls-help" class="controls-panel">
+            <div class="controls-header">
+                <h3>Controls</h3>
+                <button id="toggle-help">?</button>
+            </div>
+            <div class="controls-content">
+                <div class="control-group">
+                    <strong>Mouse:</strong>
+                    <ul>
+                        <li>Drag to rotate</li>
+                        <li>Scroll to zoom</li>
+                        <li>Click tiles for info</li>
+                    </ul>
+                </div>
+                <div class="control-group">
+                    <strong>Keyboard:</strong>
+                    <ul>
+                        <li><kbd>W/↑</kbd> <kbd>S/↓</kbd> <kbd>A/←</kbd> <kbd>D/→</kbd> - Rotate</li>
+                        <li><kbd>+</kbd> <kbd>-</kbd> - Zoom in/out</li>
+                        <li><kbd>R</kbd> - Reset & auto-rotate</li>
+                        <li><kbd>C</kbd> - Center view</li>
+                    </ul>
+                </div>
+            </div>
+        </div>
+        <div id="container">
+        </div>
+        <div id="tilePopup"></div>
+        <img id="projection" src="equirectangle_projection.png" style="display: none;" />
+        <!-- ref:include analytics -->
+        <!-- endref -->
+
+    </body>
+</html>
