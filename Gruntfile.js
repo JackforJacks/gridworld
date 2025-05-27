@@ -2,20 +2,28 @@ module.exports = function(grunt) {
     grunt.initConfig({
         pkg: grunt.file.readJSON('package.json'),
         browserify: {
-            'build/bundle.js': ['js/main.js'] // Output to build/bundle.js, use js/main.js as entry
+            dist: {
+                files: {
+                    'build/bundle.js': ['js/hexaSphereGlobal.js', 'js/main.js'] // Include hexaSphereGlobal first to ensure proper global exposure
+                }
+            }
         },
         watch: {
-            options: {
-                livereload: true
-            },
-            tasks: ['browserify'],
-            files: ['src/*.js', 'main.js', 'js/browserify.js', 'index.html', 'styles.css', 'Gruntfile.js']
-        },
+            scripts: {
+                files: ['src/**/*.js', 'js/**/*.js', 'index.html', 'styles.css', 'Gruntfile.js'],
+                tasks: ['browserify'],
+                options: {
+                    livereload: true
+                }
+            }
+        }
     });
 
-
+    // Load the plugins
     grunt.loadNpmTasks('grunt-contrib-watch');
     grunt.loadNpmTasks('grunt-browserify');
 
-
+    // Register tasks
+    grunt.registerTask('build', ['browserify']);
+    grunt.registerTask('default', ['build', 'watch']);
 };

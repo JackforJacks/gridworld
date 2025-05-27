@@ -1,3 +1,0 @@
-// ...existing code from js/browserify.js...
-window.THREE = require('three');
-window.Hexasphere = require('../../hexasphere');
