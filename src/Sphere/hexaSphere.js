@@ -3,21 +3,16 @@
  * A library for creating and manipulating geodesic spheres with hexagonal tiles
  */
 
-// Import THREE.js and expose it globally if in a browser environment
-if (typeof window !== 'undefined') {
-    window.THREE = require('three');
-}
-
 // Import dependencies
-var Tile = require('./tile'),
-    Face = require('./face'),
-    Point = require('./point');
+import Tile from './tile.js';
+import Face from './face.js';
+import Point from './point.js';
 
-var Hexasphere = function(radius, numDivisions, hexSize){
+const Hexasphere = function(radius, numDivisions, hexSize){
 
     this.radius = radius;
-    var tao = 1.61803399;
-    var corners = [
+    const tao = 1.61803399;
+    const corners = [
         new Point(1000, tao * 1000, 0),
         new Point(-1000, tao * 1000, 0),
         new Point(1000,-tao * 1000,0),
@@ -32,13 +27,13 @@ var Hexasphere = function(radius, numDivisions, hexSize){
         new Point(-tao * 1000,0,-1000)
     ];
 
-    var points = {};
+    let points = {};
 
-    for(var i = 0; i< corners.length; i++){
+    for(let i = 0; i< corners.length; i++){
         points[corners[i]] = corners[i];
     }
 
-    var faces = [
+    let faces = [
         new Face(corners[0], corners[1], corners[4], false),
         new Face(corners[1], corners[9], corners[4], false),
         new Face(corners[4], corners[9], corners[5], false),
@@ -61,7 +56,7 @@ var Hexasphere = function(radius, numDivisions, hexSize){
         new Face(corners[9], corners[1], corners[11], false)
     ];
 
-    var getPointIfExists = function(point){
+    const getPointIfExists = function(point){
         if(points[point]){
             // console.log("EXISTING!");
             return points[point];
@@ -73,19 +68,19 @@ var Hexasphere = function(radius, numDivisions, hexSize){
     };
 
 
-    var newFaces = [];
+    let newFaces = [];
 
-    for(var f = 0; f< faces.length; f++){
+    for(let f = 0; f< faces.length; f++){
         // console.log("-0---");
-        var prev = null;
-        var bottom = [faces[f].points[0]];
-        var left = faces[f].points[0].subdivide(faces[f].points[1], numDivisions, getPointIfExists);
-        var right = faces[f].points[0].subdivide(faces[f].points[2], numDivisions, getPointIfExists);
-        for(var i = 1; i<= numDivisions; i++){
+        let prev = null;
+        let bottom = [faces[f].points[0]];
+        const left = faces[f].points[0].subdivide(faces[f].points[1], numDivisions, getPointIfExists);
+        const right = faces[f].points[0].subdivide(faces[f].points[2], numDivisions, getPointIfExists);
+        for(let i = 1; i<= numDivisions; i++){
             prev = bottom;
             bottom = left[i].subdivide(right[i], i, getPointIfExists);
-            for(var j = 0; j< i; j++){
-                var nf = new Face(prev[j], bottom[j], bottom[j+1]); 
+            for(let j = 0; j< i; j++){
+                let nf = new Face(prev[j], bottom[j], bottom[j+1]); 
                 newFaces.push(nf);
 
                 if(j > 0){
@@ -98,9 +93,9 @@ var Hexasphere = function(radius, numDivisions, hexSize){
 
     faces = newFaces;
 
-    var newPoints = {};
-    for(var p in points){
-        var np = points[p].project(radius);
+    let newPoints = {};
+    for(let p in points){
+        const np = points[p].project(radius);
         newPoints[np] = np;
     }
 
@@ -110,15 +105,15 @@ var Hexasphere = function(radius, numDivisions, hexSize){
     this.tileLookup = {};
 
     // create tiles and store in a lookup for references
-    for(var p in points){
-        var newTile = new Tile(points[p], hexSize);
+    for(let p in points){
+        const newTile = new Tile(points[p], hexSize);
         this.tiles.push(newTile);
         this.tileLookup[newTile.toString()] = newTile;
     }
 
     // resolve neighbor references now that all have been created
-    for(var t in this.tiles){
-        var _this = this;
+    for(let t in this.tiles){
+        const _this = this;
         this.tiles[t].neighbors = this.tiles[t].neighborIds.map(function(item){return _this.tileLookup[item]});
     }
 
@@ -134,17 +129,17 @@ Hexasphere.prototype.toJson = function() {
 
 Hexasphere.prototype.toObj = function() {
 
-    var objV = [];
-    var objF = [];
-    var objText = "# vertices \n";
-    var vertexIndexMap = {};
+    let objV = [];
+    let objF = [];
+    let objText = "# vertices \n";
+    let vertexIndexMap = {};
 
-    for(var i = 0; i< this.tiles.length; i++){
-        var t = this.tiles[i];
+    for(let i = 0; i< this.tiles.length; i++){
+        const t = this.tiles[i];
         
-        var F = []
-        for(var j = 0; j< t.boundary.length; j++){
-            var index = vertexIndexMap[t.boundary[j]];
+        const F = []
+        for(let j = 0; j< t.boundary.length; j++){
+            let index = vertexIndexMap[t.boundary[j]];
             if(index == undefined){
                 objV.push(t.boundary[j]);
                 index = objV.length;
@@ -156,14 +151,14 @@ Hexasphere.prototype.toObj = function() {
         objF.push(F);
     }
 
-    for(var i =0; i< objV.length; i++){
+    for(let i =0; i< objV.length; i++){
         objText += 'v ' + objV[i].x + ' ' + objV[i].y + ' ' + objV[i].z + '\n';
     }
 
     objText += '\n# faces\n';
-    for(var i =0; i< objF.length; i++){
-        faceString = 'f';
-        for(var j = 0; j < objF[i].length; j++){
+    for(let i =0; i< objF.length; i++){
+        let faceString = 'f';
+        for(let j = 0; j < objF[i].length; j++){
             faceString = faceString + ' ' + objF[i][j];
         }
         objText += faceString + '\n';
@@ -178,7 +173,7 @@ if (typeof window !== 'undefined') {
 }
 
 // Export for CommonJS environments
-module.exports = Hexasphere;
+export default Hexasphere;
 
 // Export for ES modules
 if (typeof exports !== 'undefined') {

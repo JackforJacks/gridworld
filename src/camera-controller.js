@@ -124,4 +124,4 @@ class CameraController {
     }
 }
 
-module.exports = CameraController;
+export default CameraController;

@@ -35,6 +35,51 @@ var jsonString = hexasphere.toJson() // export it as a json object
 Check out a [demo on my website](https://www.robscanlon.com/hexasphere/).  The demo uses Three.js to render the sphere, but that is not an inherit dependency of hexasphere.js.
 You can generate a waveform (.obj) model directly from the website, if you don't want to deal with the javascript library.
 
+## GridWorld Development
+
+This project has been enhanced with a modern development setup using Webpack and ES6 modules.
+
+### Development Setup
+
+```bash
+# Install dependencies
+npm install
+
+# Start development server with hot reload
+npm run dev
+# Opens http://localhost:3000
+
+# Build for production
+npm run build
+
+# Build for development (unminified)
+npm run build:dev
+```
+
+### Project Structure
+
+```
+GridWorld/
+├── src/                    # Source code (ES6 modules)
+│   ├── main.js            # Application entry point
+│   ├── scene-manager.js   # Three.js scene management
+│   ├── input-handler.js   # Input handling
+│   ├── ui-manager.js      # UI components
+│   └── Sphere/            # Hexasphere library
+├── css/                   # Stylesheets
+├── dist/                  # Production build output
+├── webpack.config.js      # Build configuration
+└── package.json          # Dependencies and scripts
+```
+
+### Features
+
+- **Hot Module Replacement**: See changes instantly while developing
+- **Modern JavaScript**: ES6 modules, async/await support
+- **Optimized Builds**: Code splitting and minification for production
+- **Development Server**: Live reload and error overlay
+- **Source Maps**: Debug with original source code
+
 Implementations in Other Languages
 --------
 

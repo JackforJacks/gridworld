@@ -136,4 +136,4 @@ class InputHandler {
     }
 }
 
-module.exports = InputHandler;
+export default InputHandler;

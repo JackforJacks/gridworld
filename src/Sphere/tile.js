@@ -1,4 +1,4 @@
-var Point = require('./point');
+import Point from './point.js';
 
 function vector(p1, p2){
     return {
@@ -17,10 +17,10 @@ function vector(p1, p2){
 // Set Normal.z to (multiply U.x by V.y) minus (multiply U.y by V.x)
 function calculateSurfaceNormal(p1, p2, p3){
 
-    U = vector(p1, p2)
-    V = vector(p1, p3)
+    const U = vector(p1, p2)
+    const V = vector(p1, p3)
     
-    N = {
+    const N = {
         x: U.y * V.z - U.z * V.y,
         y: U.z * V.x - U.x * V.z,
         z: U.x * V.y - U.y * V.x
@@ -35,7 +35,7 @@ function pointingAwayFromOrigin(p, v){
 }
 
 function normalizeVector(v){
-    var m = Math.sqrt((v.x * v.x) + (v.y * v.y) + (v.z * v.z));
+    const m = Math.sqrt((v.x * v.x) + (v.y * v.y) + (v.z * v.z));
 
     return {
         x: (v.x/m),
@@ -45,7 +45,7 @@ function normalizeVector(v){
 
 }
 
-var Tile = function(centerPoint, hexSize){
+const Tile = function(centerPoint, hexSize){
     
     if(hexSize == undefined){
         hexSize = 1;
@@ -67,14 +67,14 @@ var Tile = function(centerPoint, hexSize){
     this.neighborIds = []; // this holds the centerpoints, will resolve to references after
     this.neighbors = []; // this is filled in after all the tiles have been created
 
-    var neighborHash = {};
-    for(var f=0; f< this.faces.length; f++){
+    const neighborHash = {};
+    for(let f=0; f< this.faces.length; f++){
         // build boundary
         this.boundary.push(this.faces[f].getCentroid().segment(this.centerPoint, hexSize));
 
         // get neighboring tiles
-        var otherPoints = this.faces[f].getOtherPoints(this.centerPoint);
-        for(var o = 0; o < 2; o++){
+        const otherPoints = this.faces[f].getOtherPoints(this.centerPoint);
+        for(let o = 0; o < 2; o++){
             neighborHash[otherPoints[o]] = 1;
         }
 
@@ -86,7 +86,7 @@ var Tile = function(centerPoint, hexSize){
     // Fix this.  Should be a better way of handling it
     // than flipping them around afterwards
 
-    var normal = calculateSurfaceNormal(this.boundary[1], this.boundary[2], this.boundary[3]);
+    const normal = calculateSurfaceNormal(this.boundary[1], this.boundary[2], this.boundary[3]);
 
     if(!pointingAwayFromOrigin(this.centerPoint, normal)){
         this.boundary.reverse();
@@ -97,12 +97,12 @@ var Tile = function(centerPoint, hexSize){
 };
 
 Tile.prototype.getLatLon = function(radius, boundaryNum){
-    var point = this.centerPoint;
+    let point = this.centerPoint;
     if(typeof boundaryNum == "number" && boundaryNum < this.boundary.length){
         point = this.boundary[boundaryNum];
     }
-    var phi = Math.acos(point.y / radius); //lat 
-    var theta = (Math.atan2(point.x, point.z) + Math.PI + Math.PI / 2) % (Math.PI * 2) - Math.PI; // lon
+    const phi = Math.acos(point.y / radius); //lat 
+    const theta = (Math.atan2(point.x, point.z) + Math.PI + Math.PI / 2) % (Math.PI * 2) - Math.PI; // lon
     
     // theta is a hack, since I want to rotate by Math.PI/2 to start.  sorryyyyyyyyyyy
     return {
@@ -117,8 +117,8 @@ Tile.prototype.scaledBoundary = function(scale){
 
     scale = Math.max(0, Math.min(1, scale));
 
-    var ret = [];
-    for(var i = 0; i < this.boundary.length; i++){
+    const ret = [];
+    for(let i = 0; i < this.boundary.length; i++){
         ret.push(this.centerPoint.segment(this.boundary[i], 1 - scale));
     }
 
@@ -166,4 +166,4 @@ Tile.prototype.getProperties = function() {
     };
 };
 
-module.exports = Tile;
+export default Tile;

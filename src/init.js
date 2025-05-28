@@ -1,5 +1,5 @@
 // Initialization logic for GridWorld
-const { updateDashboard } = require('./utils');
+import { updateDashboard } from './utils.js';
 
 async function initializeAndStartGame() {
     console.log('Initializing and starting the game...');
@@ -24,4 +24,4 @@ if (typeof window !== 'undefined') {
   window.initializeAndStartGame = initializeAndStartGame;
 }
 
-module.exports = { initializeAndStartGame };
+export { initializeAndStartGame };

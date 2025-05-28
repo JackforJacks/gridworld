@@ -1,4 +1,4 @@
-var Point = function(x,y,z){
+const Point = function(x,y,z){
     if(x !== undefined && y !== undefined && z !== undefined){
         this.x = x.toFixed(3);
         this.y = y.toFixed(3);
@@ -10,11 +10,11 @@ var Point = function(x,y,z){
 
 Point.prototype.subdivide = function(point, count, checkPoint){
 
-    var segments = [];
+    const segments = [];
     segments.push(this);
 
-    for(var i = 1; i< count; i++){
-        var np = new Point(this.x * (1-(i/count)) + point.x * (i/count),
+    for(let i = 1; i< count; i++){
+        let np = new Point(this.x * (1-(i/count)) + point.x * (i/count),
             this.y * (1-(i/count)) + point.y * (i/count),
             this.z * (1-(i/count)) + point.z * (i/count));
         np = checkPoint(np);
@@ -30,11 +30,11 @@ Point.prototype.subdivide = function(point, count, checkPoint){
 Point.prototype.segment = function(point, percent){
     percent = Math.max(0.01, Math.min(1, percent));
 
-    var x = point.x * (1-percent) + this.x * percent;
-    var y = point.y * (1-percent) + this.y * percent;
-    var z = point.z * (1-percent) + this.z * percent;
+    const x = point.x * (1-percent) + this.x * percent;
+    const y = point.y * (1-percent) + this.y * percent;
+    const z = point.z * (1-percent) + this.z * percent;
 
-    var newPoint = new Point(x,y,z);
+    const newPoint = new Point(x,y,z);
     return newPoint;
 
 };
@@ -50,12 +50,12 @@ Point.prototype.project = function(radius, percent){
     }
 
     percent = Math.max(0, Math.min(1, percent));
-    var yx = this.y / this.x;
-    var zx = this.z / this.x;
-    var yz = this.z / this.y;
+    const yx = this.y / this.x;
+    const zx = this.z / this.x;
+    const yz = this.z / this.y;
 
-    var mag = Math.sqrt(Math.pow(this.x, 2) + Math.pow(this.y, 2) + Math.pow(this.z, 2));
-    var ratio = radius/ mag;
+    const mag = Math.sqrt(Math.pow(this.x, 2) + Math.pow(this.y, 2) + Math.pow(this.z, 2));
+    const ratio = radius/ mag;
 
     this.x = this.x * ratio * percent;
     this.y = this.y * ratio * percent;
@@ -69,17 +69,17 @@ Point.prototype.registerFace = function(face){
 }
 
 Point.prototype.getOrderedFaces = function(){
-    var workingArray = this.faces.slice();
-    var ret = [];
+    const workingArray = this.faces.slice();
+    const ret = [];
 
-    var i = 0;
+    let i = 0;
     while(i < this.faces.length){
         if(i == 0){
             ret.push(workingArray[i]);
             workingArray.splice(i,1);
         } else {
-            var hit = false;
-            var j = 0;
+            let hit = false;
+            let j = 0;
             while(j < workingArray.length && !hit){
                 if(workingArray[j].isAdjacentTo(ret[i-1])){
                     hit = true;
@@ -96,8 +96,8 @@ Point.prototype.getOrderedFaces = function(){
 }
 
 Point.prototype.findCommonFace = function(other, notThisFace){
-    for(var i = 0; i< this.faces.length; i++){
-        for(var j = 0; j< other.faces.length; j++){
+    for(let i = 0; i< this.faces.length; i++){
+        for(let j = 0; j< other.faces.length; j++){
             if(this.faces[i].id === other.faces[j].id && this.faces[i].id !== notThisFace.id){
                 return this.faces[i];
             }
@@ -119,4 +119,4 @@ Point.prototype.toString = function(){
     return '' + this.x + ',' + this.y + ',' + this.z;
 }
 
-module.exports = Point;
+export default Point;

@@ -227,4 +227,4 @@ class UIManager {
     }
 }
 
-module.exports = UIManager;
+export default UIManager;

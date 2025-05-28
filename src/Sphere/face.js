@@ -1,8 +1,8 @@
-var Point = require('./point');
+import Point from './point.js';
 
-var _faceCount = 0;
+let _faceCount = 0;
 
-var Face = function(point1, point2, point3, register){
+const Face = function(point1, point2, point3, register){
     this.id = _faceCount++;
 
     if(register == undefined){
@@ -22,8 +22,8 @@ var Face = function(point1, point2, point3, register){
 };
 
 Face.prototype.getOtherPoints = function(point1){
-    var other = [];
-    for(var i = 0; i < this.points.length; i++){
+    const other = [];
+    for(let i = 0; i < this.points.length; i++){
         if(this.points[i].toString() !== point1.toString()){
             other.push(this.points[i]);
         }
@@ -32,7 +32,7 @@ Face.prototype.getOtherPoints = function(point1){
 }
 
 Face.prototype.findThirdPoint = function(point1, point2){
-    for(var i = 0; i < this.points.length; i++){
+    for(let i = 0; i < this.points.length; i++){
         if(this.points[i].toString() !== point1.toString() && this.points[i].toString() !== point2.toString()){
             return this.points[i];
         }
@@ -42,9 +42,9 @@ Face.prototype.findThirdPoint = function(point1, point2){
 Face.prototype.isAdjacentTo = function(face2){
     // adjacent if 2 of the points are the same
     
-    var count = 0;
-    for(var i =0; i< this.points.length; i++){
-        for(var j =0 ; j< face2.points.length; j++){
+    let count = 0;
+    for(let i = 0; i < this.points.length; i++){
+        for(let j = 0; j < face2.points.length; j++){
             if(this.points[i].toString() == face2.points[j].toString()){
                 count++;
                 
@@ -60,11 +60,11 @@ Face.prototype.getCentroid = function(clear){
         return this.centroid;
     }
 
-    var x = (this.points[0].x + this.points[1].x + this.points[2].x)/3;
-    var y = (this.points[0].y + this.points[1].y + this.points[2].y)/3;
-    var z = (this.points[0].z + this.points[1].z + this.points[2].z)/3;
+    const x = (this.points[0].x + this.points[1].x + this.points[2].x)/3;
+    const y = (this.points[0].y + this.points[1].y + this.points[2].y)/3;
+    const z = (this.points[0].z + this.points[1].z + this.points[2].z)/3;
 
-    var centroid = new Point(x,y,z);
+    const centroid = new Point(x,y,z);
 
     this.centroid = centroid;
 
@@ -72,4 +72,4 @@ Face.prototype.getCentroid = function(clear){
 
 }
 
-module.exports = Face;
+export default Face;

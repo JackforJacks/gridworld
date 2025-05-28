@@ -1,13 +1,23 @@
 // Main Application Entry Point - Modularized GridWorld
 // Coordinates all modules and initializes the application
 
-// Data.js dependency removed
-const { initializeAndStartGame } = require('./init');
-const CameraController = require('./camera-controller');
-const InputHandler = require('./input-handler');
-const TileSelector = require('./Sphere/tile-selector');
-const SceneManager = require('./scene-manager');
-const UIManager = require('./ui-manager');
+// Import THREE.js and make it globally available
+import * as THREE from 'three';
+window.THREE = THREE;
+
+// Import CSS (Webpack will handle this)
+import '../css/styles.css';
+
+// Import background stars
+import './BackgroundStars.js';
+
+// Import modules using modern ES6 imports
+import { initializeAndStartGame } from './init.js';
+import CameraController from './camera-controller.js';
+import InputHandler from './input-handler.js';
+import TileSelector from './Sphere/tile-selector.js';
+import SceneManager from './scene-manager.js';
+import UIManager from './ui-manager.js';
 
 class GridWorldApp {
     constructor() {
@@ -225,4 +235,4 @@ window.createScene = (...args) => {
     return app.sceneManager ? app.sceneManager.createHexasphere(...args) : null;
 };
 
-module.exports = GridWorldApp;
+export default GridWorldApp;

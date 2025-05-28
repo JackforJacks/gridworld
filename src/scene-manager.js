@@ -1,8 +1,8 @@
 // Scene Manager Module
 // Handles scene creation, tile generation, and rendering
 
-const { terrainColors, isLand } = require('./utils');
-const Hexasphere = require('./Sphere/hexaSphere');
+import { terrainColors, isLand } from './utils.js';
+import Hexasphere from './Sphere/hexaSphere.js';
 
 class SceneManager {
     constructor() {
@@ -197,4 +197,4 @@ class SceneManager {
     }
 }
 
-module.exports = SceneManager;
+export default SceneManager;

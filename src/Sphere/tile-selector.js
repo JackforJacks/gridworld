@@ -229,4 +229,4 @@ class TileSelector {
     }
 }
 
-module.exports = TileSelector;
+export default TileSelector;

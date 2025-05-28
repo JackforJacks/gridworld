@@ -34,11 +34,10 @@ function updateDashboard() {
             landTileCount++;
         }
     });
-    
-    const landTileCountDisplay = document.getElementById('landTileCountDisplay');
+      const landTileCountDisplay = document.getElementById('landTileCountDisplay');
     if (landTileCountDisplay) {
         landTileCountDisplay.textContent = landTileCount.toLocaleString();
     }
 }
 
-module.exports = { updateDashboard, terrainColors, isLand };
+export { updateDashboard, terrainColors, isLand };
