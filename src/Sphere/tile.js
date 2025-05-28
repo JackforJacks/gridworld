@@ -55,6 +55,14 @@ var Tile = function(centerPoint, hexSize){
 
     this.centerPoint = centerPoint;
     this.faces = centerPoint.getOrderedFaces();
+    this.population = 0; // this is filled in later
+    this.colonizable = false; // this is filled in later
+    this.id = null; // Will be set during hexasphere creation
+    this.latitude = null;
+    this.longitude = null;
+    this.isLand = null;
+    this.terrainType = "unknown";
+    
     this.boundary = [];
     this.neighborIds = []; // this holds the centerpoints, will resolve to references after
     this.neighbors = []; // this is filled in after all the tiles have been created
@@ -130,6 +138,32 @@ Tile.prototype.toJson = function(){
 
 Tile.prototype.toString = function(){
     return this.centerPoint.toString();
+};
+
+// Helper method to set all calculated properties at once
+Tile.prototype.setProperties = function(id, latitude, longitude, isLand, terrainType, colonizable) {
+    this.id = id;
+    this.latitude = latitude;
+    this.longitude = longitude;
+    this.isLand = isLand;
+    this.terrainType = terrainType;
+    this.colonizable = colonizable;
+    
+    // Update legacy properties for backwards compatibility
+    this.terrain = terrainType;
+};
+
+// Helper method to get all properties as an object (useful for debugging/exporting)
+Tile.prototype.getProperties = function() {
+    return {
+        id: this.id,
+        latitude: this.latitude,
+        longitude: this.longitude,
+        isLand: this.isLand,
+        terrainType: this.terrainType,
+        colonizable: this.colonizable,
+        population: this.population
+    };
 };
 
 module.exports = Tile;

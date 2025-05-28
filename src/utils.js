@@ -18,14 +18,19 @@ const isLand = function(centerPoint) {
 };
 
 // Simple dashboard update function (non-ECSY)
-function updateDashboard(hexasphere) {
-    if (!hexasphere || !hexasphere.tiles) return;
+function updateDashboard() {
+    // Use SceneManager hexasphere tiles directly - single source of truth
+    if (!window.sceneManager || !window.sceneManager.hexasphere || !window.sceneManager.hexasphere.tiles) {
+        return;
+    }
     
-    let totalTiles = hexasphere.tiles.length;
+    const tiles = window.sceneManager.hexasphere.tiles;
+    let totalTiles = tiles.length;
     let landTileCount = 0;
     
-    hexasphere.tiles.forEach(tile => {
-        if (isLand(tile.centerPoint)) {
+    tiles.forEach(tile => {
+        // Use tile properties directly - no separate data structure needed!
+        if (tile.isLand === true || (tile.isLand === null && isLand(tile.centerPoint))) {
             landTileCount++;
         }
     });

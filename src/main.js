@@ -95,6 +95,7 @@ class GridWorldApp {
         window.scene = this.scene;
         window.renderer = this.renderer;
         window.camera = this.camera;
+        window.sceneManager = this.sceneManager; // Expose sceneManager as single source of truth
         window.hexasphere = null; // Will be set by scene manager
         window.currentTiles = [];
         window.tilePopup = document.getElementById('tilePopup');
@@ -174,8 +175,8 @@ class GridWorldApp {
 
     // Public API methods
     selectTile(tileId) {
-        if (this.tileSelector && window.hexasphere) {
-            const tile = window.hexasphere.tiles.find(t => t.id === tileId);
+        if (this.tileSelector && this.sceneManager && this.sceneManager.hexasphere) {
+            const tile = this.sceneManager.hexasphere.tiles.find(t => t.id === tileId);
             if (tile) {
                 this.tileSelector.selectTile(tile, { clientX: 0, clientY: 0 });
             }

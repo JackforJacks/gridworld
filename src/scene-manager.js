@@ -10,7 +10,7 @@ class SceneManager {
         this.renderer = null;
         this.hexasphere = null;
         this.currentTiles = [];
-        this.tileData = {};
+        // Removed this.tileData = {}; - using Tile properties directly now
     }
 
     initialize(width, height) {
@@ -40,33 +40,28 @@ class SceneManager {
         const indices = [];
         let vertexIndex = 0;
 
-        const generatedTileData = [];
-
-        this.hexasphere.tiles.forEach((tile, idx) => {
-            tile.id = idx;
-            
+        const generatedTileData = [];        this.hexasphere.tiles.forEach((tile, idx) => {
             // Calculate terrain type and coordinates
             const { terrainType, lat, lon } = this.calculateTileProperties(tile);
+            
+            // Determine if tile is colonizable (no for ice/ocean, yes for others)
+            const colonizable = (terrainType === 'ice' || terrainType === 'ocean') ? 'no' : 'yes';
+            
+            // Set all properties directly on the tile object - single source of truth!
+            tile.setProperties(idx, lat, lon, isLand(tile.centerPoint), terrainType, colonizable);
             
             // Get color for terrain type
             const color = this.getTerrainColor(terrainType);
             
             // Create geometry for this tile
             this.addTileGeometry(tile, color, vertices, colors, indices, vertexIndex);
-            vertexIndex += (tile.boundary.length - 2) * 3;            // Store tile data
-            this.tileData[tile.id] = {
-                id: tile.id,
-                tileObject: tile,
-                latitude: lat,
-                longitude: lon,
-                isLand: isLand(tile.centerPoint),
-                terrainType: terrainType
-            };
+            vertexIndex += (tile.boundary.length - 2) * 3;
 
             generatedTileData.push({
                 tileId: tile.id,
                 latitude: lat,
-                longitude: lon
+                longitude: lon,
+                colonizable: colonizable
             });
         });
 
@@ -144,10 +139,9 @@ class SceneManager {
         const material = new THREE.MeshPhongMaterial({ 
             vertexColors: true,
             side: THREE.DoubleSide
-        });
-
-        const hexasphereMesh = new THREE.Mesh(geometry, material);
-        hexasphereMesh.userData = { tileData: this.tileData };
+        });        const hexasphereMesh = new THREE.Mesh(geometry, material);
+        // Simplified userData - no separate tileData structure needed
+        hexasphereMesh.userData = { hexasphere: this.hexasphere };
         
         this.currentTiles.push(hexasphereMesh);
         this.scene.add(hexasphereMesh);
@@ -188,10 +182,18 @@ class SceneManager {
 
     getCurrentTiles() {
         return this.currentTiles;
-    }
-
-    getTileData() {
-        return this.tileData;
+    }    getTileData() {
+        // Return tile properties directly from the hexasphere tiles
+        if (!this.hexasphere || !this.hexasphere.tiles) {
+            return {};
+        }
+        
+        const tileData = {};
+        this.hexasphere.tiles.forEach(tile => {
+            tileData[tile.id] = tile.getProperties();
+        });
+        
+        return tileData;
     }
 }
 

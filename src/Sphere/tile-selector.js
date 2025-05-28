@@ -39,17 +39,15 @@ class TileSelector {
         } else {
             this.deselectAll();
         }
-    }
-
-    findClosestTile(intersectionPoint) {
-        if (!window.hexasphere || !window.hexasphere.tiles) {
+    }    findClosestTile(intersectionPoint) {
+        if (!window.sceneManager || !window.sceneManager.hexasphere || !window.sceneManager.hexasphere.tiles) {
             return null;
         }
         
         let closestTile = null;
         let minDistance = Infinity;
-        
-        window.hexasphere.tiles.forEach(tile => {
+
+        window.sceneManager.hexasphere.tiles.forEach(tile => {
             const tileCenter = new THREE.Vector3(tile.centerPoint.x, tile.centerPoint.y, tile.centerPoint.z);
             const distance = intersectionPoint.distanceTo(tileCenter);
             
@@ -143,9 +141,16 @@ class TileSelector {
         if (!this.tilePopup) return;
         
         let lat = 0, lon = 0;
+        let colonizable = 'unknown';
+        let terrainType = 'unknown';
         
+        // Get coordinates directly from tile properties (preferred) or calculate as fallback
         try {
-            if (tile.centerPoint && typeof tile.centerPoint.getLatLon === 'function') {
+            if (tile.latitude !== null && tile.longitude !== null) {
+                // Use pre-calculated coordinates stored on the tile
+                lat = tile.latitude;
+                lon = tile.longitude;
+            } else if (tile.centerPoint && typeof tile.centerPoint.getLatLon === 'function') {
                 const latLon = tile.centerPoint.getLatLon(1);
                 lat = latLon.lat;
                 lon = latLon.lon;
@@ -163,19 +168,53 @@ class TileSelector {
             console.warn("Could not get lat/lon for tile:", tile.id, e);
         }
         
+        // Get terrain and colonizable data directly from the tile object
+        try {
+            // All data is now stored directly on the tile - single source of truth!
+            colonizable = tile.colonizable || 'unknown';
+            terrainType = tile.terrainType || 'unknown';
+        } catch (e) {
+            console.warn("Could not get tile data for tile:", tile.id, e);
+        }
+        
+        // Get population data
+        const population = tile.population || 0;
+        const populationDisplay = population > 0 ? population.toLocaleString() : 'Uninhabited';
+        
         this.tilePopup.innerHTML = `
-            <strong>Tile ${tile.id}</strong><br>
-            Lat: ${lat.toFixed(4)}°, Lon: ${lon.toFixed(4)}°<br>
-            Boundary points: ${tile.boundary.length}
+            <div class="tile-popup-header">
+                <strong>Tile ${tile.id}</strong>
+            </div>
+            <div class="tile-popup-content">
+                <div class="tile-popup-row">
+                    <span class="label">Location:</span>
+                    <span class="value">${lat.toFixed(2)}°, ${lon.toFixed(2)}°</span>
+                </div>
+                <div class="tile-popup-row">
+                    <span class="label">Terrain:</span>
+                    <span class="value terrain-${terrainType.toLowerCase()}">${terrainType}</span>
+                </div>
+                <div class="tile-popup-row">
+                    <span class="label">Population:</span>
+                    <span class="value population-${population > 0 ? 'inhabited' : 'uninhabited'}">${populationDisplay}</span>
+                </div>
+                <div class="tile-popup-row">
+                    <span class="label">Colonizable:</span>
+                    <span class="value colonizable-${colonizable}">${colonizable}</span>
+                </div>
+                <div class="tile-popup-footer">
+                    <small>Boundary points: ${tile.boundary.length}</small>
+                </div>
+            </div>
         `;
-        this.tilePopup.style.display = 'block';
+        this.tilePopup.className = 'tile-popup visible';
         this.tilePopup.style.left = (event.clientX + 10) + 'px';
         this.tilePopup.style.top = (event.clientY + 10) + 'px';
     }
 
     hidePopup() {
         if (this.tilePopup) {
-            this.tilePopup.style.display = 'none';
+            this.tilePopup.className = 'tile-popup hidden';
         }
     }
 

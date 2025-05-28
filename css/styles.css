@@ -43,20 +43,116 @@ body {
     height: 100%;
 }
 
-/* Tile ID Popup Styles */
-#tilePopup {
+/* Tile Popup Styles */
+.tile-popup {
     position: absolute;
-    display: none;
-    background-color: rgba(255, 255, 255, 0.9);
-    color: black;
-    padding: 10px;
-    border-radius: 5px;
-    box-shadow: 2px 2px 5px rgba(0,0,0,0.2);
-    border: 1px solid #ccc;
-    font-family: Arial, sans-serif;
-    font-size: 12px;
-    z-index: 2000; /* Ensure popup is above dashboard and canvas */
-    transition: opacity 0.2s;
+    background-color: rgba(255, 255, 255, 0.95);
+    color: #333;
+    border-radius: 8px;
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
+    border: 1px solid #ddd;
+    font-family: 'Segoe UI', Arial, sans-serif;
+    font-size: 13px;
+    z-index: 2000;
+    min-width: 200px;
+    max-width: 280px;
+    transition: opacity 0.3s ease, transform 0.3s ease;
+    backdrop-filter: blur(10px);
+}
+
+.tile-popup.visible {
+    opacity: 1;
+    transform: scale(1);
+}
+
+.tile-popup.hidden {
+    opacity: 0;
+    transform: scale(0.9);
+    pointer-events: none;
+}
+
+.tile-popup-header {
+    background: linear-gradient(135deg, #4CAF50, #45a049);
+    color: white;
+    padding: 12px 16px;
+    border-radius: 8px 8px 0 0;
+    font-weight: bold;
+    font-size: 14px;
+    text-align: center;
+}
+
+.tile-popup-content {
+    padding: 16px;
+}
+
+.tile-popup-row {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 8px;
+    padding: 4px 0;
+}
+
+.tile-popup-row:last-child {
+    margin-bottom: 0;
+}
+
+.tile-popup-row .label {
+    font-weight: 600;
+    color: #666;
+    flex: 0 0 auto;
+    margin-right: 12px;
+}
+
+.tile-popup-row .value {
+    font-weight: 500;
+    text-align: right;
+    flex: 1;
+}
+
+/* Terrain type specific colors */
+.value.terrain-grassland {
+    color: #4CAF50;
+}
+
+.value.terrain-ocean {
+    color: #2196F3;
+}
+
+.value.terrain-ice {
+    color: #87CEEB;
+}
+
+/* Population specific colors */
+.value.population-inhabited {
+    color: #FF5722;
+    font-weight: bold;
+}
+
+.value.population-uninhabited {
+    color: #999;
+    font-style: italic;
+}
+
+/* Colonizable status colors */
+.value.colonizable-yes {
+    color: #4CAF50;
+}
+
+.value.colonizable-no {
+    color: #f44336;
+}
+
+.tile-popup-footer {
+    margin-top: 12px;
+    padding-top: 8px;
+    border-top: 1px solid #eee;
+    text-align: center;
+}
+
+.tile-popup-footer small {
+    color: #999;
+    font-size: 11px;
 }
 
 /* Dashboard Styles */
