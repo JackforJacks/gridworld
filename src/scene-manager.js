@@ -25,7 +25,7 @@ class SceneManager {
         return { scene: this.scene, renderer: this.renderer };
     }
 
-    createHexasphere(radius = 30, subdivisions = 10, tileWidthRatio = 1, serverPopulationData = null) {
+    createHexasphere(radius = 30, subdivisions = 10, tileWidthRatio = 1) {
         // Clear existing tiles
         this.clearTiles();
 
@@ -53,14 +53,10 @@ class SceneManager {
             
             // Create geometry for this tile
             this.addTileGeometry(tile, color, vertices, colors, indices, vertexIndex);
-            vertexIndex += (tile.boundary.length - 2) * 3;
-
-            // Store tile data
-            const population = this.getTilePopulation(tile, serverPopulationData);
+            vertexIndex += (tile.boundary.length - 2) * 3;            // Store tile data
             this.tileData[tile.id] = {
                 id: tile.id,
                 tileObject: tile,
-                population: population,
                 latitude: lat,
                 longitude: lon,
                 isLand: isLand(tile.centerPoint),
@@ -69,7 +65,6 @@ class SceneManager {
 
             generatedTileData.push({
                 tileId: tile.id,
-                population: population,
                 latitude: lat,
                 longitude: lon
             });
@@ -137,21 +132,7 @@ class SceneManager {
 
             // Indices for the triangle
             indices.push(startVertexIndex, startVertexIndex + 1, startVertexIndex + 2);
-            startVertexIndex += 3;
-        }
-    }
-
-    getTilePopulation(tile, serverPopulationData) {
-        let population = Math.floor(Math.random() * 1000);
-        
-        if (serverPopulationData) {
-            const serverTileInfo = serverPopulationData.find(d => d.tileId === tile.id);
-            if (serverTileInfo && serverTileInfo.population !== undefined) {
-                population = serverTileInfo.population;
-            }
-        }
-        
-        return population;
+            startVertexIndex += 3;        }
     }
 
     createHexasphereMesh(geometry, vertices, colors, indices) {

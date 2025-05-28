@@ -28,9 +28,7 @@ async function initializeAndStartGame() {
             new THREE.SphereGeometry(28, 32, 32),
             new THREE.MeshBasicMaterial({ color: 0x001122, transparent: true, opacity: 0.3 })
         );
-        window.scene.add(backgroundSphere);
-
-        // Initial data load and scene creation - No server interaction
+        window.scene.add(backgroundSphere);        // Initial data load and scene creation - No server interaction
         let initialTileData = null; // Always start with no data from server        // Always call createScene as if no server data is available.
         // createScene will generate its own data if null is passed.
         
@@ -43,7 +41,6 @@ async function initializeAndStartGame() {
             30, // radius
             10, // subdivisions
             1,  // tileWidthRatio
-            initialTileData, // This will be null
             window.scene,
             null, // world - no longer using ECSY
             window.currentTiles,

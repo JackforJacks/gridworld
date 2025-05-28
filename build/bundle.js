@@ -54327,9 +54327,7 @@ async function initializeAndStartGame() {
             new THREE.SphereGeometry(28, 32, 32),
             new THREE.MeshBasicMaterial({ color: 0x001122, transparent: true, opacity: 0.3 })
         );
-        window.scene.add(backgroundSphere);
-
-        // Initial data load and scene creation - No server interaction
+        window.scene.add(backgroundSphere);        // Initial data load and scene creation - No server interaction
         let initialTileData = null; // Always start with no data from server        // Always call createScene as if no server data is available.
         // createScene will generate its own data if null is passed.
         
@@ -54342,7 +54340,6 @@ async function initializeAndStartGame() {
             30, // radius
             10, // subdivisions
             1,  // tileWidthRatio
-            initialTileData, // This will be null
             window.scene,
             null, // world - no longer using ECSY
             window.currentTiles,
@@ -54791,7 +54788,7 @@ class SceneManager {
         return { scene: this.scene, renderer: this.renderer };
     }
 
-    createHexasphere(radius = 30, subdivisions = 10, tileWidthRatio = 1, serverPopulationData = null) {
+    createHexasphere(radius = 30, subdivisions = 10, tileWidthRatio = 1) {
         // Clear existing tiles
         this.clearTiles();
 
@@ -54819,14 +54816,10 @@ class SceneManager {
             
             // Create geometry for this tile
             this.addTileGeometry(tile, color, vertices, colors, indices, vertexIndex);
-            vertexIndex += (tile.boundary.length - 2) * 3;
-
-            // Store tile data
-            const population = this.getTilePopulation(tile, serverPopulationData);
+            vertexIndex += (tile.boundary.length - 2) * 3;            // Store tile data
             this.tileData[tile.id] = {
                 id: tile.id,
                 tileObject: tile,
-                population: population,
                 latitude: lat,
                 longitude: lon,
                 isLand: isLand(tile.centerPoint),
@@ -54835,7 +54828,6 @@ class SceneManager {
 
             generatedTileData.push({
                 tileId: tile.id,
-                population: population,
                 latitude: lat,
                 longitude: lon
             });
@@ -54903,21 +54895,7 @@ class SceneManager {
 
             // Indices for the triangle
             indices.push(startVertexIndex, startVertexIndex + 1, startVertexIndex + 2);
-            startVertexIndex += 3;
-        }
-    }
-
-    getTilePopulation(tile, serverPopulationData) {
-        let population = Math.floor(Math.random() * 1000);
-        
-        if (serverPopulationData) {
-            const serverTileInfo = serverPopulationData.find(d => d.tileId === tile.id);
-            if (serverTileInfo && serverTileInfo.population !== undefined) {
-                population = serverTileInfo.population;
-            }
-        }
-        
-        return population;
+            startVertexIndex += 3;        }
     }
 
     createHexasphereMesh(geometry, vertices, colors, indices) {
@@ -54990,7 +54968,6 @@ function createScene(
     radius,               // e.g., 30, the radius of the sphere
     subdivisions,         // e.g., 10, how many times to subdivide the icosahedron
     tileWidthRatio,       // e.g., 1 (for no padding between tiles, 0.9 for some padding)
-    serverPopulationData, // Optional: array of data from server [{tileId, population, latitude, longitude}]
     scene,                // THREE.Scene instance
     world,                // No longer used (was ECSY World instance)
     currentTiles,         // Array to store created THREE.Mesh objects for tiles
@@ -55074,10 +55051,7 @@ function createScene(
             // Indices for the triangle
             indices.push(vertexIndex, vertexIndex + 1, vertexIndex + 2);
             vertexIndex += 3;
-        }
-
-        // Populate tile data for later use (e.g., displaying info in popups)
-        let population = Math.floor(Math.random() * 1000); // Default random population if not provided
+        }        // Populate tile data for later use (e.g., displaying info in popups)
         lat = 0, lon = 0;
 
         try {
@@ -55094,21 +55068,10 @@ function createScene(
             }
         } catch (e) {
             console.warn("Could not get lat/lon from tile.centerPoint for tile ID:", tile.id, e);
-        }
-
-        // If serverPopulationData is provided, try to find and use data for this tile
-        const serverTileInfo = serverPopulationData ? serverPopulationData.find(d => d.tileId === tile.id) : null;
-        if (serverTileInfo) {
-            population = serverTileInfo.population !== undefined ? serverTileInfo.population : population;
-            lat = serverTileInfo.latitude !== undefined ? serverTileInfo.latitude : lat;
-            lon = serverTileInfo.longitude !== undefined ? serverTileInfo.longitude : lon;
-        }
-
-        // Store tile data
+        }        // Store tile data
         tileData[tile.id] = {
             id: tile.id,
             tileObject: tile,
-            population: population,
             latitude: lat,
             longitude: lon,
             isLand: isLand(tile.centerPoint),
@@ -55116,7 +55079,6 @@ function createScene(
         };        // Prepare data for the function's return value
         generatedTileDataForReturn.push({
             tileId: tile.id,
-            population: population,
             latitude: lat,
             longitude: lon
         });
@@ -55168,7 +55130,7 @@ function createScene(
         updateDashboardCallback(window.hexasphere);
     }
 
-    // 6. Return the array of tile data (id, population, lat, lon).
+    // 6. Return the array of tile data (id, lat, lon).
     // This format is consistent with what init.js might expect if it needs to post newly generated data to a server.
     return generatedTileDataForReturn;
 }
@@ -55737,19 +55699,13 @@ function updateDashboard(hexasphere) {
     
     let totalTiles = hexasphere.tiles.length;
     let landTileCount = 0;
-    let totalPopulation = 0;
     
     hexasphere.tiles.forEach(tile => {
         if (isLand(tile.centerPoint)) {
             landTileCount++;
-            totalPopulation += Math.floor(Math.random() * 1000); // Random population for demo
         }
     });
     
-    const totalPopulationDisplay = document.getElementById('totalPopulationDisplay');
-    if (totalPopulationDisplay) {
-        totalPopulationDisplay.textContent = totalPopulation.toLocaleString();
-    }
     const landTileCountDisplay = document.getElementById('landTileCountDisplay');
     if (landTileCountDisplay) {
         landTileCountDisplay.textContent = landTileCount.toLocaleString();

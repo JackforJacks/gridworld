@@ -23,19 +23,13 @@ function updateDashboard(hexasphere) {
     
     let totalTiles = hexasphere.tiles.length;
     let landTileCount = 0;
-    let totalPopulation = 0;
     
     hexasphere.tiles.forEach(tile => {
         if (isLand(tile.centerPoint)) {
             landTileCount++;
-            totalPopulation += Math.floor(Math.random() * 1000); // Random population for demo
         }
     });
     
-    const totalPopulationDisplay = document.getElementById('totalPopulationDisplay');
-    if (totalPopulationDisplay) {
-        totalPopulationDisplay.textContent = totalPopulation.toLocaleString();
-    }
     const landTileCountDisplay = document.getElementById('landTileCountDisplay');
     if (landTileCountDisplay) {
         landTileCountDisplay.textContent = landTileCount.toLocaleString();

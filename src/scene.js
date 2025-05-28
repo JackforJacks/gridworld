@@ -5,7 +5,6 @@ function createScene(
     radius,               // e.g., 30, the radius of the sphere
     subdivisions,         // e.g., 10, how many times to subdivide the icosahedron
     tileWidthRatio,       // e.g., 1 (for no padding between tiles, 0.9 for some padding)
-    serverPopulationData, // Optional: array of data from server [{tileId, population, latitude, longitude}]
     scene,                // THREE.Scene instance
     world,                // No longer used (was ECSY World instance)
     currentTiles,         // Array to store created THREE.Mesh objects for tiles
@@ -89,10 +88,7 @@ function createScene(
             // Indices for the triangle
             indices.push(vertexIndex, vertexIndex + 1, vertexIndex + 2);
             vertexIndex += 3;
-        }
-
-        // Populate tile data for later use (e.g., displaying info in popups)
-        let population = Math.floor(Math.random() * 1000); // Default random population if not provided
+        }        // Populate tile data for later use (e.g., displaying info in popups)
         lat = 0, lon = 0;
 
         try {
@@ -109,21 +105,10 @@ function createScene(
             }
         } catch (e) {
             console.warn("Could not get lat/lon from tile.centerPoint for tile ID:", tile.id, e);
-        }
-
-        // If serverPopulationData is provided, try to find and use data for this tile
-        const serverTileInfo = serverPopulationData ? serverPopulationData.find(d => d.tileId === tile.id) : null;
-        if (serverTileInfo) {
-            population = serverTileInfo.population !== undefined ? serverTileInfo.population : population;
-            lat = serverTileInfo.latitude !== undefined ? serverTileInfo.latitude : lat;
-            lon = serverTileInfo.longitude !== undefined ? serverTileInfo.longitude : lon;
-        }
-
-        // Store tile data
+        }        // Store tile data
         tileData[tile.id] = {
             id: tile.id,
             tileObject: tile,
-            population: population,
             latitude: lat,
             longitude: lon,
             isLand: isLand(tile.centerPoint),
@@ -131,7 +116,6 @@ function createScene(
         };        // Prepare data for the function's return value
         generatedTileDataForReturn.push({
             tileId: tile.id,
-            population: population,
             latitude: lat,
             longitude: lon
         });
@@ -183,7 +167,7 @@ function createScene(
         updateDashboardCallback(window.hexasphere);
     }
 
-    // 6. Return the array of tile data (id, population, lat, lon).
+    // 6. Return the array of tile data (id, lat, lon).
     // This format is consistent with what init.js might expect if it needs to post newly generated data to a server.
     return generatedTileDataForReturn;
 }
