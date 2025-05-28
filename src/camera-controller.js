@@ -11,8 +11,8 @@ class CameraController {
         this.rotation = { x: 0, y: 0 };
         this.targetRotation = { x: 0, y: 0 };
         this.autoRotate = true;
-        this.rotationSpeed = 0.005;
-        this.autoRotateSpeed = 0.001;
+        this.rotationSpeed = 0.003;
+        this.autoRotateSpeed = 0.0001;
     }
 
     // Update camera position based on current rotation and distance

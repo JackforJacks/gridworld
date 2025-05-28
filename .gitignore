@@ -30,3 +30,4 @@ Thumbs.db
 
 # Old build system
 Gruntfile.js.backup
+data.json

@@ -56,44 +56,35 @@ class UIManager {
     }
 
     setupPopulationDisplay() {
-        // Create population display panel
-        const populationPanel = document.createElement('div');
-        populationPanel.id = 'population-panel';
-        populationPanel.style.cssText = `
-            position: fixed;
-            top: 20px;
-            right: 20px;
-            background: rgba(0, 0, 0, 0.8);
-            color: #00ff00;
-            padding: 15px;
-            border-radius: 8px;
+        // Move population display into the dashboard
+        const dashboard = document.getElementById('dashboard');
+        if (!dashboard) return;
+
+        // Remove old population panel if it exists
+        const oldPanel = document.getElementById('population-panel');
+        if (oldPanel) oldPanel.remove();
+
+        // Create population display elements
+        const populationWrapper = document.createElement('span');
+        populationWrapper.id = 'population-panel';
+        populationWrapper.style.cssText = `
+            display: inline-flex;
+            align-items: center;
+            gap: 8px;
+            margin-left: 20px;
             font-family: 'Courier New', monospace;
-            font-size: 14px;
-            z-index: 1000;
-            min-width: 200px;
-            border: 1px solid #00ff00;
-            box-shadow: 0 0 20px rgba(0, 255, 0, 0.3);
+            font-size: 16px;
+            color: #00ff00;
         `;
-
-        populationPanel.innerHTML = `
-            <div style="font-weight: bold; margin-bottom: 10px; text-align: center;">
-                🌍 WORLD POPULATION
-            </div>
-            <div id="population-count" style="font-size: 18px; text-align: center; margin-bottom: 10px;">
-                Loading...
-            </div>
-            <div id="connection-status" style="font-size: 10px; text-align: center; opacity: 0.7;">
-                Connecting...
-            </div>
-            <div id="last-update" style="font-size: 10px; text-align: center; opacity: 0.7; margin-top: 5px;">
-                ---
-            </div>
+        populationWrapper.innerHTML = `
+            <span style="font-weight: bold;">🌍 Population:</span>
+            <span id="population-count">Loading...</span>
+            <span id="connection-status" style="font-size: 12px; opacity: 0.7; margin-left: 8px;">Connecting...</span>
+            <span id="last-update" style="font-size: 12px; opacity: 0.7; margin-left: 8px;">---</span>
         `;
-
-        document.body.appendChild(populationPanel);
-        
-        this.populationDisplay = populationPanel;
-        this.connectionStatus = populationPanel.querySelector('#connection-status');
+        dashboard.appendChild(populationWrapper);
+        this.populationDisplay = populationWrapper;
+        this.connectionStatus = populationWrapper.querySelector('#connection-status');
     }
 
     connectToPopulationManager() {

@@ -20,7 +20,7 @@ An interactive 3D hexasphere application built with Three.js, featuring real-tim
 npm install
 npm run dev
 ```
-Open http://localhost:3000 to see the application with hot reload.
+Open http://localhost:8080 to see the application with hot reload.
 
 ### Production Mode
 ```bash

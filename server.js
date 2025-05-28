@@ -9,7 +9,7 @@ const app = express();
 const server = http.createServer(app);
 const io = socketIo(server);
 
-const PORT = process.env.PORT || 8080;
+const PORT = 8080;
 const DATA_FILE = path.join(__dirname, 'data.json');
 
 // Population data structure

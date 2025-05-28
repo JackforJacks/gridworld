@@ -91,13 +91,12 @@ module.exports = (env, argv) => {
     ],
       devServer: {
       static: {
-        directory: path.join(__dirname, 'dist')
+        directory: path.join(__dirname, 'dist'),
       },
-      port: 3000,
-      open: true,
+      port: 8080,
       hot: true,
-      liveReload: true,
-      watchFiles: ['src/**/*', 'css/**/*', 'index.html']
+      open: true,
+      proxy: undefined, // Remove proxy, everything runs on 8080
     },
     
     resolve: {
