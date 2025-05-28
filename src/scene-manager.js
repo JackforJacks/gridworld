@@ -4,6 +4,7 @@
 
 import { terrainColors, isLand } from './utils.js';
 import Hexasphere from './Sphere/hexaSphere.js';
+import populationManager from './population-manager.js';
 
 class SceneManager {
     constructor() {
@@ -14,6 +15,7 @@ class SceneManager {
         this.cameraLight = null;
         this.ambientLight = null;
         this.directionalLight = null;
+        this.populationUnsubscribe = null;
     }
 
     initialize(width, height) {
@@ -24,6 +26,13 @@ class SceneManager {
 
         // Create scene
         this.scene = new THREE.Scene();
+
+        // Subscribe to population updates to keep tile data current
+        this.populationUnsubscribe = populationManager.subscribe((eventType, data) => {
+            if (eventType === 'populationUpdate') {
+                this.updateTilePopulations();
+            }
+        });
 
         return { scene: this.scene, renderer: this.renderer };
     }
@@ -43,7 +52,10 @@ class SceneManager {
         const indices = [];
         let vertexIndex = 0;
 
-        const generatedTileData = []; this.hexasphere.tiles.forEach((tile, idx) => {
+        const generatedTileData = [];
+        const habitableTileIds = []; // Track habitable tiles for population initialization
+
+        this.hexasphere.tiles.forEach((tile, idx) => {
             // Calculate terrain type and coordinates
             const { terrainType, lat, lon } = this.calculateTileProperties(tile);
 
@@ -52,6 +64,11 @@ class SceneManager {
 
             // Set all properties directly on the tile object - single source of truth!
             tile.setProperties(idx, lat, lon, isLand(tile.centerPoint), terrainType, Habitable);
+
+            // Track habitable tiles for population initialization
+            if (Habitable === 'yes') {
+                habitableTileIds.push(idx);
+            }
 
             // Get color for terrain type
             const color = this.getTerrainColor(terrainType);
@@ -71,7 +88,40 @@ class SceneManager {
         // Create the mesh
         this.createHexasphereMesh(hexasphereGeometry, vertices, colors, indices);
 
+        // Initialize tile populations for habitable tiles
+        this.initializeTilePopulations(habitableTileIds);
+
         return generatedTileData;
+    }
+
+    // Initialize populations for habitable tiles
+    async initializeTilePopulations(habitableTileIds) {
+        try {
+            console.log(`🏘️ Initializing populations for ${habitableTileIds.length} habitable tiles...`);
+            await populationManager.initializeTilePopulations(habitableTileIds);
+
+            // Update tile objects with their population data
+            this.updateTilePopulations();
+        } catch (error) {
+            console.error('❌ Failed to initialize tile populations:', error);
+        }
+    }
+
+    // Update tile objects with current population data
+    updateTilePopulations() {
+        if (!this.hexasphere || !this.hexasphere.tiles) return;
+
+        const tilePopulations = populationManager.getAllTilePopulations();
+
+        this.hexasphere.tiles.forEach(tile => {
+            if (tile.Habitable === 'yes') {
+                tile.population = tilePopulations[tile.id] || 0;
+            } else {
+                tile.population = 0;
+            }
+        });
+
+        console.log(`📊 Updated population data for ${Object.keys(tilePopulations).length} habitable tiles`);
     }
 
     calculateTileProperties(tile) {
@@ -216,6 +266,14 @@ class SceneManager {
         });
 
         return tileData;
+    }
+
+    cleanup() {
+        // Unsubscribe from population updates
+        if (this.populationUnsubscribe) {
+            this.populationUnsubscribe();
+            this.populationUnsubscribe = null;
+        }
     }
 }
 

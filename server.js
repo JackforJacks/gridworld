@@ -14,12 +14,14 @@ const DATA_FILE = path.join(__dirname, 'data.json');
 
 // Population data structure
 let populationData = {
-    count: 1000000, // Starting population
-    lastUpdated: Date.now(),
-    growth: {
-        rate: 1, // Population grows by 1 per second
-        interval: 3000 // Update every 1000ms (1 second)
-    }
+    globalData: {
+        lastUpdated: Date.now(),
+        growth: {
+            rate: 1, // Population grows by 1 per tile per interval
+            interval: 3000 // Update every 3000ms (3 seconds)
+        }
+    },
+    tilePopulations: {} // Will store population for each habitable tile: { tileId: population }
 };
 
 // Middleware
@@ -51,52 +53,113 @@ async function savePopulationData() {
     }
 }
 
-// Update population every second
+// Update population every interval
 function startPopulationGrowth() {
     setInterval(async () => {
-        populationData.count += populationData.growth.rate;
-        populationData.lastUpdated = Date.now();
+        // Grow population for each habitable tile
+        const habitableTileIds = Object.keys(populationData.tilePopulations);
+
+        habitableTileIds.forEach(tileId => {
+            // Each tile grows by the growth rate
+            populationData.tilePopulations[tileId] += populationData.globalData.growth.rate;
+        });
+
+        populationData.globalData.lastUpdated = Date.now();
 
         // Save to file
-        await savePopulationData();
+        await savePopulationData();        // Emit to all connected clients
+        io.emit('populationUpdate', {
+            globalData: populationData.globalData,
+            tilePopulations: populationData.tilePopulations,
+            totalPopulation: getTotalPopulation()
+        });
 
-        // Emit to all connected clients
-        io.emit('populationUpdate', populationData);
-    }, populationData.growth.interval);
+        // Population grows silently - no console logging
+    }, populationData.globalData.growth.interval);
+}
+
+// Helper function to calculate total population
+function getTotalPopulation() {
+    return Object.values(populationData.tilePopulations).reduce((total, pop) => total + pop, 0);
 }
 
 // API Routes
 app.get('/api/population', (req, res) => {
-    res.json(populationData);
+    res.json({
+        globalData: populationData.globalData,
+        tilePopulations: populationData.tilePopulations,
+        totalPopulation: getTotalPopulation()
+    });
 });
 
 app.post('/api/population', async (req, res) => {
-    const { count, rate } = req.body;
-
-    if (typeof count === 'number' && count >= 0) {
-        populationData.count = count;
-    }
+    const { rate, tilePopulations } = req.body;
 
     if (typeof rate === 'number' && rate >= 0) {
-        populationData.growth.rate = rate;
+        populationData.globalData.growth.rate = rate;
     }
 
-    populationData.lastUpdated = Date.now();
+    if (tilePopulations && typeof tilePopulations === 'object') {
+        populationData.tilePopulations = { ...populationData.tilePopulations, ...tilePopulations };
+    }
+
+    populationData.globalData.lastUpdated = Date.now();
     await savePopulationData();
 
     // Notify all clients of the update
-    io.emit('populationUpdate', populationData);
+    const responseData = {
+        globalData: populationData.globalData,
+        tilePopulations: populationData.tilePopulations,
+        totalPopulation: getTotalPopulation()
+    };
+    io.emit('populationUpdate', responseData);
 
-    res.json(populationData);
+    res.json(responseData);
+});
+
+// New endpoint to initialize tile populations
+app.post('/api/population/initialize', async (req, res) => {
+    const { habitableTiles } = req.body;
+
+    if (!habitableTiles || !Array.isArray(habitableTiles)) {
+        return res.status(400).json({ error: 'habitableTiles array is required' });
+    }
+
+    // Initialize population for each habitable tile
+    habitableTiles.forEach(tileId => {
+        if (!(tileId in populationData.tilePopulations)) {
+            // Start with random population between 1000-10000 for each tile
+            populationData.tilePopulations[tileId] = Math.floor(Math.random() * 9000) + 1000;
+        }
+    });
+
+    populationData.globalData.lastUpdated = Date.now();
+    await savePopulationData();
+
+    const responseData = {
+        globalData: populationData.globalData,
+        tilePopulations: populationData.tilePopulations,
+        totalPopulation: getTotalPopulation(),
+        message: `Initialized population for ${habitableTiles.length} habitable tiles`
+    };
+
+    io.emit('populationUpdate', responseData);
+    res.json(responseData);
 });
 
 app.get('/api/population/reset', async (req, res) => {
-    populationData.count = 1000000;
-    populationData.lastUpdated = Date.now();
+    populationData.tilePopulations = {};
+    populationData.globalData.lastUpdated = Date.now();
     await savePopulationData();
 
-    io.emit('populationUpdate', populationData);
-    res.json({ message: 'Population reset to 1,000,000', data: populationData });
+    const responseData = {
+        globalData: populationData.globalData,
+        tilePopulations: populationData.tilePopulations,
+        totalPopulation: 0
+    };
+
+    io.emit('populationUpdate', responseData);
+    res.json({ message: 'All tile populations reset', data: responseData });
 });
 
 // Socket.io connection handling
@@ -104,7 +167,12 @@ io.on('connection', (socket) => {
     console.log('👤 Client connected');
 
     // Send current population data to new client
-    socket.emit('populationUpdate', populationData);
+    const currentData = {
+        globalData: populationData.globalData,
+        tilePopulations: populationData.tilePopulations,
+        totalPopulation: getTotalPopulation()
+    };
+    socket.emit('populationUpdate', currentData);
 
     socket.on('disconnect', () => {
         console.log('👤 Client disconnected');
@@ -112,7 +180,12 @@ io.on('connection', (socket) => {
 
     // Handle client requests for population data
     socket.on('getPopulation', () => {
-        socket.emit('populationUpdate', populationData);
+        const currentData = {
+            globalData: populationData.globalData,
+            tilePopulations: populationData.tilePopulations,
+            totalPopulation: getTotalPopulation()
+        };
+        socket.emit('populationUpdate', currentData);
     });
 });
 
@@ -124,7 +197,7 @@ app.get('/', (req, res) => {
 // Initialize and start server
 async function startServer() {
     await initializeData();
-    startPopulationGrowth();
+    startPopulationGrowth(); // Re-enabled automatic population growth
 
     server.listen(PORT, () => {
         console.log(`🚀 GridWorld server running at http://localhost:${PORT}`);

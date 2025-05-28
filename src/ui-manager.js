@@ -23,12 +23,12 @@ class UIManager {
     setupControlsPanel() {
         this.toggleHelpButton = document.getElementById('toggle-help');
         this.controlsPanel = document.getElementById('controls-help');
-        
+
         if (this.toggleHelpButton && this.controlsPanel) {
             this.toggleHelpButton.addEventListener('click', () => {
                 this.toggleControlsPanel();
             });
-            
+
             // Initially show controls for a few seconds, then collapse
             setTimeout(() => {
                 this.collapseControlsPanel();
@@ -38,19 +38,19 @@ class UIManager {
 
     toggleControlsPanel() {
         if (!this.controlsPanel || !this.toggleHelpButton) return;
-        
+
         this.controlsPanel.classList.toggle('collapsed');
         this.toggleHelpButton.textContent = this.controlsPanel.classList.contains('collapsed') ? '?' : '×';
     }
 
     collapseControlsPanel() {
         if (!this.controlsPanel || !this.toggleHelpButton) return;
-        
+
         this.controlsPanel.classList.add('collapsed');
         this.toggleHelpButton.textContent = '?';
-    }    expandControlsPanel() {
+    } expandControlsPanel() {
         if (!this.controlsPanel || !this.toggleHelpButton) return;
-        
+
         this.controlsPanel.classList.remove('collapsed');
         this.toggleHelpButton.textContent = '×';
     }
@@ -99,20 +99,22 @@ class UIManager {
 
         // Connect to the population server
         populationManager.connect();
-    }
-
-    updatePopulationDisplay(data) {
+    } updatePopulationDisplay(data) {
         if (!this.populationDisplay) return;
 
         const countElement = this.populationDisplay.querySelector('#population-count');
         const lastUpdateElement = this.populationDisplay.querySelector('#last-update');
-        
+
         if (countElement) {
-            countElement.textContent = data.count.toLocaleString();
+            // Use totalPopulation from the new data structure
+            const totalPop = data.totalPopulation || 0;
+            countElement.textContent = totalPop.toLocaleString();
         }
-        
+
         if (lastUpdateElement) {
-            const updateTime = new Date(data.lastUpdated).toLocaleTimeString();
+            // Use globalData.lastUpdated from the new data structure
+            const lastUpdated = data.globalData ? data.globalData.lastUpdated : data.lastUpdated;
+            const updateTime = new Date(lastUpdated).toLocaleTimeString();
             lastUpdateElement.textContent = `Last update: ${updateTime}`;
         }
     }
@@ -228,7 +230,7 @@ class UIManager {
                 align-items: center;
                 gap: 15px;
             `;
-            
+
             // Add spinner
             const spinner = document.createElement('div');
             spinner.style.cssText = `
@@ -239,7 +241,7 @@ class UIManager {
                 border-radius: 50%;
                 animation: spin 1s linear infinite;
             `;
-            
+
             // Add CSS animation
             if (!document.getElementById('spinner-style')) {
                 const style = document.createElement('style');
@@ -252,7 +254,7 @@ class UIManager {
                 `;
                 document.head.appendChild(style);
             }
-            
+
             loader.appendChild(spinner);
             loader.appendChild(document.createTextNode(text));
             document.body.appendChild(loader);
@@ -260,7 +262,7 @@ class UIManager {
             loader.style.display = 'flex';
             loader.lastChild.textContent = text;
         }
-        
+
         return loader;
     }
 
@@ -295,7 +297,7 @@ class UIManager {
         const statsText = Object.entries(stats)
             .map(([key, value]) => `${key}: ${value}`)
             .join('<br>');
-        
+
         statsPanel.innerHTML = statsText;
     }
 

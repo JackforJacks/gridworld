@@ -5,9 +5,12 @@ class PopulationManager {
     constructor() {
         this.socket = null;
         this.populationData = {
-            count: 0,
-            lastUpdated: 0,
-            growth: { rate: 1, interval: 1000 }
+            globalData: {
+                lastUpdated: 0,
+                growth: { rate: 1, interval: 1000 }
+            },
+            tilePopulations: {},
+            totalPopulation: 0
         };
         this.callbacks = new Set();
         this.isConnected = false;
@@ -17,7 +20,7 @@ class PopulationManager {
     async connect() {
         try {
             this.socket = io();
-            
+
             this.socket.on('connect', () => {
                 console.log('🔗 Connected to population server');
                 this.isConnected = true;
@@ -28,12 +31,10 @@ class PopulationManager {
                 console.log('❌ Disconnected from population server');
                 this.isConnected = false;
                 this.notifyCallbacks('connected', false);
-            });
-
-            this.socket.on('populationUpdate', (data) => {
+            }); this.socket.on('populationUpdate', (data) => {
                 this.populationData = data;
                 this.notifyCallbacks('populationUpdate', data);
-                console.log(`🌍 Population updated: ${data.count.toLocaleString()}`);
+                // Population updates silently - no console logging
             });
 
             // Request initial data
@@ -56,11 +57,54 @@ class PopulationManager {
     // Get current population data
     getPopulationData() {
         return { ...this.populationData };
+    }    // Get formatted total population count
+    getFormattedCount() {
+        return this.populationData.totalPopulation.toLocaleString();
     }
 
-    // Get formatted population count
-    getFormattedCount() {
-        return this.populationData.count.toLocaleString();
+    // Get population for a specific tile
+    getTilePopulation(tileId) {
+        return this.populationData.tilePopulations[tileId] || 0;
+    }
+
+    // Get formatted population for a specific tile
+    getFormattedTilePopulation(tileId) {
+        const population = this.getTilePopulation(tileId);
+        return population > 0 ? population.toLocaleString() : 'Uninhabited';
+    }
+
+    // Get all tile populations
+    getAllTilePopulations() {
+        return { ...this.populationData.tilePopulations };
+    }
+
+    // Get total population across all tiles
+    getTotalPopulation() {
+        return this.populationData.totalPopulation;
+    }
+
+    // Initialize populations for habitable tiles
+    async initializeTilePopulations(habitableTileIds) {
+        try {
+            const response = await fetch('/api/population/initialize', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json'
+                },
+                body: JSON.stringify({ habitableTiles: habitableTileIds })
+            });
+
+            if (response.ok) {
+                const data = await response.json();
+                console.log('✅ Tile populations initialized:', data.message);
+                return data;
+            } else {
+                throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+            }
+        } catch (error) {
+            console.error('❌ Failed to initialize tile populations:', error);
+            throw error;
+        }
     }
 
     // Subscribe to population updates
@@ -68,7 +112,7 @@ class PopulationManager {
         if (typeof callback === 'function') {
             this.callbacks.add(callback);
         }
-        
+
         // Return unsubscribe function
         return () => {
             this.callbacks.delete(callback);
@@ -84,50 +128,65 @@ class PopulationManager {
                 console.error('Error in population callback:', error);
             }
         });
-    }
-
-    // Update population on server (admin function)
-    async updatePopulation(count, rate = null) {
+    }    // Update population growth rate (admin function)
+    async updateGrowthRate(rate) {
         try {
-            const payload = { count };
-            if (rate !== null) {
-                payload.rate = rate;
-            }
-
             const response = await fetch('/api/population', {
                 method: 'POST',
                 headers: {
                     'Content-Type': 'application/json'
                 },
-                body: JSON.stringify(payload)
+                body: JSON.stringify({ rate })
             });
 
             if (response.ok) {
                 const data = await response.json();
-                console.log('✅ Population updated successfully:', data);
+                console.log('✅ Growth rate updated successfully:', data);
                 return data;
             } else {
                 throw new Error(`HTTP ${response.status}: ${response.statusText}`);
             }
         } catch (error) {
-            console.error('❌ Failed to update population:', error);
+            console.error('❌ Failed to update growth rate:', error);
             throw error;
         }
     }
 
-    // Reset population to default value
+    // Update specific tile populations (admin function)
+    async updateTilePopulations(tilePopulations) {
+        try {
+            const response = await fetch('/api/population', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json'
+                },
+                body: JSON.stringify({ tilePopulations })
+            });
+
+            if (response.ok) {
+                const data = await response.json();
+                console.log('✅ Tile populations updated successfully');
+                return data;
+            } else {
+                throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+            }
+        } catch (error) {
+            console.error('❌ Failed to update tile populations:', error);
+            throw error;
+        }
+    }    // Reset all tile populations to zero
     async resetPopulation() {
         try {
             const response = await fetch('/api/population/reset');
             if (response.ok) {
                 const data = await response.json();
-                console.log('✅ Population reset successfully:', data);
+                console.log('✅ All tile populations reset successfully:', data);
                 return data;
             } else {
                 throw new Error(`HTTP ${response.status}: ${response.statusText}`);
             }
         } catch (error) {
-            console.error('❌ Failed to reset population:', error);
+            console.error('❌ Failed to reset populations:', error);
             throw error;
         }
     }
@@ -135,11 +194,9 @@ class PopulationManager {
     // Get connection status
     isConnectedToServer() {
         return this.isConnected;
-    }
-
-    // Get time since last update
+    }    // Get time since last update
     getTimeSinceLastUpdate() {
-        return Date.now() - this.populationData.lastUpdated;
+        return Date.now() - this.populationData.globalData.lastUpdated;
     }
 }
 
