@@ -1,5 +1,6 @@
 // Scene Manager Module
 // Handles scene creation, tile generation, and rendering
+// CSS Loading Test: ${new Date().toLocaleTimeString()}
 
 import { terrainColors, isLand } from './utils.js';
 import Hexasphere from './Sphere/hexaSphere.js';
@@ -10,7 +11,9 @@ class SceneManager {
         this.renderer = null;
         this.hexasphere = null;
         this.currentTiles = [];
-        // Removed this.tileData = {}; - using Tile properties directly now
+        this.cameraLight = null;
+        this.ambientLight = null;
+        this.directionalLight = null;
     }
 
     initialize(width, height) {
@@ -40,19 +43,19 @@ class SceneManager {
         const indices = [];
         let vertexIndex = 0;
 
-        const generatedTileData = [];        this.hexasphere.tiles.forEach((tile, idx) => {
+        const generatedTileData = []; this.hexasphere.tiles.forEach((tile, idx) => {
             // Calculate terrain type and coordinates
             const { terrainType, lat, lon } = this.calculateTileProperties(tile);
-            
-            // Determine if tile is colonizable (no for ice/ocean, yes for others)
-            const colonizable = (terrainType === 'ice' || terrainType === 'ocean') ? 'no' : 'yes';
-            
+
+            // Determine if tile is Habitable (no for ice/ocean, yes for others)
+            const Habitable = (terrainType === 'ice' || terrainType === 'ocean') ? 'no' : 'yes';
+
             // Set all properties directly on the tile object - single source of truth!
-            tile.setProperties(idx, lat, lon, isLand(tile.centerPoint), terrainType, colonizable);
-            
+            tile.setProperties(idx, lat, lon, isLand(tile.centerPoint), terrainType, Habitable);
+
             // Get color for terrain type
             const color = this.getTerrainColor(terrainType);
-            
+
             // Create geometry for this tile
             this.addTileGeometry(tile, color, vertices, colors, indices, vertexIndex);
             vertexIndex += (tile.boundary.length - 2) * 3;
@@ -61,7 +64,7 @@ class SceneManager {
                 tileId: tile.id,
                 latitude: lat,
                 longitude: lon,
-                colonizable: colonizable
+                Habitable: Habitable
             });
         });
 
@@ -73,7 +76,7 @@ class SceneManager {
 
     calculateTileProperties(tile) {
         let lat = 0, lon = 0;
-        
+
         try {
             if (tile.centerPoint && typeof tile.centerPoint.getLatLon === 'function') {
                 const latLonRad = tile.centerPoint.getLatLon();
@@ -81,8 +84,8 @@ class SceneManager {
                 lon = latLonRad.lon * 180 / Math.PI;
             } else {
                 const r = Math.sqrt(
-                    tile.centerPoint.x * tile.centerPoint.x + 
-                    tile.centerPoint.y * tile.centerPoint.y + 
+                    tile.centerPoint.x * tile.centerPoint.x +
+                    tile.centerPoint.y * tile.centerPoint.y +
                     tile.centerPoint.z * tile.centerPoint.z
                 );
                 lat = Math.asin(tile.centerPoint.y / r) * 180 / Math.PI;
@@ -105,8 +108,8 @@ class SceneManager {
 
     getTerrainColor(terrainType) {
         return new THREE.Color(
-            terrainType === 'ice' ? 0xffffff : 
-            terrainType === 'grassland' ? terrainColors.grassland : terrainColors.ocean
+            terrainType === 'ice' ? 0xffffff :
+                terrainType === 'grassland' ? terrainColors.grassland : terrainColors.ocean
         );
     }
 
@@ -127,7 +130,8 @@ class SceneManager {
 
             // Indices for the triangle
             indices.push(startVertexIndex, startVertexIndex + 1, startVertexIndex + 2);
-            startVertexIndex += 3;        }
+            startVertexIndex += 3;
+        }
     }
 
     createHexasphereMesh(geometry, vertices, colors, indices) {
@@ -136,16 +140,16 @@ class SceneManager {
         geometry.setIndex(indices);
         geometry.computeVertexNormals();
 
-        const material = new THREE.MeshPhongMaterial({ 
+        const material = new THREE.MeshPhongMaterial({
             vertexColors: true,
             side: THREE.DoubleSide
-        });        const hexasphereMesh = new THREE.Mesh(geometry, material);
+        }); const hexasphereMesh = new THREE.Mesh(geometry, material);
         // Simplified userData - no separate tileData structure needed
         hexasphereMesh.userData = { hexasphere: this.hexasphere };
-        
+
         this.currentTiles.push(hexasphereMesh);
         this.scene.add(hexasphereMesh);
-        
+
         // Update global reference
         window.currentTiles = this.currentTiles;
     }
@@ -157,15 +161,33 @@ class SceneManager {
         }
     }
 
-    addLighting() {
-        // Add ambient light
-        const ambientLight = new THREE.AmbientLight(0x404040, 0.6);
-        this.scene.add(ambientLight);
+    addLighting(camera, sphereRadius = 30) {
+        // Remove old light if present
+        if (this.cameraLight) {
+            if (this.cameraLight.parent) this.cameraLight.parent.remove(this.cameraLight);
+            this.cameraLight = null;
+        }
+        // Add ambient light (reduced for more contrast)
+        if (!this.ambientLight) {
+            this.ambientLight = new THREE.AmbientLight(0xffffff, 0.3);
+            this.scene.add(this.ambientLight);
+        }
+        // Add a directional light for clear shading
+        if (!this.directionalLight) {
+            this.directionalLight = new THREE.DirectionalLight(0xffffff, 0.7);
+            this.directionalLight.position.set(10, 20, 10);
+            this.scene.add(this.directionalLight);
+        }
+        // Add a point light at the camera for highlights, with a smaller radius
+        const lightRadius = sphereRadius * 0.8;
+        this.cameraLight = new THREE.PointLight(0xffffff, 1.0, lightRadius);
+        this.cameraLight.position.set(0, 0, 0);
+        camera.add(this.cameraLight);
+        if (!this.scene.children.includes(camera)) this.scene.add(camera);
+    }
 
-        // Add directional light
-        const directionalLight = new THREE.DirectionalLight(0xffffff, 0.8);
-        directionalLight.position.set(1, 1, 1).normalize();
-        this.scene.add(directionalLight);
+    updateCameraLight(camera) {
+        // No need to update position, as the light is parented to the camera
     }
 
     render(camera) {
@@ -182,17 +204,17 @@ class SceneManager {
 
     getCurrentTiles() {
         return this.currentTiles;
-    }    getTileData() {
+    } getTileData() {
         // Return tile properties directly from the hexasphere tiles
         if (!this.hexasphere || !this.hexasphere.tiles) {
             return {};
         }
-        
+
         const tileData = {};
         this.hexasphere.tiles.forEach(tile => {
             tileData[tile.id] = tile.getProperties();
         });
-        
+
         return tileData;
     }
 }

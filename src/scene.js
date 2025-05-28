@@ -60,16 +60,16 @@ function createScene(
         } else {
             terrainType = isLand(tile.centerPoint) ? 'grassland' : 'ocean';
         }
-        
-        // Determine if tile is colonizable
-        const colonizable = (terrainType === 'ice' || terrainType === 'ocean') ? 'no' : 'yes';
-        
+
+        // Determine if tile is Habitable
+        const Habitable = (terrainType === 'ice' || terrainType === 'ocean') ? 'no' : 'yes';
+
         // Set all properties directly on the tile object - single source of truth!
-        tile.setProperties(idx, lat, lon, isLand(tile.centerPoint), terrainType, colonizable);
+        tile.setProperties(idx, lat, lon, isLand(tile.centerPoint), terrainType, Habitable);
 
         const color = new THREE.Color(
             terrainType === 'ice' ? 0xffffff : // white for ice
-            terrainType === 'grassland' ? terrainColors.grassland : terrainColors.ocean
+                terrainType === 'grassland' ? terrainColors.grassland : terrainColors.ocean
         );
 
         // Fix: define boundaryPoints for this tile
@@ -96,7 +96,7 @@ function createScene(
             tileId: tile.id,
             latitude: tile.latitude,
             longitude: tile.longitude,
-            colonizable: tile.colonizable
+            Habitable: tile.Habitable
         });
 
         // ECSY integration removed - no longer creating entities
@@ -109,12 +109,12 @@ function createScene(
     hexasphereGeometry.computeVertexNormals();
 
     // Create material that uses vertex colors
-    const hexasphereMaterial = new THREE.MeshPhongMaterial({ 
+    const hexasphereMaterial = new THREE.MeshPhongMaterial({
         vertexColors: true,
         side: THREE.DoubleSide
     });    // Create the single hexasphere mesh
     const hexasphereMesh = new THREE.Mesh(hexasphereGeometry, hexasphereMaterial);
-    
+
     // Store hexasphere reference in userData - no separate tile data needed
     hexasphereMesh.userData = {
         hexasphere: window.hexasphere
@@ -150,10 +150,10 @@ function createScene(
 
 function tick(lastTime, autoRotate, targetRotation, rotation, camera, scene, renderer, cameraDistance, updateCallback) {
     const time = Date.now();
-    const delta = time - lastTime;    if (autoRotate) {
+    const delta = time - lastTime; if (autoRotate) {
         targetRotation.y += 0.001; // Slower, more natural rotation speed like Earth
     }
-    
+
     rotation.x += (targetRotation.x - rotation.x) * 0.1;
     rotation.y += (targetRotation.y - rotation.y) * 0.1;
 
@@ -161,8 +161,8 @@ function tick(lastTime, autoRotate, targetRotation, rotation, camera, scene, ren
     // - Y rotation (horizontal mouse movement) should rotate around the vertical Y-axis
     // - X rotation (vertical mouse movement) should change the camera's elevation angle
     // - The sphere itself should only rotate around its Y-axis for auto-rotation
-      // Apply sphere auto-rotation only around Y-axis (vertical axis)
-    if (window.hexasphere && window.hexasphere.mesh) { 
+    // Apply sphere auto-rotation only around Y-axis (vertical axis)
+    if (window.hexasphere && window.hexasphere.mesh) {
         if (autoRotate) {
             // Auto-rotate the sphere around its own Y-axis (like Earth)
             window.hexasphere.mesh.rotation.y = rotation.y;

@@ -18,7 +18,7 @@ let populationData = {
     lastUpdated: Date.now(),
     growth: {
         rate: 1, // Population grows by 1 per second
-        interval: 1000 // Update every 1000ms (1 second)
+        interval: 3000 // Update every 1000ms (1 second)
     }
 };
 
@@ -56,14 +56,12 @@ function startPopulationGrowth() {
     setInterval(async () => {
         populationData.count += populationData.growth.rate;
         populationData.lastUpdated = Date.now();
-        
+
         // Save to file
         await savePopulationData();
-        
+
         // Emit to all connected clients
         io.emit('populationUpdate', populationData);
-        
-        console.log(`🌍 Population updated: ${populationData.count.toLocaleString()}`);
     }, populationData.growth.interval);
 }
 
@@ -74,21 +72,21 @@ app.get('/api/population', (req, res) => {
 
 app.post('/api/population', async (req, res) => {
     const { count, rate } = req.body;
-    
+
     if (typeof count === 'number' && count >= 0) {
         populationData.count = count;
     }
-    
+
     if (typeof rate === 'number' && rate >= 0) {
         populationData.growth.rate = rate;
     }
-    
+
     populationData.lastUpdated = Date.now();
     await savePopulationData();
-    
+
     // Notify all clients of the update
     io.emit('populationUpdate', populationData);
-    
+
     res.json(populationData);
 });
 
@@ -96,7 +94,7 @@ app.get('/api/population/reset', async (req, res) => {
     populationData.count = 1000000;
     populationData.lastUpdated = Date.now();
     await savePopulationData();
-    
+
     io.emit('populationUpdate', populationData);
     res.json({ message: 'Population reset to 1,000,000', data: populationData });
 });
@@ -104,14 +102,14 @@ app.get('/api/population/reset', async (req, res) => {
 // Socket.io connection handling
 io.on('connection', (socket) => {
     console.log('👤 Client connected');
-    
+
     // Send current population data to new client
     socket.emit('populationUpdate', populationData);
-    
+
     socket.on('disconnect', () => {
         console.log('👤 Client disconnected');
     });
-    
+
     // Handle client requests for population data
     socket.on('getPopulation', () => {
         socket.emit('populationUpdate', populationData);
@@ -127,12 +125,9 @@ app.get('/', (req, res) => {
 async function startServer() {
     await initializeData();
     startPopulationGrowth();
-    
+
     server.listen(PORT, () => {
         console.log(`🚀 GridWorld server running at http://localhost:${PORT}`);
-        console.log(`📊 Population management API available at /api/population`);
-        console.log(`🔄 Population updates every ${populationData.growth.interval}ms`);
-        console.log(`📈 Growth rate: +${populationData.growth.rate} per update`);
     });
 }
 

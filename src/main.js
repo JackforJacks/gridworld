@@ -8,11 +8,7 @@ window.THREE = THREE;
 // Import CSS (Webpack will handle this)
 import '../css/styles.css';
 
-// Import background stars
-import './BackgroundStars.js';
-
 // Import modules using modern ES6 imports
-import { initializeAndStartGame } from './init.js';
 import CameraController from './camera-controller.js';
 import InputHandler from './input-handler.js';
 import TileSelector from './Sphere/tile-selector.js';
@@ -23,14 +19,14 @@ class GridWorldApp {
     constructor() {
         this.isInitialized = false;
         this.lastTime = Date.now();
-        
+
         // Core modules
         this.sceneManager = null;
         this.cameraController = null;
         this.inputHandler = null;
         this.tileSelector = null;
         this.uiManager = null;
-        
+
         // Three.js objects
         this.scene = null;
         this.camera = null;
@@ -56,7 +52,7 @@ class GridWorldApp {
             // Initialize scene manager
             const width = window.innerWidth;
             const height = window.innerHeight - 10;
-            
+
             this.sceneManager = new SceneManager();
             const { scene, renderer } = this.sceneManager.initialize(width, height);
             this.scene = scene;
@@ -64,24 +60,24 @@ class GridWorldApp {
 
             // Create camera
             this.camera = new THREE.PerspectiveCamera(45, width / height, 1, 200);
-            
+
             // Initialize camera controller
             this.cameraController = new CameraController(this.camera);
-            
+
             // Initialize tile selector
             this.tileSelector = new TileSelector(this.scene, this.camera);
-            
+
             // Initialize input handler with references to other modules
             this.inputHandler = new InputHandler(this.renderer, this.cameraController, this.tileSelector);
-            
+
             // Append renderer to container
             container.appendChild(this.renderer.domElement);
 
             // Set global references for compatibility with existing code
             this.setGlobalReferences();
 
-            // Add lighting to scene
-            this.sceneManager.addLighting();
+            // Add lighting to scene, bind to camera
+            this.sceneManager.addLighting(this.camera, 30); // 30 is the default sphere radius
 
             // Initialize the game data and create hexasphere
             await this.initializeGameData();
@@ -110,7 +106,7 @@ class GridWorldApp {
         window.currentTiles = [];
         window.tilePopup = document.getElementById('tilePopup');
         window.borderLines = null;
-        
+
         // State references
         window.mouseState = {
             isDragging: false,
@@ -118,7 +114,7 @@ class GridWorldApp {
             initialPosition: { x: 0, y: 0 },
             clickStartTime: 0
         };
-        
+
         window.rotationState = {
             current: { x: 0, y: 0 },
             target: { x: 0, y: 0 },
@@ -128,14 +124,25 @@ class GridWorldApp {
 
     async initializeGameData() {
         try {
+            // Lazy load background stars and init module
+            const [{ default: initStars }, { initializeAndStartGame }] = await Promise.all([
+                import('./BackgroundStars.js'),
+                import('./init.js')
+            ]);
+
+            // Initialize background stars
+            if (typeof initStars === 'function') {
+                initStars();
+            }
+
             // Create the hexasphere with default parameters
             const tileData = this.sceneManager.createHexasphere(30, 10, 1, null);
-            
+
             // Initialize game logic if needed
             if (typeof initializeAndStartGame === 'function') {
                 await initializeAndStartGame();
             }
-            
+
             return tileData;
         } catch (error) {
             console.error('Failed to initialize game data:', error);
@@ -147,26 +154,30 @@ class GridWorldApp {
         const renderLoop = () => {
             const currentTime = Date.now();
             const deltaTime = currentTime - this.lastTime;
-            
+
             // Update camera controller
             if (this.cameraController) {
                 this.cameraController.tick(deltaTime);
             }
-            
+            // Update camera-bound light
+            if (this.sceneManager && this.camera) {
+                this.sceneManager.updateCameraLight(this.camera);
+            }
+
             // Render the scene
             if (this.sceneManager && this.camera) {
                 this.sceneManager.render(this.camera);
             }
-            
+
             // Update stats if in debug mode
             if (window.DEBUG) {
                 this.updateDebugStats(deltaTime);
             }
-            
+
             this.lastTime = currentTime;
             requestAnimationFrame(renderLoop);
         };
-        
+
         requestAnimationFrame(renderLoop);
     }
 
@@ -174,7 +185,7 @@ class GridWorldApp {
         const fps = Math.round(1000 / deltaTime);
         const triangles = this.renderer.info.render.triangles;
         const calls = this.renderer.info.render.calls;
-        
+
         this.uiManager.updateStats({
             'FPS': fps,
             'Triangles': triangles,
@@ -223,7 +234,7 @@ window.addEventListener('load', async () => {
     const success = await app.initialize();
     if (success) {
         app.startRenderLoop();
-        
+
         // Expose app instance globally for debugging
         window.GridWorldApp = app;
     }

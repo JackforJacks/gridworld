@@ -9,7 +9,7 @@ class TileSelector {
         this.selectedTile = null;
         this.borderLines = null;
         this.tilePopup = document.getElementById('tilePopup');
-        
+
         this.borderMaterial = new THREE.LineBasicMaterial({
             color: 0xff0000,
             depthTest: false,
@@ -22,41 +22,41 @@ class TileSelector {
         const rect = event.target.getBoundingClientRect();
         const mouseX = ((event.clientX - rect.left) / rect.width) * 2 - 1;
         const mouseY = -((event.clientY - rect.top) / rect.height) * 2 + 1;
-        
+
         this.raycaster.setFromCamera({ x: mouseX, y: mouseY }, this.camera);
-        
+
         // Get current tiles from window
         const currentTiles = window.currentTiles || [];
         const intersects = this.raycaster.intersectObjects(currentTiles);
-        
+
         if (intersects.length > 0) {
             const intersectionPoint = intersects[0].point;
             const closestTile = this.findClosestTile(intersectionPoint);
-            
+
             if (closestTile) {
                 this.selectTile(closestTile, event);
             }
         } else {
             this.deselectAll();
         }
-    }    findClosestTile(intersectionPoint) {
+    } findClosestTile(intersectionPoint) {
         if (!window.sceneManager || !window.sceneManager.hexasphere || !window.sceneManager.hexasphere.tiles) {
             return null;
         }
-        
+
         let closestTile = null;
         let minDistance = Infinity;
 
         window.sceneManager.hexasphere.tiles.forEach(tile => {
             const tileCenter = new THREE.Vector3(tile.centerPoint.x, tile.centerPoint.y, tile.centerPoint.z);
             const distance = intersectionPoint.distanceTo(tileCenter);
-            
+
             if (distance < minDistance) {
                 minDistance = distance;
                 closestTile = tile;
             }
         });
-        
+
         return closestTile;
     }
 
@@ -66,66 +66,66 @@ class TileSelector {
             this.deselectAll();
             return;
         }
-        
+
         // Remove previous border
         this.removeBorder();
-        
+
         // Create new border
         this.createBorder(tile);
-        
+
         // Show popup
         this.showPopup(tile, event);
-        
+
         this.selectedTile = tile;
     }
 
     createBorder(tile) {
         const borderGroup = new THREE.Group();
-        
+
         // Create multiple thin lines offset slightly to simulate thickness
         for (let offset = 0; offset < 3; offset++) {
             const borderGeometry = new THREE.BufferGeometry();
             const borderVertices = [];
             const offsetScale = offset * 0.01;
-            
+
             // Create lines around the tile boundary with validation
             for (let i = 0; i < tile.boundary.length; i++) {
                 const current = tile.boundary[i];
                 const next = tile.boundary[(i + 1) % tile.boundary.length];
-                
+
                 // Validate coordinates
-                if (current && next && 
+                if (current && next &&
                     !isNaN(current.x) && !isNaN(current.y) && !isNaN(current.z) &&
                     !isNaN(next.x) && !isNaN(next.y) && !isNaN(next.z)) {
-                    
+
                     // Apply small offset to create thickness effect
                     const currentVec = new THREE.Vector3(current.x, current.y, current.z);
                     const nextVec = new THREE.Vector3(next.x, next.y, next.z);
-                    
+
                     // Normalize and apply offset
                     currentVec.normalize().multiplyScalar(30 + offsetScale);
                     nextVec.normalize().multiplyScalar(30 + offsetScale);
-                    
+
                     borderVertices.push(currentVec.x, currentVec.y, currentVec.z);
                     borderVertices.push(nextVec.x, nextVec.y, nextVec.z);
                 }
             }
-            
+
             if (borderVertices.length > 0) {
                 borderGeometry.setAttribute('position', new THREE.Float32BufferAttribute(borderVertices, 3));
-                
+
                 const borderMaterial = new THREE.LineBasicMaterial({
                     color: 0xff0000,
                     depthTest: false,
                     transparent: true,
                     opacity: 0.8 - (offset * 0.1)
                 });
-                
+
                 const borderLine = new THREE.LineSegments(borderGeometry, borderMaterial);
                 borderGroup.add(borderLine);
             }
         }
-        
+
         this.borderLines = borderGroup;
         this.scene.add(this.borderLines);
     }
@@ -139,11 +139,11 @@ class TileSelector {
 
     showPopup(tile, event) {
         if (!this.tilePopup) return;
-        
+
         let lat = 0, lon = 0;
-        let colonizable = 'unknown';
+        let Habitable = 'unknown';
         let terrainType = 'unknown';
-        
+
         // Get coordinates directly from tile properties (preferred) or calculate as fallback
         try {
             if (tile.latitude !== null && tile.longitude !== null) {
@@ -157,8 +157,8 @@ class TileSelector {
             } else {
                 // Fallback calculation
                 const r = Math.sqrt(
-                    tile.centerPoint.x * tile.centerPoint.x + 
-                    tile.centerPoint.y * tile.centerPoint.y + 
+                    tile.centerPoint.x * tile.centerPoint.x +
+                    tile.centerPoint.y * tile.centerPoint.y +
                     tile.centerPoint.z * tile.centerPoint.z
                 );
                 lat = Math.asin(tile.centerPoint.y / r) * 180 / Math.PI;
@@ -167,20 +167,20 @@ class TileSelector {
         } catch (e) {
             console.warn("Could not get lat/lon for tile:", tile.id, e);
         }
-        
-        // Get terrain and colonizable data directly from the tile object
+
+        // Get terrain and Habitable data directly from the tile object
         try {
             // All data is now stored directly on the tile - single source of truth!
-            colonizable = tile.colonizable || 'unknown';
+            Habitable = tile.Habitable || 'unknown';
             terrainType = tile.terrainType || 'unknown';
         } catch (e) {
             console.warn("Could not get tile data for tile:", tile.id, e);
         }
-        
+
         // Get population data
         const population = tile.population || 0;
         const populationDisplay = population > 0 ? population.toLocaleString() : 'Uninhabited';
-        
+
         this.tilePopup.innerHTML = `
             <div class="tile-popup-header">
                 <strong>Tile ${tile.id}</strong>
@@ -199,8 +199,8 @@ class TileSelector {
                     <span class="value population-${population > 0 ? 'inhabited' : 'uninhabited'}">${populationDisplay}</span>
                 </div>
                 <div class="tile-popup-row">
-                    <span class="label">Colonizable:</span>
-                    <span class="value colonizable-${colonizable}">${colonizable}</span>
+                    <span class="label">Habitable:</span>
+                    <span class="value Habitable-${Habitable}">${Habitable}</span>
                 </div>
                 <div class="tile-popup-footer">
                     <small>Boundary points: ${tile.boundary.length}</small>
