@@ -2,6 +2,7 @@ const path = require('path');
 const HtmlWebpackPlugin = require('html-webpack-plugin');
 const CopyWebpackPlugin = require('copy-webpack-plugin');
 const { CleanWebpackPlugin } = require('clean-webpack-plugin');
+const MiniCssExtractPlugin = require('mini-css-extract-plugin');
 
 module.exports = (env, argv) => {
   const isProduction = argv.mode === 'production';
@@ -26,10 +27,12 @@ module.exports = (env, argv) => {
               presets: ['@babel/preset-env']
             }
           }
-        },
-        {
+        },        {
           test: /\.css$/,
-          use: ['style-loader', 'css-loader']
+          use: [
+            isProduction ? MiniCssExtractPlugin.loader : 'style-loader',
+            'css-loader'
+          ]
         },
         {
           test: /\.(png|jpg|jpeg|gif|svg)$/,
@@ -47,8 +50,7 @@ module.exports = (env, argv) => {
         }
       ]
     },
-    
-    plugins: [
+      plugins: [
       new CleanWebpackPlugin(),
       
       new HtmlWebpackPlugin({
@@ -56,6 +58,13 @@ module.exports = (env, argv) => {
         filename: 'index.html',
         inject: 'body'
       }),
+
+      ...(isProduction ? [
+        new MiniCssExtractPlugin({
+          filename: '[name].[contenthash].css',
+          chunkFilename: '[id].[contenthash].css'
+        })
+      ] : []),
       
       new CopyWebpackPlugin({
         patterns: [

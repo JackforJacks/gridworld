@@ -7,6 +7,36 @@
         <meta name="Description" content="Javascript library to generate a sphere covered in hexagons." />
         <meta name="Keywords" content="hexasphere, hexasphere.js, geodesic sphere, geodesic polyhedron, javascript, hexagons" />
 
+        <!-- Critical CSS to prevent FOUC -->
+        <style>
+            html, body {
+                margin: 0;
+                padding: 0;
+                width: 100%;
+                height: 100%;
+                overflow: hidden;
+                background: #000033;
+                background: linear-gradient(to bottom, #000022 0%, #0a0a2a 50%, #1a1a4a 100%);
+            }
+            #container {
+                position: fixed;
+                top: 0;
+                left: 0;
+                width: 100%;
+                height: 100%;
+                z-index: 1;
+            }
+            .stars {
+                position: fixed;
+                top: 0;
+                left: 0;
+                width: 100%;
+                height: 100%;
+                z-index: 0;
+                pointer-events: none;
+            }
+        </style>
+
         <!-- Webpack will inject CSS and JS automatically -->
     </head>
     <body>
