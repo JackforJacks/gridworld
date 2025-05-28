@@ -9,6 +9,8 @@
     "build:dev": "webpack --mode development",
     "clean": "rimraf dist",
     "start": "npm run dev",
+    "server": "node server.js",
+    "prod": "npm run build && npm run server",
     "test": "echo \"Error: no test specified\" && exit 1"
   },
   "devDependencies": {
@@ -29,6 +31,10 @@
   },
   "dependencies": {
     "ecsy": "^0.4.3",
+    "express": "^5.1.0",
+    "fs-extra": "^11.3.0",
+    "socket.io": "^4.8.1",
+    "socket.io-client": "^4.8.1",
     "three": "^0.164.1"
   },
   "repository": {

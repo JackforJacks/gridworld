@@ -196,6 +196,8 @@ body {
     justify-content: space-between;
     align-items: center;
     margin-bottom: 10px;
+    width: 24px;
+    height: 24px;
 }
 
 .controls-header h3 {

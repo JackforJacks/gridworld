@@ -1,15 +1,22 @@
 // UI Manager Module
 // Handles UI setup, controls panel, and user interface interactions
 
+import populationManager from './population-manager.js';
+
 class UIManager {
     constructor() {
         this.controlsPanel = null;
         this.toggleHelpButton = null;
+        this.populationDisplay = null;
+        this.connectionStatus = null;
         this.isInitialized = false;
+        this.populationUnsubscribe = null;
     }
 
     initialize() {
         this.setupControlsPanel();
+        this.setupPopulationDisplay();
+        this.connectToPopulationManager();
         this.isInitialized = true;
     }
 
@@ -41,13 +48,101 @@ class UIManager {
         
         this.controlsPanel.classList.add('collapsed');
         this.toggleHelpButton.textContent = '?';
-    }
-
-    expandControlsPanel() {
+    }    expandControlsPanel() {
         if (!this.controlsPanel || !this.toggleHelpButton) return;
         
         this.controlsPanel.classList.remove('collapsed');
         this.toggleHelpButton.textContent = '×';
+    }
+
+    setupPopulationDisplay() {
+        // Create population display panel
+        const populationPanel = document.createElement('div');
+        populationPanel.id = 'population-panel';
+        populationPanel.style.cssText = `
+            position: fixed;
+            top: 20px;
+            right: 20px;
+            background: rgba(0, 0, 0, 0.8);
+            color: #00ff00;
+            padding: 15px;
+            border-radius: 8px;
+            font-family: 'Courier New', monospace;
+            font-size: 14px;
+            z-index: 1000;
+            min-width: 200px;
+            border: 1px solid #00ff00;
+            box-shadow: 0 0 20px rgba(0, 255, 0, 0.3);
+        `;
+
+        populationPanel.innerHTML = `
+            <div style="font-weight: bold; margin-bottom: 10px; text-align: center;">
+                🌍 WORLD POPULATION
+            </div>
+            <div id="population-count" style="font-size: 18px; text-align: center; margin-bottom: 10px;">
+                Loading...
+            </div>
+            <div id="connection-status" style="font-size: 10px; text-align: center; opacity: 0.7;">
+                Connecting...
+            </div>
+            <div id="last-update" style="font-size: 10px; text-align: center; opacity: 0.7; margin-top: 5px;">
+                ---
+            </div>
+        `;
+
+        document.body.appendChild(populationPanel);
+        
+        this.populationDisplay = populationPanel;
+        this.connectionStatus = populationPanel.querySelector('#connection-status');
+    }
+
+    connectToPopulationManager() {
+        // Subscribe to population updates
+        this.populationUnsubscribe = populationManager.subscribe((eventType, data) => {
+            if (eventType === 'populationUpdate') {
+                this.updatePopulationDisplay(data);
+            } else if (eventType === 'connected') {
+                this.updateConnectionStatus(data);
+            }
+        });
+
+        // Connect to the population server
+        populationManager.connect();
+    }
+
+    updatePopulationDisplay(data) {
+        if (!this.populationDisplay) return;
+
+        const countElement = this.populationDisplay.querySelector('#population-count');
+        const lastUpdateElement = this.populationDisplay.querySelector('#last-update');
+        
+        if (countElement) {
+            countElement.textContent = data.count.toLocaleString();
+        }
+        
+        if (lastUpdateElement) {
+            const updateTime = new Date(data.lastUpdated).toLocaleTimeString();
+            lastUpdateElement.textContent = `Last update: ${updateTime}`;
+        }
+    }
+
+    updateConnectionStatus(isConnected) {
+        if (!this.connectionStatus) return;
+
+        if (isConnected) {
+            this.connectionStatus.textContent = '🔗 Connected';
+            this.connectionStatus.style.color = '#00ff00';
+        } else {
+            this.connectionStatus.textContent = '❌ Disconnected';
+            this.connectionStatus.style.color = '#ff0000';
+        }
+    }
+
+    cleanup() {
+        if (this.populationUnsubscribe) {
+            this.populationUnsubscribe();
+        }
+        populationManager.disconnect();
     }
 
     showMessage(message, type = 'info', duration = 3000) {

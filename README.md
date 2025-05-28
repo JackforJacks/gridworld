@@ -1,19 +1,95 @@
-Hexasphere.js
-=============
-Do you need a sphere that is covered completely in hexagons of equal size?  That isn't possible, but a sphere covered by all hexagons except for twelve pentagons is pretty straightfoward to contruct.  Starting with a icosohedron, subdivide each face to the appropriate resolution, project onto a sphere, and create the hexagons by connecting midpoints of the resulting triangles.  The corner tiles of the original icosohedron are pentagons, but the rest of the sphere will be covered by hexagons.
+GridWorld - Interactive 3D Hexasphere
+=====================================
 
-The technical term for this structure is a [geodesic polyhedron](https://en.wikipedia.org/wiki/Geodesic_polyhedron), with faces grouped into hexagons and pentagons.
+An interactive 3D hexasphere application built with Three.js, featuring real-time population management and modern build tools.
 
-It is not perfect if you want only hexagons on a sphere, but for many applications it is probably good enough.
-
-This is a javascript implementation of the above method.  I use it to build the [Encom Globe](http://github.com/arscan/encom-globe), and it could be used for games or other "useful" applications. At the very least this might be useful as a reference implementation for people trying to something similar.
+**Features:**
+- 🌍 Interactive 3D hexasphere with click-to-select tiles
+- 📊 Real-time population counter that updates every second
+- 🔄 WebSocket-based live data synchronization
+- 🎮 Mouse and keyboard controls for 3D navigation
+- 🚀 Modern build system with hot reload
+- 💾 Persistent data storage in JSON format
 
 ![Screenshot](screenshot.jpg)
 
-Usage
----------
+## Quick Start
 
-The basic usage is as follows: 
+### Development Mode
+```bash
+npm install
+npm run dev
+```
+Open http://localhost:3000 to see the application with hot reload.
+
+### Production Mode
+```bash
+npm install
+npm run build
+npm run server
+```
+Open http://localhost:8080 to see the production application with population management.
+
+## Population Management
+
+The application includes a real-time population management system:
+
+- **Population Display**: Real-time counter in the top-right corner
+- **Auto Growth**: Population increases by 1 every second
+- **Data Persistence**: Population data is saved to `data.json`
+- **WebSocket Sync**: All connected clients see updates instantly
+
+### API Endpoints
+
+- `GET /api/population` - Get current population data
+- `POST /api/population` - Update population count or growth rate
+- `GET /api/population/reset` - Reset population to 1,000,000
+
+### Example API Usage
+
+```bash
+# Get current population
+curl http://localhost:8080/api/population
+
+# Update population to 5 million with growth rate of 2 per second
+curl -X POST http://localhost:8080/api/population \
+  -H "Content-Type: application/json" \
+  -d '{"count": 5000000, "rate": 2}'
+
+# Reset to default
+curl http://localhost:8080/api/population/reset
+```
+
+## Development
+
+### Available Scripts
+
+- `npm run dev` - Start development server with hot reload
+- `npm run build` - Build for production
+- `npm run server` - Start production server
+- `npm run prod` - Build and start production server
+- `npm run clean` - Clean build artifacts
+
+### Project Structure
+
+```
+src/
+├── main.js              # Entry point
+├── population-manager.js # Real-time population management
+├── ui-manager.js         # UI components and population display
+├── scene-manager.js      # Three.js scene management
+├── camera-controller.js  # Camera controls
+├── input-handler.js      # Input event handling
+└── Sphere/              # Hexasphere implementation
+    ├── hexaSphere.js    # Main sphere generator
+    ├── tile.js          # Individual tile logic
+    ├── face.js          # Face geometry
+    └── ...
+```
+
+## Technical Details
+
+### Hexasphere Generation 
 
 ```javascript
 var radius = 15;        // Radius used to calculate position of tiles
