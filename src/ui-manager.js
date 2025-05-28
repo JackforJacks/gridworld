@@ -11,11 +11,10 @@ class UIManager {
         this.connectionStatus = null;
         this.isInitialized = false;
         this.populationUnsubscribe = null;
-    }
-
-    initialize() {
+    }    initialize() {
         this.setupControlsPanel();
         this.setupPopulationDisplay();
+        this.setupResetButtons();
         this.connectToPopulationManager();
         this.isInitialized = true;
     }
@@ -83,8 +82,70 @@ class UIManager {
             <span id="last-update" style="font-size: 12px; opacity: 0.7; margin-left: 8px;">---</span>
         `;
         dashboard.appendChild(populationWrapper);
-        this.populationDisplay = populationWrapper;
-        this.connectionStatus = populationWrapper.querySelector('#connection-status');
+        this.populationDisplay = populationWrapper;        this.connectionStatus = populationWrapper.querySelector('#connection-status');
+    }
+
+    setupResetButtons() {
+        const resetColorsButton = document.getElementById('reset-colors');
+        const resetPopulationButton = document.getElementById('reset-population');
+
+        if (resetColorsButton) {
+            resetColorsButton.addEventListener('click', () => {
+                this.handleResetColors();
+            });
+        }
+
+        if (resetPopulationButton) {
+            resetPopulationButton.addEventListener('click', () => {
+                this.handleResetPopulation();
+            });
+        }
+    }
+
+    async handleResetColors() {
+        if (!window.sceneManager) {
+            this.showMessage('Scene manager not available', 'error');
+            return;
+        }
+
+        try {
+            const resetCount = window.sceneManager.resetTileColors();
+            if (resetCount > 0) {
+                this.showMessage(`🎨 Reset ${resetCount} tiles to original colors`, 'success');
+            } else {
+                this.showMessage('No tiles needed color reset', 'info');
+            }
+        } catch (error) {
+            console.error('Failed to reset tile colors:', error);
+            this.showMessage('Failed to reset tile colors', 'error');
+        }
+    }
+
+    async handleResetPopulation() {
+        if (!populationManager) {
+            this.showMessage('Population manager not available', 'error');
+            return;
+        }
+
+        try {
+            // Show confirmation dialog
+            if (!confirm('Are you sure you want to reset all population data? This action cannot be undone.')) {
+                return;
+            }
+
+            // Reset population data on server
+            await populationManager.resetPopulation();
+            
+            // Also reset tile colors since populations will be zero
+            if (window.sceneManager) {
+                window.sceneManager.resetTileColors();
+            }
+
+            this.showMessage('🏘️ Population data and tile colors reset successfully', 'success');
+        } catch (error) {
+            console.error('Failed to reset population:', error);
+            this.showMessage('Failed to reset population data', 'error');
+        }
     }
 
     connectToPopulationManager() {

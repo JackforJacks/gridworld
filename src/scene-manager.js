@@ -10,12 +10,13 @@ class SceneManager {
     constructor() {
         this.scene = null;
         this.renderer = null;
-        this.hexasphere = null;
-        this.currentTiles = [];
+        this.hexasphere = null;        this.currentTiles = [];
         this.cameraLight = null;
         this.ambientLight = null;
         this.directionalLight = null;
         this.populationUnsubscribe = null;
+        this.tileColorIndices = new Map(); // Track color indices for each tile
+        this.hexasphereMesh = null; // Reference to the main mesh for color updates
     }
 
     initialize(width, height) {
@@ -25,12 +26,11 @@ class SceneManager {
         this.renderer.setClearColor(0x000000, 0);
 
         // Create scene
-        this.scene = new THREE.Scene();
-
-        // Subscribe to population updates to keep tile data current
+        this.scene = new THREE.Scene();        // Subscribe to population updates to keep tile data current
         this.populationUnsubscribe = populationManager.subscribe((eventType, data) => {
             if (eventType === 'populationUpdate') {
                 this.updateTilePopulations();
+                this.checkPopulationThresholds(); // Check for color changes
             }
         });
 
@@ -50,10 +50,9 @@ class SceneManager {
         const vertices = [];
         const colors = [];
         const indices = [];
-        let vertexIndex = 0;
-
-        const generatedTileData = [];
+        let vertexIndex = 0;        const generatedTileData = [];
         const habitableTileIds = []; // Track habitable tiles for population initialization
+        let colorIndex = 0; // Track color array index for each tile
 
         this.hexasphere.tiles.forEach((tile, idx) => {
             // Calculate terrain type and coordinates
@@ -73,9 +72,21 @@ class SceneManager {
             // Get color for terrain type
             const color = this.getTerrainColor(terrainType);
 
+            // Store color indices for this tile
+            const tileColorStart = colorIndex;
+            const tileVertexCount = (tile.boundary.length - 2) * 3 * 3; // vertices per triangle * 3 color components
+            this.tileColorIndices.set(tile.id, {
+                start: tileColorStart,
+                count: tileVertexCount,
+                originalColor: color.clone(),
+                currentColor: color.clone(),
+                isHighlighted: false
+            });
+
             // Create geometry for this tile
             this.addTileGeometry(tile, color, vertices, colors, indices, vertexIndex);
             vertexIndex += (tile.boundary.length - 2) * 3;
+            colorIndex += tileVertexCount;
 
             generatedTileData.push({
                 tileId: tile.id,
@@ -105,9 +116,7 @@ class SceneManager {
         } catch (error) {
             console.error('❌ Failed to initialize tile populations:', error);
         }
-    }
-
-    // Update tile objects with current population data
+    }    // Update tile objects with current population data
     updateTilePopulations() {
         if (!this.hexasphere || !this.hexasphere.tiles) return;
 
@@ -122,6 +131,106 @@ class SceneManager {
         });
 
         console.log(`📊 Updated population data for ${Object.keys(tilePopulations).length} habitable tiles`);
+    }
+
+    // Check for population thresholds and update tile colors
+    checkPopulationThresholds() {
+        if (!this.hexasphere || !this.hexasphere.tiles || !this.hexasphereMesh) return;
+
+        const POPULATION_THRESHOLD = 10000;
+        const redColor = new THREE.Color(0xff0000); // Red color for high population
+        let changesDetected = false;
+
+        this.hexasphere.tiles.forEach(tile => {
+            if (tile.Habitable === 'yes' && tile.population !== undefined) {
+                const colorInfo = this.tileColorIndices.get(tile.id);
+                if (!colorInfo) return;
+
+                const shouldBeRed = tile.population >= POPULATION_THRESHOLD;
+                
+                // Check if color state needs to change
+                if (shouldBeRed && !colorInfo.isHighlighted) {
+                    // Change to red
+                    this.updateTileColor(tile.id, redColor);
+                    colorInfo.isHighlighted = true;
+                    colorInfo.currentColor = redColor.clone();
+                    changesDetected = true;
+                    console.log(`🔴 Tile ${tile.id} turned red - Population: ${tile.population.toLocaleString()}`);
+                } else if (!shouldBeRed && colorInfo.isHighlighted) {
+                    // Revert to original color
+                    this.updateTileColor(tile.id, colorInfo.originalColor);
+                    colorInfo.isHighlighted = false;
+                    colorInfo.currentColor = colorInfo.originalColor.clone();
+                    changesDetected = true;
+                    console.log(`🟢 Tile ${tile.id} reverted to original color - Population: ${tile.population.toLocaleString()}`);
+                }
+            }
+        });
+
+        if (changesDetected) {
+            console.log(`🎨 Updated tile colors based on population thresholds`);
+        }
+    }
+
+    // Update color of a specific tile
+    updateTileColor(tileId, newColor) {
+        if (!this.hexasphereMesh || !this.hexasphereMesh.geometry) return;
+
+        const colorInfo = this.tileColorIndices.get(tileId);
+        if (!colorInfo) return;
+
+        const colorAttribute = this.hexasphereMesh.geometry.getAttribute('color');
+        if (!colorAttribute) return;
+
+        // Update all color components for this tile's vertices
+        for (let i = colorInfo.start; i < colorInfo.start + colorInfo.count; i += 3) {
+            colorAttribute.setXYZ(i / 3, newColor.r, newColor.g, newColor.b);
+        }
+
+        // Mark the color attribute as needing update
+        colorAttribute.needsUpdate = true;
+    }
+
+    // Reset all tile colors to their original terrain-based colors
+    resetTileColors() {
+        if (!this.hexasphere || !this.hexasphere.tiles || !this.hexasphereMesh) {
+            console.warn('⚠️ Cannot reset colors: missing hexasphere data');
+            return;
+        }
+
+        let resetCount = 0;
+        this.hexasphere.tiles.forEach(tile => {
+            const colorInfo = this.tileColorIndices.get(tile.id);
+            if (colorInfo && colorInfo.isHighlighted) {
+                this.updateTileColor(tile.id, colorInfo.originalColor);
+                colorInfo.isHighlighted = false;
+                colorInfo.currentColor = colorInfo.originalColor.clone();
+                resetCount++;
+            }
+        });
+
+        console.log(`🎨 Reset ${resetCount} tiles to original colors`);
+        return resetCount;
+    }
+
+    // Update the color of a specific tile
+    updateTileColor(tileId, newColor) {
+        if (!this.hexasphereMesh || !this.tileColorIndices.has(tileId)) return;
+
+        const colorInfo = this.tileColorIndices.get(tileId);
+        const colorAttribute = this.hexasphereMesh.geometry.attributes.color;
+
+        // Update all color components for this tile's vertices
+        for (let i = 0; i < colorInfo.count; i += 3) {
+            const index = (colorInfo.start + i) / 3;
+            colorAttribute.setXYZ(index, newColor.r, newColor.g, newColor.b);
+        }
+
+        // Mark the color attribute as needing update
+        colorAttribute.needsUpdate = true;
+        
+        // Store the current color
+        colorInfo.currentColor = newColor.clone();
     }
 
     calculateTileProperties(tile) {
@@ -188,12 +297,15 @@ class SceneManager {
         geometry.setAttribute('position', new THREE.Float32BufferAttribute(vertices, 3));
         geometry.setAttribute('color', new THREE.Float32BufferAttribute(colors, 3));
         geometry.setIndex(indices);
-        geometry.computeVertexNormals();
-
-        const material = new THREE.MeshPhongMaterial({
+        geometry.computeVertexNormals();        const material = new THREE.MeshPhongMaterial({
             vertexColors: true,
             side: THREE.DoubleSide
-        }); const hexasphereMesh = new THREE.Mesh(geometry, material);
+        }); 
+        
+        const hexasphereMesh = new THREE.Mesh(geometry, material);
+        // Store reference to the mesh for color updates
+        this.hexasphereMesh = hexasphereMesh;
+        
         // Simplified userData - no separate tileData structure needed
         hexasphereMesh.userData = { hexasphere: this.hexasphere };
 
@@ -202,13 +314,15 @@ class SceneManager {
 
         // Update global reference
         window.currentTiles = this.currentTiles;
-    }
-
-    clearTiles() {
+    }    clearTiles() {
         if (this.currentTiles && this.currentTiles.length > 0) {
             this.currentTiles.forEach(tileMesh => this.scene.remove(tileMesh));
             this.currentTiles.length = 0;
         }
+        
+        // Clear color tracking data
+        this.tileColorIndices.clear();
+        this.hexasphereMesh = null;
     }
 
     addLighting(camera, sphereRadius = 30) {
@@ -254,7 +368,7 @@ class SceneManager {
 
     getCurrentTiles() {
         return this.currentTiles;
-    } getTileData() {
+    }    getTileData() {
         // Return tile properties directly from the hexasphere tiles
         if (!this.hexasphere || !this.hexasphere.tiles) {
             return {};
@@ -266,6 +380,67 @@ class SceneManager {
         });
 
         return tileData;
+    }    // Get statistics about tile population thresholds
+    getPopulationStats() {
+        if (!this.hexasphere || !this.hexasphere.tiles) {
+            return { error: 'No hexasphere data available' };
+        }
+
+        const POPULATION_THRESHOLD = 10000;
+        let totalTiles = 0;
+        let habitableTiles = 0;
+        let populatedTiles = 0;
+        let highPopulationTiles = 0;
+        let redTiles = 0;
+
+        this.hexasphere.tiles.forEach(tile => {
+            totalTiles++;
+            if (tile.Habitable === 'yes') {
+                habitableTiles++;
+                if (tile.population > 0) {
+                    populatedTiles++;
+                }
+                if (tile.population >= POPULATION_THRESHOLD) {
+                    highPopulationTiles++;
+                }
+                
+                // Check if tile is currently red
+                const colorInfo = this.tileColorIndices.get(tile.id);
+                if (colorInfo && colorInfo.isHighlighted) {
+                    redTiles++;
+                }
+            }
+        });
+
+        return {
+            totalTiles,
+            habitableTiles,
+            populatedTiles,
+            highPopulationTiles,
+            redTiles,
+            threshold: POPULATION_THRESHOLD
+        };    }
+
+    // Reset all tile colors to their original terrain-based colors
+    resetTileColors() {
+        if (!this.hexasphere || !this.hexasphere.tiles || !this.hexasphereMesh) {
+            console.warn('⚠️ Cannot reset colors: missing hexasphere data');
+            return 0;
+        }
+
+        let resetCount = 0;
+        this.hexasphere.tiles.forEach(tile => {
+            const colorInfo = this.tileColorIndices.get(tile.id);
+            if (colorInfo && colorInfo.isHighlighted) {
+                this.updateTileColor(tile.id, colorInfo.originalColor);
+                colorInfo.isHighlighted = false;
+                colorInfo.currentColor = colorInfo.originalColor.clone();
+                resetCount++;
+            }
+        });
+
+        console.log(`🎨 Reset ${resetCount} tiles to original colors`);
+        return resetCount;
     }
 
     cleanup() {
@@ -274,6 +449,9 @@ class SceneManager {
             this.populationUnsubscribe();
             this.populationUnsubscribe = null;
         }
+        
+        // Clear tiles and color tracking
+        this.clearTiles();
     }
 }
 

@@ -1,6 +1,6 @@
 {
     "watch": [
-        "server.js",
+        "server/**/*.js",
         "src/**/*.js",
         "package.json"
     ],
