@@ -83,8 +83,6 @@ class GridWorldApp {
             await this.initializeGameData();
 
             this.uiManager.hideLoadingIndicator();
-            this.uiManager.showMessage('GridWorld initialized successfully!', 'success');
-
             this.isInitialized = true;
             return true;
 
