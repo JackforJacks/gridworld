@@ -40,23 +40,23 @@ class GridWorldApp {
         }
 
         try {
-            // Initialize UI manager
-            this.uiManager = new UIManager();
-            this.uiManager.initialize();
-            this.uiManager.showLoadingIndicator('Initializing GridWorld...');
-
-            // Get container element
-            const container = this.uiManager.getContainer();
-            if (!container) return false;
-
-            // Initialize scene manager
+            // Initialize scene manager first, as UIManager might depend on it
             const width = window.innerWidth;
-            const height = window.innerHeight - 10;
+            const height = window.innerHeight - 10; // Adjust for potential UI elements
 
             this.sceneManager = new SceneManager();
             const { scene, renderer } = this.sceneManager.initialize(width, height);
             this.scene = scene;
             this.renderer = renderer;
+
+            // Initialize UI manager, passing sceneManager if needed
+            this.uiManager = new UIManager(this.sceneManager); // Pass sceneManager to UIManager constructor
+            this.uiManager.initialize(this.sceneManager); // Or pass it here if preferred by UIManager's design
+            this.uiManager.showLoadingIndicator('Initializing GridWorld...');
+
+            // Get container element
+            const container = this.uiManager.getContainer();
+            if (!container) return false;
 
             // Create camera
             this.camera = new THREE.PerspectiveCamera(45, width / height, 1, 200);
@@ -68,7 +68,7 @@ class GridWorldApp {
             this.tileSelector = new TileSelector(this.scene, this.camera);
 
             // Initialize input handler with references to other modules
-            this.inputHandler = new InputHandler(this.renderer, this.cameraController, this.tileSelector);
+            this.inputHandler = new InputHandler(this.renderer, this.cameraController, this.tileSelector, this.uiManager);
 
             // Append renderer to container
             container.appendChild(this.renderer.domElement);
@@ -102,6 +102,7 @@ class GridWorldApp {
         window.renderer = this.renderer;
         window.camera = this.camera;
         window.sceneManager = this.sceneManager; // Expose sceneManager as single source of truth
+        window.uiManager = this.uiManager; // Expose uiManager globally if needed
         window.hexasphere = null; // Will be set by scene manager
         window.currentTiles = [];
         window.tilePopup = document.getElementById('tilePopup');

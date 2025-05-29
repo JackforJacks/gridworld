@@ -176,7 +176,6 @@ body {
     /* Include padding and border in the element's total width and height */
     z-index: 1000;
     /* Ensure it's above other elements like the canvas */
-    text-align: center;
     display: flex;
     align-items: center;
     gap: 16px;
@@ -202,7 +201,10 @@ body {
     display: inline-flex;
     align-items: center;
     justify-content: center;
+    margin-left: auto;
+    /* This will push the button to the right */
     margin-right: 10px;
+    /* Keeps some space from the edge */
     vertical-align: middle;
     box-shadow: 0 2px 6px rgba(0, 0, 0, 0.2);
     transition: background 0.2s;
@@ -371,4 +373,133 @@ kbd {
     height: 100%;
     z-index: 1;
     background: transparent;
+}
+
+/* UI Manager Dynamically Created Elements */
+
+/* Population Panel */
+.population-panel-wrapper {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    /* margin-left: 20px; */
+    /* Adjusted for flex layout, gap will handle spacing */
+    font-family: 'Courier New', monospace;
+    font-size: 16px;
+}
+
+.population-panel-icon {
+    font-weight: bold;
+}
+
+#population-count {
+    /* Styles for connected/disconnected states will be applied via classList */
+    /* Add a default style to avoid empty ruleset */
+    transition: color 0.3s ease;
+}
+
+#population-count.connected {
+    color: #00ff00;
+    /* Green */
+}
+
+#population-count.disconnected {
+    color: #ff0000;
+    /* Red */
+}
+
+/* Message Container and Elements */
+.message-container {
+    position: fixed;
+    top: 20px;
+    right: 20px;
+    z-index: 10000;
+    max-width: 300px;
+}
+
+.message-element {
+    padding: 12px 16px;
+    margin-bottom: 10px;
+    border-radius: 4px;
+    color: white;
+    font-family: Arial, sans-serif;
+    font-size: 14px;
+    box-shadow: 0 2px 6px rgba(0, 0, 0, 0.3);
+    opacity: 0;
+    transform: translateX(100%);
+    transition: all 0.3s ease;
+    /* background-color will be set by type-specific classes */
+}
+
+.message-element.info {
+    background-color: #2196F3;
+}
+
+.message-element.success {
+    background-color: #4CAF50;
+}
+
+.message-element.warning {
+    background-color: #FF9800;
+}
+
+.message-element.error {
+    background-color: #F44336;
+}
+
+.message-element.visible {
+    opacity: 1;
+    transform: translateX(0);
+}
+
+/* Loading Indicator */
+.loading-indicator {
+    position: fixed;
+    top: 50%;
+    left: 50%;
+    transform: translate(-50%, -50%);
+    background: rgba(0, 0, 0, 0.8);
+    color: white;
+    padding: 20px 30px;
+    border-radius: 8px;
+    font-family: Arial, sans-serif;
+    font-size: 16px;
+    z-index: 10001;
+    display: flex;
+    align-items: center;
+    gap: 15px;
+}
+
+.loading-indicator-spinner {
+    width: 20px;
+    height: 20px;
+    border: 2px solid #333;
+    border-top: 2px solid #fff;
+    border-radius: 50%;
+    animation: spin 1s linear infinite;
+}
+
+/* Spinner Animation (if not already defined elsewhere) */
+@keyframes spin {
+    0% {
+        transform: rotate(0deg);
+    }
+
+    100% {
+        transform: rotate(360deg);
+    }
+}
+
+/* Stats Panel */
+.stats-panel {
+    position: fixed;
+    bottom: 20px;
+    left: 20px;
+    background: rgba(0, 0, 0, 0.7);
+    color: white;
+    padding: 10px 15px;
+    border-radius: 4px;
+    font-family: monospace;
+    font-size: 12px;
+    z-index: 1000;
 }

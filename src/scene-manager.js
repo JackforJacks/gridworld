@@ -10,13 +10,14 @@ class SceneManager {
     constructor() {
         this.scene = null;
         this.renderer = null;
-        this.hexasphere = null;        this.currentTiles = [];
+        this.hexasphere = null; this.currentTiles = [];
         this.cameraLight = null;
         this.ambientLight = null;
         this.directionalLight = null;
         this.populationUnsubscribe = null;
         this.tileColorIndices = new Map(); // Track color indices for each tile
         this.hexasphereMesh = null; // Reference to the main mesh for color updates
+        this.habitableTileIds = []; // Store IDs of habitable tiles
     }
 
     initialize(width, height) {
@@ -50,8 +51,8 @@ class SceneManager {
         const vertices = [];
         const colors = [];
         const indices = [];
-        let vertexIndex = 0;        const generatedTileData = [];
-        const habitableTileIds = []; // Track habitable tiles for population initialization
+        let vertexIndex = 0; const generatedTileData = [];
+        this.habitableTileIds = []; // Initialize for this creation
         let colorIndex = 0; // Track color array index for each tile
 
         this.hexasphere.tiles.forEach((tile, idx) => {
@@ -66,7 +67,7 @@ class SceneManager {
 
             // Track habitable tiles for population initialization
             if (Habitable === 'yes') {
-                habitableTileIds.push(idx);
+                this.habitableTileIds.push(idx);
             }
 
             // Get color for terrain type
@@ -100,7 +101,7 @@ class SceneManager {
         this.createHexasphereMesh(hexasphereGeometry, vertices, colors, indices);
 
         // Initialize tile populations for habitable tiles
-        this.initializeTilePopulations(habitableTileIds);
+        this.initializeTilePopulations(this.habitableTileIds);
 
         return generatedTileData;
     }
@@ -147,7 +148,7 @@ class SceneManager {
                 if (!colorInfo) return;
 
                 const shouldBeRed = tile.population >= POPULATION_THRESHOLD;
-                
+
                 // Check if color state needs to change
                 if (shouldBeRed && !colorInfo.isHighlighted) {
                     // Change to red
@@ -201,7 +202,7 @@ class SceneManager {
         let resetCount = 0;
         this.hexasphere.tiles.forEach(tile => {
             const colorInfo = this.tileColorIndices.get(tile.id);
-            if (colorInfo && colorInfo.isHighlighted) {
+            if (colorInfo && colorInfo.isHighlighted) { // Corrected syntax: added parentheses
                 this.updateTileColor(tile.id, colorInfo.originalColor);
                 colorInfo.isHighlighted = false;
                 colorInfo.currentColor = colorInfo.originalColor.clone();
@@ -213,24 +214,23 @@ class SceneManager {
         return resetCount;
     }
 
-    // Update the color of a specific tile
-    updateTileColor(tileId, newColor) {
-        if (!this.hexasphereMesh || !this.tileColorIndices.has(tileId)) return;
-
-        const colorInfo = this.tileColorIndices.get(tileId);
-        const colorAttribute = this.hexasphereMesh.geometry.attributes.color;
-
-        // Update all color components for this tile's vertices
-        for (let i = 0; i < colorInfo.count; i += 3) {
-            const index = (colorInfo.start + i) / 3;
-            colorAttribute.setXYZ(index, newColor.r, newColor.g, newColor.b);
+    // Method to re-initialize population on habitable tiles
+    async reinitializePopulation() {
+        if (!this.habitableTileIds || this.habitableTileIds.length === 0) {
+            console.warn('⚠️ Cannot reinitialize population: habitable tile IDs not available or hexasphere not created yet.');
+            // Potentially, we could try to regenerate them if the hexasphere exists
+            // but for now, we assume createHexasphere must have been called.
+            return;
         }
-
-        // Mark the color attribute as needing update
-        colorAttribute.needsUpdate = true;
-        
-        // Store the current color
-        colorInfo.currentColor = newColor.clone();
+        console.log(`🔄 Reinitializing population for ${this.habitableTileIds.length} habitable tiles...`);
+        try {
+            await this.initializeTilePopulations(this.habitableTileIds);
+            // Ensure UI reflects the reset and new initialization
+            this.checkPopulationThresholds(); // Re-check thresholds after re-initialization
+            console.log('✅ Population reinitialized and thresholds checked.');
+        } catch (error) {
+            console.error('❌ Failed to reinitialize population:', error);
+        }
     }
 
     calculateTileProperties(tile) {
@@ -297,15 +297,15 @@ class SceneManager {
         geometry.setAttribute('position', new THREE.Float32BufferAttribute(vertices, 3));
         geometry.setAttribute('color', new THREE.Float32BufferAttribute(colors, 3));
         geometry.setIndex(indices);
-        geometry.computeVertexNormals();        const material = new THREE.MeshPhongMaterial({
+        geometry.computeVertexNormals(); const material = new THREE.MeshPhongMaterial({
             vertexColors: true,
             side: THREE.DoubleSide
-        }); 
-        
+        });
+
         const hexasphereMesh = new THREE.Mesh(geometry, material);
         // Store reference to the mesh for color updates
         this.hexasphereMesh = hexasphereMesh;
-        
+
         // Simplified userData - no separate tileData structure needed
         hexasphereMesh.userData = { hexasphere: this.hexasphere };
 
@@ -314,12 +314,12 @@ class SceneManager {
 
         // Update global reference
         window.currentTiles = this.currentTiles;
-    }    clearTiles() {
+    } clearTiles() {
         if (this.currentTiles && this.currentTiles.length > 0) {
             this.currentTiles.forEach(tileMesh => this.scene.remove(tileMesh));
             this.currentTiles.length = 0;
         }
-        
+
         // Clear color tracking data
         this.tileColorIndices.clear();
         this.hexasphereMesh = null;
@@ -368,7 +368,7 @@ class SceneManager {
 
     getCurrentTiles() {
         return this.currentTiles;
-    }    getTileData() {
+    } getTileData() {
         // Return tile properties directly from the hexasphere tiles
         if (!this.hexasphere || !this.hexasphere.tiles) {
             return {};
@@ -403,7 +403,7 @@ class SceneManager {
                 if (tile.population >= POPULATION_THRESHOLD) {
                     highPopulationTiles++;
                 }
-                
+
                 // Check if tile is currently red
                 const colorInfo = this.tileColorIndices.get(tile.id);
                 if (colorInfo && colorInfo.isHighlighted) {
@@ -419,28 +419,7 @@ class SceneManager {
             highPopulationTiles,
             redTiles,
             threshold: POPULATION_THRESHOLD
-        };    }
-
-    // Reset all tile colors to their original terrain-based colors
-    resetTileColors() {
-        if (!this.hexasphere || !this.hexasphere.tiles || !this.hexasphereMesh) {
-            console.warn('⚠️ Cannot reset colors: missing hexasphere data');
-            return 0;
-        }
-
-        let resetCount = 0;
-        this.hexasphere.tiles.forEach(tile => {
-            const colorInfo = this.tileColorIndices.get(tile.id);
-            if (colorInfo && colorInfo.isHighlighted) {
-                this.updateTileColor(tile.id, colorInfo.originalColor);
-                colorInfo.isHighlighted = false;
-                colorInfo.currentColor = colorInfo.originalColor.clone();
-                resetCount++;
-            }
-        });
-
-        console.log(`🎨 Reset ${resetCount} tiles to original colors`);
-        return resetCount;
+        };
     }
 
     cleanup() {
@@ -449,7 +428,7 @@ class SceneManager {
             this.populationUnsubscribe();
             this.populationUnsubscribe = null;
         }
-        
+
         // Clear tiles and color tracking
         this.clearTiles();
     }

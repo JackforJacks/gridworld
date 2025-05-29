@@ -4,14 +4,16 @@
 import populationManager from './population-manager.js';
 
 class UIManager {
-    constructor() {
+    constructor(sceneManager) {
         this.controlsPanel = null;
         this.toggleHelpButton = null;
         this.populationDisplay = null;
         this.connectionStatus = null;
         this.isInitialized = false;
         this.populationUnsubscribe = null;
-    }    initialize() {
+        this.sceneManager = sceneManager; // Store sceneManager instance
+    } initialize() { // sceneManager parameter removed
+        // this.sceneManager = sceneManager; // This line removed
         this.setupControlsPanel();
         this.setupPopulationDisplay();
         this.setupResetButtons();
@@ -66,85 +68,94 @@ class UIManager {
         // Create population display elements
         const populationWrapper = document.createElement('span');
         populationWrapper.id = 'population-panel';
-        populationWrapper.style.cssText = `
-            display: inline-flex;
-            align-items: center;
-            gap: 8px;
-            margin-left: 20px;
-            font-family: 'Courier New', monospace;
-            font-size: 16px;
-            color: #00ff00;
-        `;
+        populationWrapper.classList.add('population-panel-wrapper'); // Add class for styling
+
         populationWrapper.innerHTML = `
-            <span style="font-weight: bold;">🌍 Population:</span>
-            <span id="population-count">Loading...</span>
-            <span id="connection-status" style="font-size: 12px; opacity: 0.7; margin-left: 8px;">Connecting...</span>
-            <span id="last-update" style="font-size: 12px; opacity: 0.7; margin-left: 8px;">---</span>
-        `;
-        dashboard.appendChild(populationWrapper);
-        this.populationDisplay = populationWrapper;        this.connectionStatus = populationWrapper.querySelector('#connection-status');
-    }
+            <span class="population-panel-icon">👥</span>
+            <span id="population-count">Loading...</span>`;
 
-    setupResetButtons() {
-        const resetColorsButton = document.getElementById('reset-colors');
-        const resetPopulationButton = document.getElementById('reset-population');
+        const statsButton = document.getElementById('show-stats');
+        const toggleHelpButton = document.getElementById('toggle-help');
 
-        if (resetColorsButton) {
-            resetColorsButton.addEventListener('click', () => {
-                this.handleResetColors();
+        if (statsButton) {
+            statsButton.insertAdjacentElement('afterend', populationWrapper);
+        } else if (toggleHelpButton) {
+            // Fallback: if stats button is not found, insert before the help button
+            dashboard.insertBefore(populationWrapper, toggleHelpButton);
+        } else {
+            // Fallback: if neither button is found, append to dashboard
+            dashboard.appendChild(populationWrapper);
+        }
+
+        this.populationDisplay = populationWrapper;
+    } setupResetButtons() {
+        const resetDataButton = document.getElementById('reset-data');
+        const showStatsButton = document.getElementById('show-stats');
+
+        if (resetDataButton) {
+            resetDataButton.addEventListener('click', () => {
+                this.handleResetData();
             });
         }
 
-        if (resetPopulationButton) {
-            resetPopulationButton.addEventListener('click', () => {
-                this.handleResetPopulation();
+        if (showStatsButton) {
+            showStatsButton.addEventListener('click', () => {
+                this.handleShowStats();
             });
+        }
+    } async handleResetData() {
+        if (!this.sceneManager) {
+            console.error("SceneManager not available in UIManager for reset.");
+            return;
+        }
+        try {
+            console.log("🔄 Resetting all data...");
+
+            // 1. Reset population data on the server
+            await populationManager.resetPopulation();
+            console.log("🏘️ Population data reset on server.");
+
+            // 2. Reset tile colors on the client
+            this.sceneManager.resetTileColors();
+            console.log("🎨 Tile colors reset on client.");
+
+            // 3. Re-initialize population on habitable tiles
+            await this.sceneManager.reinitializePopulation();
+            console.log("🌱 Population re-initialized on habitable tiles.");
+
+            // Optional: Update UI or provide feedback
+            this.updatePopulationDisplay(); // Refresh population display if needed
+            console.log("✅ All data reset successfully!");
+
+        } catch (error) {
+            console.error("❌ Error during data reset:", error);
+            // Optionally, display an error message to the user
         }
     }
 
-    async handleResetColors() {
+    async handleShowStats() {
         if (!window.sceneManager) {
             this.showMessage('Scene manager not available', 'error');
             return;
         }
 
         try {
-            const resetCount = window.sceneManager.resetTileColors();
-            if (resetCount > 0) {
-                this.showMessage(`🎨 Reset ${resetCount} tiles to original colors`, 'success');
-            } else {
-                this.showMessage('No tiles needed color reset', 'info');
-            }
+            const stats = window.sceneManager.getPopulationStats();
+            const growthStats = populationManager.getGrowthStats();
+
+            const message = `📊 POPULATION STATISTICS
+Total Tiles: ${stats.totalTiles}
+Habitable Tiles: ${stats.habitableTiles}
+Populated Tiles: ${stats.populatedTiles}
+High Pop Tiles (≥${stats.threshold}): ${stats.highPopulationTiles}
+Red Tiles: ${stats.redTiles}
+Average Pop/Tile: ${Math.round(growthStats.averagePopulationPerTile)}`;
+
+            this.showMessage(message, 'info', 8000);
+            console.log('📊 Population Statistics:', { stats, growthStats });
         } catch (error) {
-            console.error('Failed to reset tile colors:', error);
-            this.showMessage('Failed to reset tile colors', 'error');
-        }
-    }
-
-    async handleResetPopulation() {
-        if (!populationManager) {
-            this.showMessage('Population manager not available', 'error');
-            return;
-        }
-
-        try {
-            // Show confirmation dialog
-            if (!confirm('Are you sure you want to reset all population data? This action cannot be undone.')) {
-                return;
-            }
-
-            // Reset population data on server
-            await populationManager.resetPopulation();
-            
-            // Also reset tile colors since populations will be zero
-            if (window.sceneManager) {
-                window.sceneManager.resetTileColors();
-            }
-
-            this.showMessage('🏘️ Population data and tile colors reset successfully', 'success');
-        } catch (error) {
-            console.error('Failed to reset population:', error);
-            this.showMessage('Failed to reset population data', 'error');
+            console.error('Failed to get statistics:', error);
+            this.showMessage('Failed to get statistics', 'error');
         }
     }
 
@@ -164,7 +175,7 @@ class UIManager {
         if (!this.populationDisplay) return;
 
         const countElement = this.populationDisplay.querySelector('#population-count');
-        const lastUpdateElement = this.populationDisplay.querySelector('#last-update');
+        // const lastUpdateElement = this.populationDisplay.querySelector('#last-update'); // Removed
 
         if (countElement) {
             // Use totalPopulation from the new data structure
@@ -172,23 +183,26 @@ class UIManager {
             countElement.textContent = totalPop.toLocaleString();
         }
 
-        if (lastUpdateElement) {
-            // Use globalData.lastUpdated from the new data structure
-            const lastUpdated = data.globalData ? data.globalData.lastUpdated : data.lastUpdated;
-            const updateTime = new Date(lastUpdated).toLocaleTimeString();
-            lastUpdateElement.textContent = `Last update: ${updateTime}`;
-        }
+        // if (lastUpdateElement) { // Removed
+        //     // Use globalData.lastUpdated from the new data structure
+        //     const lastUpdated = data.globalData ? data.globalData.lastUpdated : data.lastUpdated;
+        //     const updateTime = new Date(lastUpdated).toLocaleTimeString();
+        //     lastUpdateElement.textContent = `Last update: ${updateTime}`;
+        // }
     }
 
     updateConnectionStatus(isConnected) {
-        if (!this.connectionStatus) return;
+        if (!this.populationDisplay) return;
+        const countElement = this.populationDisplay.querySelector('#population-count');
 
-        if (isConnected) {
-            this.connectionStatus.textContent = '🔗 Connected';
-            this.connectionStatus.style.color = '#00ff00';
-        } else {
-            this.connectionStatus.textContent = '❌ Disconnected';
-            this.connectionStatus.style.color = '#ff0000';
+        if (countElement) {
+            if (isConnected) {
+                countElement.classList.remove('disconnected');
+                countElement.classList.add('connected');
+            } else {
+                countElement.classList.remove('connected');
+                countElement.classList.add('disconnected');
+            }
         }
     }
 
@@ -205,39 +219,20 @@ class UIManager {
         if (!messageContainer) {
             messageContainer = document.createElement('div');
             messageContainer.id = 'message-container';
-            messageContainer.style.cssText = `
-                position: fixed;
-                top: 20px;
-                right: 20px;
-                z-index: 10000;
-                max-width: 300px;
-            `;
+            messageContainer.classList.add('message-container'); // Add class
             document.body.appendChild(messageContainer);
         }
 
         // Create message element
         const messageElement = document.createElement('div');
-        messageElement.style.cssText = `
-            padding: 12px 16px;
-            margin-bottom: 10px;
-            border-radius: 4px;
-            color: white;
-            font-family: Arial, sans-serif;
-            font-size: 14px;
-            box-shadow: 0 2px 6px rgba(0,0,0,0.3);
-            opacity: 0;
-            transform: translateX(100%);
-            transition: all 0.3s ease;
-            background-color: ${this.getMessageColor(type)};
-        `;
+        messageElement.classList.add('message-element', type); // Add base and type class
         messageElement.textContent = message;
 
         messageContainer.appendChild(messageElement);
 
         // Animate in
         setTimeout(() => {
-            messageElement.style.opacity = '1';
-            messageElement.style.transform = 'translateX(0)';
+            messageElement.classList.add('visible');
         }, 10);
 
         // Auto remove
@@ -248,25 +243,14 @@ class UIManager {
         return messageElement;
     }
 
-    getMessageColor(type) {
-        const colors = {
-            'info': '#2196F3',
-            'success': '#4CAF50',
-            'warning': '#FF9800',
-            'error': '#F44336'
-        };
-        return colors[type] || colors.info;
-    }
-
     removeMessage(messageElement) {
         if (messageElement && messageElement.parentNode) {
-            messageElement.style.opacity = '0';
-            messageElement.style.transform = 'translateX(100%)';
+            messageElement.classList.remove('visible');
             setTimeout(() => {
                 if (messageElement.parentNode) {
                     messageElement.parentNode.removeChild(messageElement);
                 }
-            }, 300);
+            }, 300); // Corresponds to transition duration
         }
     }
 
@@ -275,52 +259,17 @@ class UIManager {
         if (!loader) {
             loader = document.createElement('div');
             loader.id = 'loading-indicator';
-            loader.style.cssText = `
-                position: fixed;
-                top: 50%;
-                left: 50%;
-                transform: translate(-50%, -50%);
-                background: rgba(0, 0, 0, 0.8);
-                color: white;
-                padding: 20px 30px;
-                border-radius: 8px;
-                font-family: Arial, sans-serif;
-                font-size: 16px;
-                z-index: 10001;
-                display: flex;
-                align-items: center;
-                gap: 15px;
-            `;
+            loader.classList.add('loading-indicator'); // Add class
 
             // Add spinner
             const spinner = document.createElement('div');
-            spinner.style.cssText = `
-                width: 20px;
-                height: 20px;
-                border: 2px solid #333;
-                border-top: 2px solid #fff;
-                border-radius: 50%;
-                animation: spin 1s linear infinite;
-            `;
-
-            // Add CSS animation
-            if (!document.getElementById('spinner-style')) {
-                const style = document.createElement('style');
-                style.id = 'spinner-style';
-                style.textContent = `
-                    @keyframes spin {
-                        0% { transform: rotate(0deg); }
-                        100% { transform: rotate(360deg); }
-                    }
-                `;
-                document.head.appendChild(style);
-            }
+            spinner.classList.add('loading-indicator-spinner'); // Add class
 
             loader.appendChild(spinner);
             loader.appendChild(document.createTextNode(text));
             document.body.appendChild(loader);
         } else {
-            loader.style.display = 'flex';
+            loader.style.display = 'flex'; // Keep this for toggling visibility
             loader.lastChild.textContent = text;
         }
 
@@ -330,7 +279,7 @@ class UIManager {
     hideLoadingIndicator() {
         const loader = document.getElementById('loading-indicator');
         if (loader) {
-            loader.style.display = 'none';
+            loader.style.display = 'none'; // Keep this for toggling visibility
         }
     }
 
@@ -340,18 +289,7 @@ class UIManager {
         if (!statsPanel) {
             statsPanel = document.createElement('div');
             statsPanel.id = 'stats-panel';
-            statsPanel.style.cssText = `
-                position: fixed;
-                bottom: 20px;
-                left: 20px;
-                background: rgba(0, 0, 0, 0.7);
-                color: white;
-                padding: 10px 15px;
-                border-radius: 4px;
-                font-family: monospace;
-                font-size: 12px;
-                z-index: 1000;
-            `;
+            statsPanel.classList.add('stats-panel'); // Add class
             document.body.appendChild(statsPanel);
         }
 

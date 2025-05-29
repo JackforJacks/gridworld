@@ -1,80 +1,86 @@
 <!DOCTYPE html>
 <html lang="en">
-    <head>
-        <meta charset="utf-8">
-        <title>GridWorld - Interactive 3D Hexasphere</title>
 
-        <meta name="Description" content="Javascript library to generate a sphere covered in hexagons." />
-        <meta name="Keywords" content="hexasphere, hexasphere.js, geodesic sphere, geodesic polyhedron, javascript, hexagons" />
+<head>
+    <meta charset="utf-8">
+    <title>GridWorld - Interactive 3D Hexasphere</title>
 
-        <!-- Critical CSS to prevent FOUC -->
-        <style>
-            html, body {
-                margin: 0;
-                padding: 0;
-                width: 100%;
-                height: 100%;
-                overflow: hidden;
-                background: #000033;
-                background: linear-gradient(to bottom, #000022 0%, #0a0a2a 50%, #1a1a4a 100%);
-            }
-            #container {
-                position: fixed;
-                top: 0;
-                left: 0;
-                width: 100%;
-                height: 100%;
-                z-index: 1;
-            }
-            .stars {
-                position: fixed;
-                top: 0;
-                left: 0;
-                width: 100%;
-                height: 100%;
-                z-index: 0;
-                pointer-events: none;
-            }
-        </style>
+    <meta name="Description" content="Javascript library to generate a sphere covered in hexagons." />
+    <meta name="Keywords"
+        content="hexasphere, hexasphere.js, geodesic sphere, geodesic polyhedron, javascript, hexagons" />
 
-        <!-- Webpack will inject CSS and JS automatically -->
-    </head>
-    <body>
-        <div id="stars" class="stars"></div>
-        <div id="dashboard">
-            <!-- Dashboard content will go here -->
-            <button id="toggle-help" class="dashboard-toggle-help">?</button>
-            <p>Land Tiles: <span id="landTileCountDisplay">Calculating...</span></p>
-            <button id="reset-colors" class="dashboard-button reset-button">🎨 Reset Colors</button>
-            <button id="reset-population" class="dashboard-button reset-button">🏘️ Reset Population</button>
-        </div>
-        <div id="controls-help" class="controls-panel collapsed">
-            <div class="controls-content">
-                <div class="control-group">
-                    <strong>Mouse:</strong>
-                    <ul>
-                        <li>Drag to rotate</li>
-                        <li>Scroll to zoom</li>
-                        <li>Click tiles for info</li>
-                    </ul>
-                </div>
-                <div class="control-group">
-                    <strong>Keyboard:</strong>
-                    <ul>
-                        <li><kbd>W/↑</kbd> <kbd>S/↓</kbd> <kbd>A/←</kbd> <kbd>D/→</kbd> - Rotate</li>
-                        <li><kbd>+</kbd> <kbd>-</kbd> - Zoom in/out</li>
-                        <li><kbd>R</kbd> - Reset & auto-rotate</li>
-                        <li><kbd>C</kbd> - Center view</li>
-                    </ul>
-                </div>
+    <!-- Critical CSS to prevent FOUC -->
+    <style>
+        html,
+        body {
+            margin: 0;
+            padding: 0;
+            width: 100%;
+            height: 100%;
+            overflow: hidden;
+            background: #000033;
+            background: linear-gradient(to bottom, #000022 0%, #0a0a2a 50%, #1a1a4a 100%);
+        }
+
+        #container {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            z-index: 1;
+        }
+
+        .stars {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            z-index: 0;
+            pointer-events: none;
+        }
+    </style>
+
+    <!-- Webpack will inject CSS and JS automatically -->
+</head>
+
+<body>
+    <div id="stars" class="stars"></div>
+    <div id="dashboard">
+        <!-- Dashboard content will go here -->
+        <button id="reset-data" class="dashboard-button reset-button">🔄 Reset Data</button>
+        <button id="show-stats" class="dashboard-button">📊 Stats</button>
+        <button id="toggle-help" class="dashboard-toggle-help">?</button>
+    </div>
+    <div id="controls-help" class="controls-panel collapsed">
+        <div class="controls-content">
+            <div class="control-group">
+                <strong>Mouse:</strong>
+                <ul>
+                    <li>Drag to rotate</li>
+                    <li>Scroll to zoom</li>
+                    <li>Click tiles for info</li>
+                </ul>
+            </div>
+            <div class="control-group">
+                <strong>Keyboard:</strong>
+                <ul>
+                    <li><kbd>W/↑</kbd> <kbd>S/↓</kbd> <kbd>A/←</kbd> <kbd>D/→</kbd> - Rotate</li>
+                    <li><kbd>+</kbd> <kbd>-</kbd> - Zoom in/out</li>
+                    <li><kbd>R</kbd> - Reset & auto-rotate</li>
+                    <li><kbd>C</kbd> - Center view</li>
+                </ul>
             </div>
         </div>
-        <div id="container">
-        </div>
-        <div id="tilePopup" class="tile-popup hidden"></div>
-        <img id="projection" src="equirectangle_projection.png" style="display: none;" />
-        <!-- ref:include analytics -->
-        <!-- endref -->
+    </div>
+    <div id="container">
+    </div>
+    <div id="tilePopup" class="tile-popup hidden"></div>
+    <img id="projection" src="equirectangle_projection.png" style="display: none;" />
+    <!-- ref:include analytics -->
+    <!-- endref -->
 
-    </body>
+</body>
+
 </html>
