@@ -17,21 +17,19 @@ function createStars() {
     for (let i = 0; i < STARS_CONFIG.COUNT; i++) {
         const star = document.createElement('div');
         star.className = 'star';
-        star.style.left = `${Math.random() * 100}%`;
-        star.style.top = `${Math.random() * 100}%`;
+        star.style.setProperty('--star-left', `${Math.random() * 100}%`);
+        star.style.setProperty('--star-top', `${Math.random() * 100}%`);
 
         const size = STARS_CONFIG.SIZE.min + Math.random() * (STARS_CONFIG.SIZE.max - STARS_CONFIG.SIZE.min);
-        star.style.width = `${size}px`;
-        star.style.height = `${size}px`;
+        star.style.setProperty('--star-size', `${size}px`);
 
         const color = STARS_CONFIG.COLORS[Math.floor(Math.random() * STARS_CONFIG.COLORS.length)];
-        star.style.background = color;
-        star.style.boxShadow = `0 0 ${size * 2}px ${color}`;
+        star.style.setProperty('--star-color', color);
+        star.style.setProperty('--star-shadow-size', `${size * 2}px`);
 
-        star.style.animationDelay = `${Math.random() * STARS_CONFIG.ANIMATION.DELAY_MAX}s`;
-        star.style.animationDuration = `${STARS_CONFIG.ANIMATION.DURATION_MIN +
-            Math.random() * (STARS_CONFIG.ANIMATION.DURATION_MAX - STARS_CONFIG.ANIMATION.DURATION_MIN)
-            }s`;
+
+        star.style.setProperty('--star-animation-delay', `${Math.random() * STARS_CONFIG.ANIMATION.DELAY_MAX}s`);
+        star.style.setProperty('--star-animation-duration', `${STARS_CONFIG.ANIMATION.DURATION_MIN + Math.random() * (STARS_CONFIG.ANIMATION.DURATION_MAX - STARS_CONFIG.ANIMATION.DURATION_MIN)}s`);
 
         starsContainer.appendChild(star);
     }

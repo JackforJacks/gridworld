@@ -40,6 +40,7 @@ module.exports = (env, argv) => {
         }, {
           test: /\.css$/,
           use: [
+            // Use style-loader in development for faster CSS injection, MiniCssExtractPlugin in production
             isProduction ? MiniCssExtractPlugin.loader : 'style-loader',
             'css-loader'
           ]
@@ -66,12 +67,16 @@ module.exports = (env, argv) => {
       new HtmlWebpackPlugin({
         template: './index.html',
         filename: 'index.html',
-        inject: 'body'
-      }), ...(isProduction ? [
-        new MiniCssExtractPlugin({
-          filename: '[name].[contenthash].css',
-          chunkFilename: '[id].[contenthash].css'
-        }),
+        inject: 'head',
+        scriptLoading: 'defer' // Changed from 'blocking' to 'defer'
+      }),
+      // Always include MiniCssExtractPlugin
+      new MiniCssExtractPlugin({
+        filename: isProduction ? '[name].[contenthash].css' : '[name].css', // Simpler name for dev
+        chunkFilename: isProduction ? '[id].[contenthash].css' : '[id].css' // Simpler name for dev
+      }),
+      ...(isProduction ? [
+        // Production-only plugins like CompressionPlugin were here
         new CompressionPlugin({
           algorithm: 'gzip',
           test: /\.(js|css|html|svg)$/,

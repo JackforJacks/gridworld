@@ -1,12 +1,12 @@
+// Import CSS (Webpack will handle this)
+import '../css/styles.css';
+
 // Main Application Entry Point - Modularized GridWorld
 // Coordinates all modules and initializes the application
 
 // Import THREE.js and make it globally available
 import * as THREE from 'three';
 window.THREE = THREE;
-
-// Import CSS (Webpack will handle this)
-import '../css/styles.css';
 
 // Import modules using modern ES6 imports
 import CameraController from './camera-controller.js';

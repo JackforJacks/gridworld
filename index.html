@@ -9,8 +9,8 @@
     <meta name="Keywords"
         content="hexasphere, hexasphere.js, geodesic sphere, geodesic polyhedron, javascript, hexagons" />
 
-    <!-- Critical CSS to prevent FOUC -->
     <style>
+        /* Critical FOUC Prevention CSS - Updated */
         html,
         body {
             margin: 0;
@@ -18,20 +18,13 @@
             width: 100%;
             height: 100%;
             overflow: hidden;
-            background: #000033;
+            font-family: 'Segoe UI', Arial, sans-serif;
+            color: #fff;
+            /* Use the final gradient background from styles.css */
             background: linear-gradient(to bottom, #000022 0%, #0a0a2a 50%, #1a1a4a 100%);
         }
 
-        #container {
-            position: fixed;
-            top: 0;
-            left: 0;
-            width: 100%;
-            height: 100%;
-            z-index: 1;
-        }
-
-        .stars {
+        #stars {
             position: fixed;
             top: 0;
             left: 0;
@@ -40,9 +33,44 @@
             z-index: 0;
             pointer-events: none;
         }
+
+        #dashboard {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 60px;
+            /* Must match height in styles.css */
+            background-color: #333;
+            /* Must match background in styles.css */
+            z-index: 1000;
+            /* Must match z-index in styles.css */
+            box-sizing: border-box;
+            /* Added from main styles for consistency */
+            display: flex;
+            align-items: center;
+        }
+
+        #container {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            margin-top: 60px;
+            /* Account for fixed dashboard height */
+            z-index: 1;
+            background: transparent;
+        }
+
+        #projection {
+            display: none;
+        }
+
+        /* End Critical FOUC Prevention CSS */
     </style>
 
-    <!-- Webpack will inject CSS and JS automatically -->
+    <!-- Webpack will inject CSS <link> and JS <script> tags automatically -->
 </head>
 
 <body>
@@ -58,7 +86,7 @@
             <div class="control-group">
                 <strong>Mouse:</strong>
                 <ul>
-                    <li>Drag to rotate</li>
+                    <li>Drag 2 rotate</li>
                     <li>Scroll to zoom</li>
                     <li>Click tiles for info</li>
                 </ul>
@@ -77,7 +105,6 @@
     <div id="container">
     </div>
     <div id="tilePopup" class="tile-popup hidden"></div>
-    <img id="projection" src="equirectangle_projection.png" style="display: none;" />
     <!-- ref:include analytics -->
     <!-- endref -->
 

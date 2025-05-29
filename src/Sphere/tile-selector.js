@@ -208,8 +208,10 @@ class TileSelector {
             </div>
         `;
         this.tilePopup.className = 'tile-popup visible';
-        this.tilePopup.style.left = (event.clientX + 10) + 'px';
-        this.tilePopup.style.top = (event.clientY + 10) + 'px';
+        // this.tilePopup.style.left = (event.clientX + 10) + 'px';
+        // this.tilePopup.style.top = (event.clientY + 10) + 'px';
+        this.tilePopup.style.setProperty('--popup-left', (event.clientX + 10) + 'px');
+        this.tilePopup.style.setProperty('--popup-top', (event.clientY + 10) + 'px');
     }
 
     hidePopup() {

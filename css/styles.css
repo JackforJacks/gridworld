@@ -1,4 +1,6 @@
-/* Star background CSS only */
+/* ==========================================================================
+   0. Critical FOUC Prevention (formerly inline in index.html)
+   ========================================================================== */
 html,
 body {
     margin: 0;
@@ -6,24 +8,49 @@ body {
     width: 100%;
     height: 100%;
     overflow: hidden;
+    /* background is set in Global Styles > body */
+}
+
+/* #container style related to FOUC prevention is merged with Layout Elements > #container */
+/* .stars style related to FOUC prevention is merged with Components > .stars */
+
+/* ==========================================================================
+   1. Global Styles
+   ========================================================================== */
+html,
+body {
+    margin: 0;
+    padding: 0;
+    width: 100%;
+    height: 100%;
+    overflow: hidden;
+    font-family: 'Segoe UI', Arial, sans-serif;
+    /* Added a default font */
+    /* Ensure FOUC prevention styles are not overridden if they were more specific */
 }
 
 body {
     background: #000033;
     background: linear-gradient(to bottom, #000022 0%, #0a0a2a 50%, #1a1a4a 100%);
+    /* from FOUC */
     position: relative;
+    color: #fff;
+    /* Default text color for body */
 }
 
-.stars {
-    position: fixed;
-    top: 0;
-    left: 0;
-    width: 100%;
-    height: 100%;
-    z-index: 0;
-    overflow: hidden;
+kbd {
+    background-color: #f0f0f0;
+    color: #333;
+    padding: 2px 6px;
+    border-radius: 3px;
+    font-family: monospace;
+    font-size: 11px;
+    box-shadow: 0 1px 2px rgba(0, 0, 0, 0.2);
 }
 
+/* ==========================================================================
+   2. Layout Elements
+   ========================================================================== */
 #container {
     position: fixed;
     top: 0;
@@ -31,9 +58,12 @@ body {
     width: 100%;
     height: 100%;
     z-index: 1;
+    /* from FOUC */
     cursor: grab;
     margin-top: 60px;
     /* Adjust top margin to prevent overlap with the fixed dashboard */
+    background: transparent;
+    /* For WebGL renderer */
 }
 
 #container:active {
@@ -47,7 +77,69 @@ body {
     height: 100%;
 }
 
-/* Tile Popup Styles */
+#dashboard {
+    position: fixed;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 60px;
+    background-color: #333;
+    color: white;
+    padding: 10px;
+    box-sizing: border-box;
+    z-index: 1000;
+    display: flex;
+    align-items: center;
+    gap: 16px;
+}
+
+#dashboard p {
+    /* Consider if this is still used or can be more specific */
+    margin: 0;
+    font-size: 16px;
+    color: #fff;
+}
+
+/* ==========================================================================
+   3. Components
+   ========================================================================== */
+
+/* 3.1 Stars Background */
+.stars {
+    position: fixed;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    z-index: 0;
+    /* from FOUC */
+    overflow: hidden;
+    pointer-events: none;
+    /* from FOUC */
+}
+
+.star {
+    position: absolute;
+    background: var(--star-color, #fff);
+    /* Default to white if var not set */
+    border-radius: 50%;
+    animation: twinkle var(--star-animation-duration, 2s) infinite alternate;
+    /* Default duration 2s */
+    animation-delay: var(--star-animation-delay, 0s);
+    /* Default delay 0s */
+    left: var(--star-left, 50%);
+    /* Default position */
+    top: var(--star-top, 50%);
+    /* Default position */
+    width: var(--star-size, 2px);
+    /* Default size */
+    height: var(--star-size, 2px);
+    /* Default size */
+    box-shadow: 0 0 var(--star-shadow-size, 4px) var(--star-color, #fff);
+    /* Default shadow */
+}
+
+/* 3.2 Tile Popup */
 .tile-popup {
     position: absolute;
     background-color: rgba(255, 255, 255, 0.95);
@@ -55,13 +147,14 @@ body {
     border-radius: 8px;
     box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
     border: 1px solid #ddd;
-    font-family: 'Segoe UI', Arial, sans-serif;
     font-size: 13px;
     z-index: 2000;
     min-width: 200px;
     max-width: 280px;
     transition: opacity 0.3s ease, transform 0.3s ease;
     backdrop-filter: blur(10px);
+    left: var(--popup-left);
+    top: var(--popup-top);
 }
 
 .tile-popup.visible {
@@ -114,7 +207,7 @@ body {
     flex: 1;
 }
 
-/* Terrain type specific colors */
+/* Tile Popup - Value Type Specific Colors */
 .value.terrain-grassland {
     color: #4CAF50;
 }
@@ -127,7 +220,6 @@ body {
     color: #87CEEB;
 }
 
-/* Population specific colors */
 .value.population-inhabited {
     color: #FF5722;
     font-weight: bold;
@@ -138,7 +230,6 @@ body {
     font-style: italic;
 }
 
-/* Habitable status colors */
 .value.Habitable-yes {
     color: #4CAF50;
 }
@@ -159,62 +250,7 @@ body {
     font-size: 11px;
 }
 
-/* Dashboard Styles */
-#dashboard {
-    position: fixed;
-    /* Or absolute, depending on desired scroll behavior */
-    top: 0;
-    left: 0;
-    width: 100%;
-    height: 60px;
-    /* Adjust as needed */
-    background-color: #333;
-    /* Example background color */
-    color: white;
-    padding: 10px;
-    box-sizing: border-box;
-    /* Include padding and border in the element's total width and height */
-    z-index: 1000;
-    /* Ensure it's above other elements like the canvas */
-    display: flex;
-    align-items: center;
-    gap: 16px;
-}
-
-#dashboard p {
-    margin: 0;
-    font-size: 16px;
-    color: #fff;
-}
-
-/* Dashboard Toggle Help Button - same size as controls header button */
-.dashboard-toggle-help {
-    background: #4CAF50;
-    color: white;
-    border: none;
-    border-radius: 50%;
-    width: 40px;
-    height: 40px;
-    cursor: pointer;
-    font-size: 22px;
-    font-weight: bold;
-    display: inline-flex;
-    align-items: center;
-    justify-content: center;
-    margin-left: auto;
-    /* This will push the button to the right */
-    margin-right: 10px;
-    /* Keeps some space from the edge */
-    vertical-align: middle;
-    box-shadow: 0 2px 6px rgba(0, 0, 0, 0.2);
-    transition: background 0.2s;
-}
-
-.dashboard-toggle-help:hover {
-    background: #45a049;
-}
-
-/* Dashboard Button Styles */
+/* 3.3 Dashboard Elements */
 .dashboard-button {
     background: #2196F3;
     color: white;
@@ -244,6 +280,7 @@ body {
 }
 
 .reset-button {
+    /* Specific dashboard button type */
     background: #FF9800;
 }
 
@@ -251,7 +288,55 @@ body {
     background: #F57C00;
 }
 
-/* Controls Panel Styles */
+.dashboard-toggle-help {
+    background: #4CAF50;
+    color: white;
+    border: none;
+    border-radius: 50%;
+    width: 40px;
+    height: 40px;
+    cursor: pointer;
+    font-size: 22px;
+    font-weight: bold;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    margin-left: auto;
+    /* Pushes button to the right */
+    margin-right: 10px;
+    vertical-align: middle;
+    box-shadow: 0 2px 6px rgba(0, 0, 0, 0.2);
+    transition: background 0.2s;
+}
+
+.dashboard-toggle-help:hover {
+    background: #45a049;
+}
+
+/* Population Panel Icon (Connection Status) in Dashboard */
+.population-panel-wrapper {
+    display: inline-flex;
+    align-items: center;
+    font-family: 'Courier New', monospace;
+    font-size: 16px;
+}
+
+.population-panel-icon {
+    font-weight: bold;
+    transition: color 0.3s ease;
+}
+
+.population-panel-icon.connected {
+    color: #00ff00;
+    /* Green */
+}
+
+.population-panel-icon.disconnected {
+    color: #ff0000;
+    /* Red */
+}
+
+/* 3.4 Controls Panel (Help Panel) */
 .controls-panel {
     position: fixed;
     top: 70px;
@@ -260,7 +345,6 @@ body {
     color: white;
     border-radius: 8px;
     padding: 15px;
-    font-family: Arial, sans-serif;
     font-size: 14px;
     z-index: 1500;
     min-width: 250px;
@@ -272,7 +356,6 @@ body {
     opacity: 0;
     pointer-events: none;
     visibility: hidden;
-    transition: opacity 0.3s, visibility 0.3s;
 }
 
 .controls-panel.collapsed .controls-content {
@@ -280,12 +363,11 @@ body {
 }
 
 .controls-header {
+    /* This seems to be for a button within the panel, not the panel itself */
     display: flex;
     justify-content: space-between;
     align-items: center;
     margin-bottom: 10px;
-    width: 24px;
-    height: 24px;
 }
 
 .controls-header h3 {
@@ -295,6 +377,7 @@ body {
 }
 
 .controls-header button {
+    /* Close button for controls panel */
     background: #4CAF50;
     color: white;
     border: none;
@@ -335,194 +418,7 @@ body {
     font-size: 12px;
 }
 
-kbd {
-    background-color: #f0f0f0;
-    color: #333;
-    padding: 2px 6px;
-    border-radius: 3px;
-    font-family: monospace;
-    font-size: 11px;
-    box-shadow: 0 1px 2px rgba(0, 0, 0, 0.2);
-}
-
-.star {
-    position: absolute;
-    background: #fff;
-    border-radius: 50%;
-    animation: twinkle 2s infinite alternate;
-}
-
-@keyframes twinkle {
-    0% {
-        opacity: 0.3;
-        transform: scale(0.8);
-    }
-
-    100% {
-        opacity: 1;
-        transform: scale(1.2);
-    }
-}
-
-/* Container for the WebGL renderer */
-#container {
-    position: fixed;
-    top: 0;
-    left: 0;
-    width: 100%;
-    height: 100%;
-    z-index: 1;
-    background: transparent;
-}
-
-/* UI Manager Dynamically Created Elements */
-
-/* Population Panel */
-.population-panel-wrapper {
-    display: inline-flex;
-    align-items: center;
-    /* gap: 8px; */
-    /* No longer needed as text is removed */
-    font-family: 'Courier New', monospace;
-    /* Kept for icon style consistency if desired */
-    font-size: 16px;
-    /* Kept for icon style consistency if desired */
-}
-
-.population-panel-icon {
-    font-weight: bold;
-    transition: color 0.3s ease;
-    /* Moved transition here */
-}
-
-/* #population-count { */
-/* This ID is no longer used for the main count display */
-/* Styles for connected/disconnected states will be applied via classList */
-/* Add a default style to avoid empty ruleset */
-/* transition: color 0.3s ease; */
-/* } */
-
-/* #population-count.connected { */
-/* Class now applied to .population-panel-icon */
-/*    color: #00ff00; */
-/* Green */
-/* } */
-
-/* #population-count.disconnected { */
-/* Class now applied to .population-panel-icon */
-/*    color: #ff0000; */
-/* Red */
-/* } */
-
-.population-panel-icon.connected {
-    color: #00ff00;
-    /* Green */
-}
-
-.population-panel-icon.disconnected {
-    color: #ff0000;
-    /* Red */
-}
-
-
-/* Message Container and Elements */
-.message-container {
-    position: fixed;
-    top: 20px;
-    right: 20px;
-    z-index: 10000;
-    max-width: 300px;
-}
-
-.message-element {
-    padding: 12px 16px;
-    margin-bottom: 10px;
-    border-radius: 4px;
-    color: white;
-    font-family: Arial, sans-serif;
-    font-size: 14px;
-    box-shadow: 0 2px 6px rgba(0, 0, 0, 0.3);
-    opacity: 0;
-    transform: translateX(100%);
-    transition: all 0.3s ease;
-    /* background-color will be set by type-specific classes */
-}
-
-.message-element.info {
-    background-color: #2196F3;
-}
-
-.message-element.success {
-    background-color: #4CAF50;
-}
-
-.message-element.warning {
-    background-color: #FF9800;
-}
-
-.message-element.error {
-    background-color: #F44336;
-}
-
-.message-element.visible {
-    opacity: 1;
-    transform: translateX(0);
-}
-
-/* Loading Indicator */
-.loading-indicator {
-    position: fixed;
-    top: 50%;
-    left: 50%;
-    transform: translate(-50%, -50%);
-    background: rgba(0, 0, 0, 0.8);
-    color: white;
-    padding: 20px 30px;
-    border-radius: 8px;
-    font-family: Arial, sans-serif;
-    font-size: 16px;
-    z-index: 10001;
-    display: flex;
-    align-items: center;
-    gap: 15px;
-}
-
-.loading-indicator-spinner {
-    width: 20px;
-    height: 20px;
-    border: 2px solid #333;
-    border-top: 2px solid #fff;
-    border-radius: 50%;
-    animation: spin 1s linear infinite;
-}
-
-/* Spinner Animation (if not already defined elsewhere) */
-@keyframes spin {
-    0% {
-        transform: rotate(0deg);
-    }
-
-    100% {
-        transform: rotate(360deg);
-    }
-}
-
-/* Stats Panel */
-/* .stats-panel {  Commented out as stats are now shown in a modal
-    position: fixed;
-    bottom: 20px;
-    left: 20px;
-    background: rgba(0, 0, 0, 0.7);
-    color: white;
-    padding: 10px 15px;
-    border-radius: 4px;
-    font-family: Arial, sans-serif;
-    font-size: 12px;
-    z-index: 1002;
-    box-shadow: 0 2px 5px rgba(0,0,0,0.2);
-} */
-
-/* Stats Modal */
+/* 3.5 Modals (Stats Modal) */
 .stats-modal-overlay {
     position: fixed;
     top: 0;
@@ -534,7 +430,6 @@ kbd {
     justify-content: center;
     align-items: center;
     z-index: 2000;
-    /* Ensure it's above other UI elements */
 }
 
 .stats-modal {
@@ -545,7 +440,6 @@ kbd {
     box-shadow: 0 5px 15px rgba(0, 0, 0, 0.3);
     width: 90%;
     max-width: 500px;
-    font-family: 'Segoe UI', Arial, sans-serif;
 }
 
 .stats-modal-header {
@@ -585,7 +479,6 @@ kbd {
 .stats-modal-content p strong {
     color: #555;
     min-width: 150px;
-    /* Align values */
     display: inline-block;
 }
 
@@ -595,3 +488,117 @@ kbd {
     background: #eee;
     margin: 10px 0;
 }
+
+/* 3.6 Notifications & Indicators */
+/* Message Container and Elements (Toasts) */
+.message-container {
+    position: fixed;
+    top: 20px;
+    right: 20px;
+    z-index: 10000;
+    max-width: 300px;
+}
+
+.message-element {
+    padding: 12px 16px;
+    margin-bottom: 10px;
+    border-radius: 4px;
+    color: white;
+    font-size: 14px;
+    box-shadow: 0 2px 6px rgba(0, 0, 0, 0.3);
+    opacity: 0;
+    transform: translateX(100%);
+    transition: all 0.3s ease;
+}
+
+.message-element.info {
+    background-color: #2196F3;
+}
+
+.message-element.success {
+    background-color: #4CAF50;
+}
+
+.message-element.warning {
+    background-color: #FF9800;
+}
+
+.message-element.error {
+    background-color: #F44336;
+}
+
+.message-element.visible {
+    opacity: 1;
+    transform: translateX(0);
+}
+
+/* Loading Indicator */
+.loading-indicator {
+    position: fixed;
+    top: 50%;
+    left: 50%;
+    transform: translate(-50%, -50%);
+    background: rgba(0, 0, 0, 0.8);
+    color: white;
+    padding: 20px 30px;
+    border-radius: 8px;
+    font-size: 16px;
+    z-index: 10001;
+    display: flex;
+    align-items: center;
+    gap: 15px;
+}
+
+.loading-indicator-spinner {
+    width: 20px;
+    height: 20px;
+    border: 2px solid #333;
+    /* Darker part of spinner */
+    border-top: 2px solid #fff;
+    /* Lighter part for animation */
+    border-radius: 50%;
+    animation: spin 1s linear infinite;
+}
+
+/* Image with inline style in index.html */
+#projection {
+    display: none;
+}
+
+/* ==========================================================================
+   4. Animations (Keyframes)
+   ========================================================================== */
+@keyframes twinkle {
+    0% {
+        opacity: 0.3;
+        transform: scale(0.8);
+    }
+
+    100% {
+        opacity: 1;
+        transform: scale(1.2);
+    }
+}
+
+@keyframes spin {
+    0% {
+        transform: rotate(0deg);
+    }
+
+    100% {
+        transform: rotate(360deg);
+    }
+}
+
+/* ==========================================================================
+   5. Deprecated / Commented Out Styles (For Review or Removal)
+   ========================================================================== */
+/* 
+   The following styles were previously commented out and are likely obsolete:
+   - .stats-panel (Replaced by .stats-modal)
+   - #population-count and its .connected/.disconnected states 
+     (Functionality moved to .population-panel-icon)
+
+   These have been removed in this refactoring. If any are still needed,
+   they should be reinstated from version control.
+*/

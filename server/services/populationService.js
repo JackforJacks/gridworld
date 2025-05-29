@@ -81,7 +81,14 @@ class PopulationService {
             const formattedData = this.getFormattedPopulationData();
             this.io.emit(eventType, formattedData);
         }
-    } async getAllPopulationData() {
+    }
+
+    async updateDataAndBroadcast(eventType = 'populationUpdate') {
+        await this.saveData();
+        this.broadcastUpdate(eventType);
+    }
+
+    async getAllPopulationData() {
         return this.getFormattedPopulationData();
     }
 
