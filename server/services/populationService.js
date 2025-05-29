@@ -83,7 +83,16 @@ class PopulationService {
         }
     } async getAllPopulationData() {
         return this.getFormattedPopulationData();
-    } async initializeTilePopulations(habitableTileIds) {
+    }
+
+    validateTileIds(tileIds) {
+        if (!Array.isArray(tileIds) || !tileIds.every(id => typeof id === 'string' || typeof id === 'number')) {
+            throw new Error('Invalid tileIds: Must be an array of strings or numbers.');
+        }
+        // Add any other specific validation logic for tile IDs if needed
+    }
+
+    async initializeTilePopulations(habitableTileIds) {
         this.validateTileIds(habitableTileIds);
 
         // Batch initialization for better performance
