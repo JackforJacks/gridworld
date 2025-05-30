@@ -134,8 +134,8 @@ class GridWorldApp {
                 initStars();
             }
 
-            // Create the hexasphere with default parameters
-            const tileData = this.sceneManager.createHexasphere(30, 10, 1, null);
+            // Create the hexasphere with 3 subdivisions
+            const tileData = this.sceneManager.createHexasphere(30, 3, 1, null);
 
             // Initialize game logic if needed
             if (typeof initializeAndStartGame === 'function') {

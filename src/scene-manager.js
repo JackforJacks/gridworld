@@ -38,7 +38,7 @@ class SceneManager {
         return { scene: this.scene, renderer: this.renderer };
     }
 
-    createHexasphere(radius = 30, subdivisions = 10, tileWidthRatio = 1) {
+    createHexasphere(radius = 30, subdivisions = 3, tileWidthRatio = 1) {
         // Clear existing tiles
         this.clearTiles();
 

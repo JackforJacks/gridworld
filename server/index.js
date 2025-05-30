@@ -1,4 +1,5 @@
 // GridWorld Server - Main Entry Point
+require('dotenv').config(); // Load environment variables from .env
 const express = require('express');
 const http = require('http');
 const path = require('path');
