@@ -130,38 +130,67 @@ const Hexasphere = function (radius, numDivisions, hexSize) {
         } catch (e) {
             // fallback: leave as 0
         }
-        // Assign terrain type using new system: ocean, lake, flats, hills, mountains
+        
+        // Assign terrain type using new system: ocean, flats, hills, mountains
         let terrainType;
+        const x = tile.centerPoint.x;
         const y = tile.centerPoint.y;
+        const z = tile.centerPoint.z;
         const absLat = Math.abs(lat);
-        
-        // Determine if it's water or land first
-        const isWater = y < -0.1; // Lower threshold for water
-        
-        if (isWater) {
-            // Water types: ocean (deeper) or lake (shallower)
-            terrainType = y < -0.4 ? 'ocean' : 'lake';
+
+        // Check if this is a pentagon tile (5 boundary points instead of 6)
+        const isPentagon = tile.boundary.length === 5;
+
+        // Pentagon constraint: all pentagons must be mountains
+        if (isPentagon) {
+            terrainType = 'mountains';
         } else {
-            // Land types based on altitude (y coordinate) and latitude
-            const altitude = y + Math.random() * 0.2 - 0.1; // Add some noise
+            // Regular terrain generation for hexagon tiles
+            // Create realistic terrain using Perlin-like noise based on position
+            const noise1 = Math.sin(x * 0.01 + z * 0.01) * Math.cos(y * 0.01);
+            const noise2 = Math.sin(x * 0.02 - z * 0.02) * Math.cos(y * 0.015);
+            const noise3 = Math.sin(x * 0.005 + y * 0.005 + z * 0.005);
             
-            if (altitude > 0.6) {
-                terrainType = 'mountains';
-            } else if (altitude > 0.2) {
-                terrainType = 'hills';
+            // Combine noise functions to create elevation
+            const elevation = (noise1 * 0.5 + noise2 * 0.3 + noise3 * 0.2) + 
+                             Math.random() * 0.3 - 0.15; // Add some randomness
+
+            // Create continent-like patterns using larger-scale noise
+            const continentNoise = Math.sin(x * 0.003) * Math.cos(z * 0.003) + 
+                                  Math.sin(y * 0.004) * 0.5;
+            
+            // Determine if it's water or land
+            // Use elevation combined with continent patterns for realistic distribution
+            // Adjusted to ensure at least 60% ocean coverage
+            const waterThreshold = 0.0 + continentNoise * 0.2;
+            const isWater = elevation < waterThreshold;
+
+            if (isWater) {
+                terrainType = 'ocean';
             } else {
-                terrainType = 'flats';
+                // Land types based on elevation above water level
+                const landElevation = elevation - waterThreshold;
+                
+                if (landElevation > 0.3) {
+                    terrainType = 'mountains';
+                } else if (landElevation > 0.15) {
+                    terrainType = 'hills';
+                } else {
+                    terrainType = 'flats';
+                }
             }
         }
-        
+
         // Determine if tile is Habitable
-        // Only flats and hills are habitable
+        // Only flats and hills are habitable, pentagons (mountains) are not habitable
         const Habitable = (terrainType === 'flats' || terrainType === 'hills') ? 'yes' : 'no';
-        
+
+        // Determine if it's water or land based on terrain type
+        const isWater = (terrainType === 'ocean');
+
         // Set all properties directly on the tile object
         tile.setProperties(idx, lat, lon, !isWater, terrainType, Habitable);
     }
-
 };
 
 Hexasphere.prototype.toJson = function () {

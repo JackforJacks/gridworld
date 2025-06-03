@@ -45,7 +45,7 @@ class PopulationManager {
                 console.log('❌ Disconnected from population server, reason:', reason);
                 this.isConnected = false;
                 this.notifyCallbacks('connected', false);
-                
+
                 // Only handle manual reconnection for certain disconnect reasons
                 if (reason !== 'io client disconnect' && reason !== 'io server disconnect') {
                     this.handleReconnection();
@@ -106,7 +106,7 @@ class PopulationManager {
             clearInterval(this.pingInterval);
             this.pingInterval = null;
         }
-        
+
         if (this.socket) {
             this.socket.disconnect();
             this.socket = null;

@@ -47,7 +47,7 @@ class GridWorldServer {
         this.setupSocketHandlers();
 
         return this;
-    }    setupSocketHandlers() {
+    } setupSocketHandlers() {
         this.io.on('connection', (socket) => {
             console.log(`👤 Client connected: ${socket.id}`);
 

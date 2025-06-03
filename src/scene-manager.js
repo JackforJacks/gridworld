@@ -40,10 +40,10 @@ class SceneManager {
         const hexasphereGeometry = new THREE.BufferGeometry();
         const vertices = [], colors = [], indices = [];
         let vertexIndex = 0, colorIndex = 0;
-        this.habitableTileIds = [];        this.hexasphere.tiles.forEach((tile, idx) => {
+        this.habitableTileIds = []; this.hexasphere.tiles.forEach((tile, idx) => {
             const { terrainType, lat, lon } = this.calculateTileProperties(tile);
             const Habitable = (terrainType === 'flats' || terrainType === 'hills') ? 'yes' : 'no';
-            tile.setProperties(idx, lat, lon, terrainType !== 'ocean' && terrainType !== 'lake', terrainType, Habitable);
+            tile.setProperties(idx, lat, lon, terrainType !== 'ocean', terrainType, Habitable);
             if (Habitable === 'yes') this.habitableTileIds.push(idx);
             const color = this.getTerrainColor(terrainType);
             const tileColorStart = colorIndex;
@@ -137,7 +137,7 @@ class SceneManager {
         } catch (error) {
             console.error('❌ Failed to reinitialize population:', error);
         }
-    }    calculateTileProperties(tile) {
+    } calculateTileProperties(tile) {
         let lat = 0, lon = 0;
         try {
             if (tile.centerPoint && typeof tile.centerPoint.getLatLon === 'function') {
@@ -155,23 +155,20 @@ class SceneManager {
             }
         } catch (e) {
             console.warn('Could not get lat/lon for tile:', tile.id, e);
-        }
-        
-        // Generate terrain using new system: ocean, lake, flats, hills, mountains
+        }        // Generate terrain using new system: ocean, flats, hills, mountains
         let terrainType;
         const y = tile.centerPoint.y;
         const absLat = Math.abs(lat);
-        
+
         // Determine if it's water or land first
         const isWater = y < -0.1; // Lower threshold for water
-        
+
         if (isWater) {
-            // Water types: ocean (deeper) or lake (shallower)
-            terrainType = y < -0.4 ? 'ocean' : 'lake';
+            terrainType = 'ocean';
         } else {
             // Land types based on altitude (y coordinate) and latitude
             const altitude = y + Math.random() * 0.2 - 0.1; // Add some noise
-            
+
             if (altitude > 0.6) {
                 terrainType = 'mountains';
             } else if (altitude > 0.2) {
@@ -180,9 +177,9 @@ class SceneManager {
                 terrainType = 'flats';
             }
         }
-        
+
         return { terrainType, lat, lon };
-    }    getTerrainColor(terrainType) {
+    } getTerrainColor(terrainType) {
         return new THREE.Color(terrainColors[terrainType] || 0x808080); // Default to gray if unknown
     }
 

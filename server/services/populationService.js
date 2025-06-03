@@ -101,7 +101,7 @@ class PopulationService {
         }
         // Generate random populations between 1000-10000 for each tile (like the old JSON system)
         const values = tileIds.map(id => {
-            const randomPopulation = Math.floor(Math.random() * 9000) + 1000; // 1000-10000
+            const randomPopulation = Math.floor(Math.random() * 100) + 50; // 50-150
             return `(${id}, ${randomPopulation})`;
         }).join(',');
 

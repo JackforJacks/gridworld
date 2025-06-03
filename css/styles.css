@@ -208,12 +208,24 @@ kbd {
 }
 
 /* Tile Popup - Value Type Specific Colors */
-.value.terrain-grassland {
-    color: #4CAF50;
+.value.terrain-ocean {
+    color: #4A90E2;
 }
 
-.value.terrain-ocean {
-    color: #2196F3;
+.value.terrain-flats {
+    color: #DAA520;
+}
+
+.value.terrain-hills {
+    color: #DEB887;
+}
+
+.value.terrain-mountains {
+    color: #8B4513;
+}
+
+.value.terrain-grassland {
+    color: #4CAF50;
 }
 
 .value.terrain-ice {

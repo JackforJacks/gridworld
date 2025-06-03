@@ -82,7 +82,7 @@ class TileSelector {
 
     createBorder(tile) {
         const borderGroup = new THREE.Group();
-        
+
         console.log('[TileSelector] Creating border for tile:', tile.id);
 
         // Create multiple border layers for glowing yellow effect
@@ -117,9 +117,9 @@ class TileSelector {
                 const glowIntensity = 1 - (offset * 0.2);
                 const borderMaterial = new THREE.LineBasicMaterial({
                     color: offset === 0 ? 0xffff00 : // Bright yellow core
-                           offset === 1 ? 0xffdd00 : // Slightly orange yellow
-                           offset === 2 ? 0xffaa00 : // More orange
-                                          0xff8800,  // Outer orange glow
+                        offset === 1 ? 0xffdd00 : // Slightly orange yellow
+                            offset === 2 ? 0xffaa00 : // More orange
+                                0xff8800,  // Outer orange glow
                     depthTest: false,
                     transparent: true,
                     opacity: glowIntensity * 0.8,

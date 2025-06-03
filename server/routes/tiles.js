@@ -24,8 +24,7 @@ router.get('/', async (req, res) => {
         const hexasphereUrl = pathToFileURL(path.resolve(__dirname, '../../src/core/hexasphere/HexaSphere.js'));
         const HexasphereModule = await import(hexasphereUrl.href);
         const Hexasphere = HexasphereModule.default;
-        const hexasphere = new Hexasphere(radius, subdivisions, tileWidthRatio);
-        const tiles = hexasphere.tiles.map(tile => {
+        const hexasphere = new Hexasphere(radius, subdivisions, tileWidthRatio);        const tiles = hexasphere.tiles.map(tile => {
             const props = tile.getProperties ? tile.getProperties() : tile;
             // Add boundary as array of {x, y, z}
             props.boundary = tile.boundary ? tile.boundary.map(p => ({ x: p.x, y: p.y, z: p.z })) : [];
@@ -36,7 +35,30 @@ router.get('/', async (req, res) => {
                 props.centerPoint = undefined;
             }
             return props;
-        });
+        });        // Calculate terrain distribution for debugging
+        const terrainCounts = {
+            ocean: 0,
+            flats: 0,
+            hills: 0,
+            mountains: 0
+        };
+
+        tiles.forEach(tile => {
+            if (terrainCounts.hasOwnProperty(tile.terrainType)) {
+                terrainCounts[tile.terrainType]++;
+            }
+        });        const totalTiles = tiles.length;
+        const waterTiles = terrainCounts.ocean;
+        const waterPercentage = ((waterTiles / totalTiles) * 100).toFixed(1);
+        const oceanPercentage = ((terrainCounts.ocean / totalTiles) * 100).toFixed(1);
+
+        console.log(`[API /api/tiles] Terrain Distribution (Total: ${totalTiles}):`);
+        console.log(`  Ocean: ${terrainCounts.ocean} (${oceanPercentage}%)`);
+        console.log(`  Flats: ${terrainCounts.flats} (${((terrainCounts.flats / totalTiles) * 100).toFixed(1)}%)`);
+        console.log(`  Hills: ${terrainCounts.hills} (${((terrainCounts.hills / totalTiles) * 100).toFixed(1)}%)`);
+        console.log(`  Mountains: ${terrainCounts.mountains} (${((terrainCounts.mountains / totalTiles) * 100).toFixed(1)}%)`);
+        console.log(`  Total Water: ${waterTiles} (${waterPercentage}%)`);
+
         console.log('[API /api/tiles] Generated tiles:', Array.isArray(tiles) ? tiles.length : tiles);
         res.json({ tiles });
     } catch (err) {

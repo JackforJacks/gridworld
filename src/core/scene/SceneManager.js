@@ -4,7 +4,8 @@ import { terrainColors, isLand } from '../../utils/index.js';
 import Hexasphere from '../hexasphere/HexaSphere.js';
 import populationManager from '../../managers/population/PopulationManager.js';
 
-class SceneManager {    constructor() {
+class SceneManager {
+    constructor() {
         this.scene = null;
         this.renderer = null;
         this.hexasphere = null;
@@ -31,9 +32,9 @@ class SceneManager {    constructor() {
             }
         });
         return { scene: this.scene, renderer: this.renderer };
-    }    async createHexasphere(radius = null, subdivisions = null, tileWidthRatio = null) {
+    } async createHexasphere(radius = null, subdivisions = null, tileWidthRatio = null) {
         this.clearTiles();
-        
+
         // If no parameters provided, fetch defaults from server config
         if (radius === null || subdivisions === null || tileWidthRatio === null) {
             try {
@@ -52,7 +53,7 @@ class SceneManager {    constructor() {
                 tileWidthRatio = tileWidthRatio ?? 1;
             }
         }
-        
+
         // Instead of generating tiles locally, fetch from server
         await this.fetchAndBuildTiles(radius, subdivisions, tileWidthRatio);
     }    // Fetch tile data from the server and build geometry
@@ -60,7 +61,7 @@ class SceneManager {    constructor() {
         try {
             // Store the radius for use in border calculations
             this.sphereRadius = radius;
-            
+
             // Fetch tile data from the server
             const response = await fetch(`/api/tiles?radius=${radius}&subdivisions=${subdivisions}&tileWidthRatio=${tileWidthRatio}`);
             if (!response.ok) throw new Error(`Failed to fetch tiles: ${response.status}`);
@@ -212,22 +213,20 @@ class SceneManager {    constructor() {
                 lon = Math.atan2(tile.centerPoint.z, tile.centerPoint.x) * 180 / Math.PI;
             }
         } catch (e) {
-            console.warn('Could not get lat/lon for tile:', tile.id, e);
-        }        // Generate terrain using new system: ocean, lake, flats, hills, mountains
+            console.warn('Could not get lat/lon for tile:', tile.id, e);        }        // Generate terrain using new system: ocean, flats, hills, mountains
         let terrainType;
         const y = tile.centerPoint.y;
         const absLat = Math.abs(lat);
-        
+
         // Determine if it's water or land first
         const isWater = y < -0.1; // Lower threshold for water
-        
+
         if (isWater) {
-            // Water types: ocean (deeper) or lake (shallower)
-            terrainType = y < -0.4 ? 'ocean' : 'lake';
+            terrainType = 'ocean';
         } else {
             // Land types based on altitude (y coordinate) and latitude
             const altitude = y + Math.random() * 0.2 - 0.1; // Add some noise
-            
+
             if (altitude > 0.6) {
                 terrainType = 'mountains';
             } else if (altitude > 0.2) {
@@ -236,9 +235,9 @@ class SceneManager {    constructor() {
                 terrainType = 'flats';
             }
         }
-        
+
         return { terrainType, lat, lon };
-    }    getTerrainColor(terrainType) {
+    } getTerrainColor(terrainType) {
         return new THREE.Color(terrainColors[terrainType] || 0x808080); // Default to gray if unknown
     }
 
