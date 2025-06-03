@@ -1,8 +1,8 @@
 // Scene Manager Module
 // Handles scene creation, tile generation, and rendering
-import { terrainColors, isLand } from './utils/index.js';
-import Hexasphere from './core/hexasphere/HexaSphere.js';
-import populationManager from './managers/population/PopulationManager.js';
+import { terrainColors, isLand } from '../../utils/index.js';
+import Hexasphere from '../hexasphere/HexaSphere.js';
+import populationManager from '../../managers/population/PopulationManager.js';
 
 class SceneManager {
     constructor() {

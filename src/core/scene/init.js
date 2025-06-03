@@ -1,5 +1,5 @@
 // Initialization logic for GridWorld
-import { updateDashboard } from './utils.js';
+import { updateDashboard } from '../../utils/index.js';
 
 async function initializeAndStartGame() {
     console.log('Initializing and starting the game...');

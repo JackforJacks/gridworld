@@ -11,7 +11,7 @@ module.exports = (env, argv) => {
   const isWatching = argv.watch || process.env.WEBPACK_WATCH;
 
   return {
-    entry: './src/main.js',
+    entry: './src/index.js',
 
     output: {
       path: path.resolve(__dirname, 'dist'),

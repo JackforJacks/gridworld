@@ -9,11 +9,13 @@ import * as THREE from 'three';
 window.THREE = THREE;
 
 // Import modules using modern ES6 imports
-import CameraController from './camera-controller.js';
-import InputHandler from './input-handler.js';
-import TileSelector from './Sphere/tile-selector.js';
-import SceneManager from './scene-manager.js';
-import UIManager from './ui-manager.js';
+import CameraController from './core/scene/CameraController.js';
+import InputHandler from './components/controls/InputHandler.js';
+import TileSelector from './components/controls/TileSelector.js';
+import SceneManager from './core/scene/SceneManager.js';
+import UIManager from './managers/ui/UIManager.js';
+import BackgroundStars from './core/renderer/BackgroundStars.js';
+import init from './core/scene/init.js';
 
 class GridWorldApp {
     constructor() {
@@ -125,8 +127,8 @@ class GridWorldApp {
         try {
             // Lazy load background stars and init module
             const [{ default: initStars }, { initializeAndStartGame }] = await Promise.all([
-                import('./BackgroundStars.js'),
-                import('./init.js')
+                import('./core/renderer/BackgroundStars.js'),
+                import('./core/scene/init.js')
             ]);
 
             // Initialize background stars

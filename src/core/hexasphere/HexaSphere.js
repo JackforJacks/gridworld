@@ -4,8 +4,8 @@
  */
 
 // Import dependencies
-import Tile from './tile.js';
-import Face from './face.js';
+import Tile from './Tile.js';
+import Face from './Face.js';
 import Point from './point.js';
 
 const Hexasphere = function(radius, numDivisions, hexSize){

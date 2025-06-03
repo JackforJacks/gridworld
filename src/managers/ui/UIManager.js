@@ -1,7 +1,7 @@
 // UI Manager Module
 // Handles UI setup, controls panel, and user interface interactions
 
-import populationManager from './population-manager.js';
+import populationManager from '../population/PopulationManager.js';
 
 class UIManager {
     constructor(sceneManager) {
