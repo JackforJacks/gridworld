@@ -66,8 +66,8 @@ class GridWorldApp {
             // Initialize camera controller
             this.cameraController = new CameraController(this.camera);
 
-            // Initialize tile selector
-            this.tileSelector = new TileSelector(this.scene, this.camera);
+            // Initialize tile selector with scene, camera, and sceneManager
+            this.tileSelector = new TileSelector(this.scene, this.camera, this.sceneManager);
 
             // Initialize input handler with references to other modules
             this.inputHandler = new InputHandler(this.renderer, this.cameraController, this.tileSelector, this.uiManager);
@@ -136,8 +136,8 @@ class GridWorldApp {
                 initStars();
             }
 
-            // Create the hexasphere with 3 subdivisions
-            const tileData = this.sceneManager.createHexasphere(30, 3, 1, null);
+            // Create the hexasphere using server environment variables
+            const tileData = await this.sceneManager.createHexasphere();
 
             // Initialize game logic if needed
             if (typeof initializeAndStartGame === 'function') {
@@ -242,9 +242,9 @@ window.addEventListener('load', async () => {
 });
 
 // Expose key functions globally for compatibility
-window.createScene = (...args) => {
+window.createScene = async (...args) => {
     console.warn('createScene is deprecated. Use GridWorldApp instance instead.');
-    return app.sceneManager ? app.sceneManager.createHexasphere(...args) : null;
+    return app.sceneManager ? await app.sceneManager.createHexasphere(...args) : null;
 };
 
 export default GridWorldApp;

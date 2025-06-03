@@ -130,18 +130,36 @@ const Hexasphere = function (radius, numDivisions, hexSize) {
         } catch (e) {
             // fallback: leave as 0
         }
-        // Assign terrain type
+        // Assign terrain type using new system: ocean, lake, flats, hills, mountains
         let terrainType;
-        if (lat >= 89 || lat <= -89) {
-            terrainType = 'ice';
+        const y = tile.centerPoint.y;
+        const absLat = Math.abs(lat);
+        
+        // Determine if it's water or land first
+        const isWater = y < -0.1; // Lower threshold for water
+        
+        if (isWater) {
+            // Water types: ocean (deeper) or lake (shallower)
+            terrainType = y < -0.4 ? 'ocean' : 'lake';
         } else {
-            // Use a simple land/ocean split for server-side
-            terrainType = tile.centerPoint.y > -0.3 ? 'grassland' : 'ocean';
+            // Land types based on altitude (y coordinate) and latitude
+            const altitude = y + Math.random() * 0.2 - 0.1; // Add some noise
+            
+            if (altitude > 0.6) {
+                terrainType = 'mountains';
+            } else if (altitude > 0.2) {
+                terrainType = 'hills';
+            } else {
+                terrainType = 'flats';
+            }
         }
+        
         // Determine if tile is Habitable
-        const Habitable = (terrainType === 'ice' || terrainType === 'ocean') ? 'no' : 'yes';
+        // Only flats and hills are habitable
+        const Habitable = (terrainType === 'flats' || terrainType === 'hills') ? 'yes' : 'no';
+        
         // Set all properties directly on the tile object
-        tile.setProperties(idx, lat, lon, terrainType === 'grassland', terrainType, Habitable);
+        tile.setProperties(idx, lat, lon, !isWater, terrainType, Habitable);
     }
 
 };

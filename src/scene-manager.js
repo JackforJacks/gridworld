@@ -40,11 +40,10 @@ class SceneManager {
         const hexasphereGeometry = new THREE.BufferGeometry();
         const vertices = [], colors = [], indices = [];
         let vertexIndex = 0, colorIndex = 0;
-        this.habitableTileIds = [];
-        this.hexasphere.tiles.forEach((tile, idx) => {
+        this.habitableTileIds = [];        this.hexasphere.tiles.forEach((tile, idx) => {
             const { terrainType, lat, lon } = this.calculateTileProperties(tile);
-            const Habitable = (terrainType === 'ice' || terrainType === 'ocean') ? 'no' : 'yes';
-            tile.setProperties(idx, lat, lon, isLand(tile.centerPoint), terrainType, Habitable);
+            const Habitable = (terrainType === 'flats' || terrainType === 'hills') ? 'yes' : 'no';
+            tile.setProperties(idx, lat, lon, terrainType !== 'ocean' && terrainType !== 'lake', terrainType, Habitable);
             if (Habitable === 'yes') this.habitableTileIds.push(idx);
             const color = this.getTerrainColor(terrainType);
             const tileColorStart = colorIndex;
@@ -138,9 +137,7 @@ class SceneManager {
         } catch (error) {
             console.error('❌ Failed to reinitialize population:', error);
         }
-    }
-
-    calculateTileProperties(tile) {
+    }    calculateTileProperties(tile) {
         let lat = 0, lon = 0;
         try {
             if (tile.centerPoint && typeof tile.centerPoint.getLatLon === 'function') {
@@ -159,20 +156,34 @@ class SceneManager {
         } catch (e) {
             console.warn('Could not get lat/lon for tile:', tile.id, e);
         }
+        
+        // Generate terrain using new system: ocean, lake, flats, hills, mountains
         let terrainType;
-        if (lat >= 89 || lat <= -89) {
-            terrainType = 'ice';
+        const y = tile.centerPoint.y;
+        const absLat = Math.abs(lat);
+        
+        // Determine if it's water or land first
+        const isWater = y < -0.1; // Lower threshold for water
+        
+        if (isWater) {
+            // Water types: ocean (deeper) or lake (shallower)
+            terrainType = y < -0.4 ? 'ocean' : 'lake';
         } else {
-            terrainType = isLand(tile.centerPoint) ? 'grassland' : 'ocean';
+            // Land types based on altitude (y coordinate) and latitude
+            const altitude = y + Math.random() * 0.2 - 0.1; // Add some noise
+            
+            if (altitude > 0.6) {
+                terrainType = 'mountains';
+            } else if (altitude > 0.2) {
+                terrainType = 'hills';
+            } else {
+                terrainType = 'flats';
+            }
         }
+        
         return { terrainType, lat, lon };
-    }
-
-    getTerrainColor(terrainType) {
-        return new THREE.Color(
-            terrainType === 'ice' ? 0xffffff :
-                terrainType === 'grassland' ? terrainColors.grassland : terrainColors.ocean
-        );
+    }    getTerrainColor(terrainType) {
+        return new THREE.Color(terrainColors[terrainType] || 0x808080); // Default to gray if unknown
     }
 
     addTileGeometry(tile, color, vertices, colors, indices, startVertexIndex) {

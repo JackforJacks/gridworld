@@ -2,9 +2,10 @@
 // Handles tile selection, borders, and popups
 
 class TileSelector {
-    constructor(scene, camera) {
+    constructor(scene, camera, sceneManager) {
         this.scene = scene;
         this.camera = camera;
+        this.sceneManager = sceneManager;
         this.raycaster = new THREE.Raycaster();
         this.selectedTile = null;
         this.borderLines = null;
@@ -81,47 +82,51 @@ class TileSelector {
 
     createBorder(tile) {
         const borderGroup = new THREE.Group();
+        
+        console.log('[TileSelector] Creating border for tile:', tile.id);
 
-        // Create multiple thin lines offset slightly to simulate thickness
-        for (let offset = 0; offset < 3; offset++) {
+        // Create multiple border layers for glowing yellow effect
+        for (let offset = 0; offset < 4; offset++) {
             const borderGeometry = new THREE.BufferGeometry();
             const borderVertices = [];
-            const offsetScale = offset * 0.01;
+            const offsetScale = offset * 0.004; // Slightly larger offset for glow
 
-            // Create lines around the tile boundary with validation
-            for (let i = 0; i < tile.boundary.length; i++) {
-                const current = tile.boundary[i];
-                const next = tile.boundary[(i + 1) % tile.boundary.length];
+            // Create a continuous line loop around the tile boundary
+            for (let i = 0; i <= tile.boundary.length; i++) {
+                const current = tile.boundary[i % tile.boundary.length];
 
                 // Validate coordinates
-                if (current && next &&
-                    !isNaN(current.x) && !isNaN(current.y) && !isNaN(current.z) &&
-                    !isNaN(next.x) && !isNaN(next.y) && !isNaN(next.z)) {
-
-                    // Apply small offset to create thickness effect
+                if (current && !isNaN(current.x) && !isNaN(current.y) && !isNaN(current.z)) {
+                    // Use the boundary points directly with slight outward offset
                     const currentVec = new THREE.Vector3(current.x, current.y, current.z);
-                    const nextVec = new THREE.Vector3(next.x, next.y, next.z);
 
-                    // Normalize and apply offset
-                    currentVec.normalize().multiplyScalar(30 + offsetScale);
-                    nextVec.normalize().multiplyScalar(30 + offsetScale);
+                    // Apply small outward offset along the normal direction
+                    if (offsetScale > 0) {
+                        const normal = currentVec.clone().normalize();
+                        currentVec.add(normal.multiplyScalar(offsetScale));
+                    }
 
                     borderVertices.push(currentVec.x, currentVec.y, currentVec.z);
-                    borderVertices.push(nextVec.x, nextVec.y, nextVec.z);
                 }
             }
 
             if (borderVertices.length > 0) {
                 borderGeometry.setAttribute('position', new THREE.Float32BufferAttribute(borderVertices, 3));
 
+                // Create glowing yellow effect with different intensities
+                const glowIntensity = 1 - (offset * 0.2);
                 const borderMaterial = new THREE.LineBasicMaterial({
-                    color: 0xff0000,
+                    color: offset === 0 ? 0xffff00 : // Bright yellow core
+                           offset === 1 ? 0xffdd00 : // Slightly orange yellow
+                           offset === 2 ? 0xffaa00 : // More orange
+                                          0xff8800,  // Outer orange glow
                     depthTest: false,
                     transparent: true,
-                    opacity: 0.8 - (offset * 0.1)
+                    opacity: glowIntensity * 0.8,
+                    linewidth: 8 - (offset * 1.5) // Much thicker lines: 8, 6.5, 5, 3.5
                 });
 
-                const borderLine = new THREE.LineSegments(borderGeometry, borderMaterial);
+                const borderLine = new THREE.LineLoop(borderGeometry, borderMaterial);
                 borderGroup.add(borderLine);
             }
         }

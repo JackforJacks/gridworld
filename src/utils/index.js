@@ -2,12 +2,11 @@
 
 // Define terrain colors and land function globally
 const terrainColors = {
-    ocean: 0x0066cc,
-    grassland: 0x66cc66,
-    forest: 0x228b22,
-    desert: 0xffd700,
-    mountain: 0x8b7355,
-    tundra: 0xe0e0e0
+    ocean: 0x4A90E2,      // Light blue
+    lake: 0x87CEEB,       // Very light blue (sky blue)
+    flats: 0xDAA520,      // Golden rod (yellow-brown)
+    hills: 0xDEB887,      // Burlywood (very light brown)
+    mountains: 0x8B4513   // Saddle brown (brown)
 };
 
 const isLand = function(centerPoint) {
