@@ -22,7 +22,7 @@ class DatabaseService {
             const truncateQuery = `TRUNCATE TABLE ${tableNames} RESTART IDENTITY CASCADE;`;
             console.log(`🗑️ Truncating ${tables.length} tables: ${tableNames}`);
             await pool.query(truncateQuery);
-            return { 
+            return {
                 success: true,
                 message: `Successfully truncated ${tables.length} tables`,
                 tables: tables.map(t => t.tablename)
