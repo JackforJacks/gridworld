@@ -47,11 +47,18 @@ class GridWorldServer {
         this.setupSocketHandlers();
 
         return this;
-    }
-
-    setupSocketHandlers() {
+    }    setupSocketHandlers() {
         this.io.on('connection', (socket) => {
             console.log(`👤 Client connected: ${socket.id}`);
+
+            // Handle connection errors
+            socket.on('connect_error', (error) => {
+                console.error(`❌ Connection error for ${socket.id}:`, error.message);
+            });
+
+            socket.on('error', (error) => {
+                console.error(`❌ Socket error for ${socket.id}:`, error.message);
+            });
 
             // Handle socket events
             socket.on('getPopulation', async () => {
@@ -64,9 +71,19 @@ class GridWorldServer {
                 }
             });
 
-            socket.on('disconnect', () => {
-                console.log(`👤 Client disconnected: ${socket.id}`);
+            socket.on('disconnect', (reason) => {
+                console.log(`👤 Client disconnected: ${socket.id}, reason: ${reason}`);
             });
+
+            // Add ping/pong handlers for connection health
+            socket.on('ping', () => {
+                socket.emit('pong');
+            });
+        });
+
+        // Handle server-level socket errors
+        this.io.engine.on('connection_error', (err) => {
+            console.error('❌ Socket.io connection error:', err.message);
         });
     }
 

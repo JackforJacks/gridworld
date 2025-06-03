@@ -12,6 +12,17 @@ const dbService = new DatabaseService();
 router.use('/population', populationRoutes);
 router.use('/tiles', tilesRoutes);
 
+// Config endpoint to expose environment variables
+router.get('/config', (req, res) => {
+    res.json({
+        hexasphere: {
+            radius: parseFloat(process.env.HEXASPHERE_RADIUS) || 30,
+            subdivisions: parseFloat(process.env.HEXASPHERE_SUBDIVISIONS) || 3,
+            tileWidthRatio: parseFloat(process.env.HEXASPHERE_TILE_WIDTH_RATIO) || 1
+        }
+    });
+});
+
 // Health check endpoint
 router.get('/health', (req, res) => {
     res.json({

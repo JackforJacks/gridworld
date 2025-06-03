@@ -14,10 +14,10 @@ function parseParam(val, fallback) {
 
 // GET /api/tiles
 router.get('/', async (req, res) => {
-    // Parse params
-    const radius = parseParam(req.query.radius, 30);
-    const subdivisions = parseParam(req.query.subdivisions, 3);
-    const tileWidthRatio = parseParam(req.query.tileWidthRatio, 1);
+    // Parse params with environment variable defaults
+    const radius = parseParam(req.query.radius, process.env.HEXASPHERE_RADIUS || 30);
+    const subdivisions = parseParam(req.query.subdivisions, process.env.HEXASPHERE_SUBDIVISIONS || 3);
+    const tileWidthRatio = parseParam(req.query.tileWidthRatio, process.env.HEXASPHERE_TILE_WIDTH_RATIO || 1);
 
     try {
         // Dynamically import Hexasphere as ESM with file:// URL

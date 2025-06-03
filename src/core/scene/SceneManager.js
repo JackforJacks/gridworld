@@ -31,10 +31,28 @@ class SceneManager {
             }
         });
         return { scene: this.scene, renderer: this.renderer };
-    }
-
-    async createHexasphere(radius = 30, subdivisions = 3, tileWidthRatio = 1) {
+    }    async createHexasphere(radius = null, subdivisions = null, tileWidthRatio = null) {
         this.clearTiles();
+        
+        // If no parameters provided, fetch defaults from server config
+        if (radius === null || subdivisions === null || tileWidthRatio === null) {
+            try {
+                const configResponse = await fetch('/api/config');
+                if (configResponse.ok) {
+                    const config = await configResponse.json();
+                    radius = radius ?? config.hexasphere.radius;
+                    subdivisions = subdivisions ?? config.hexasphere.subdivisions;
+                    tileWidthRatio = tileWidthRatio ?? config.hexasphere.tileWidthRatio;
+                }
+            } catch (error) {
+                console.warn('Failed to fetch config from server, using fallback defaults:', error);
+                // Fallback to hardcoded defaults if server config is unavailable
+                radius = radius ?? 30;
+                subdivisions = subdivisions ?? 3;
+                tileWidthRatio = tileWidthRatio ?? 1;
+            }
+        }
+        
         // Instead of generating tiles locally, fetch from server
         await this.fetchAndBuildTiles(radius, subdivisions, tileWidthRatio);
     }

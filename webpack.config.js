@@ -125,16 +125,31 @@ module.exports = (env, argv) => {
           warnings: false,
         },
         progress: true,
-      },
-      proxy: {
+      },      proxy: {
         '/api': {
           target: 'http://localhost:3000',
           changeOrigin: true,
+          timeout: 30000,
+          proxyTimeout: 30000,
         },
         '/socket.io': {
           target: 'http://localhost:3000',
           ws: true,
           changeOrigin: true,
+          timeout: 30000,
+          proxyTimeout: 30000,
+          logLevel: 'debug',
+          onError: (err, req, res) => {
+            console.log('WebSocket proxy error:', err.message);
+          },
+          onProxyReqWs: (proxyReq, req, socket) => {
+            socket.on('error', (err) => {
+              console.log('WebSocket socket error:', err.message);
+            });
+          },
+          headers: {
+            'Connection': 'keep-alive',
+          },
         },
       },
     },

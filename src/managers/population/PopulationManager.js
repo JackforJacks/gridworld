@@ -20,7 +20,16 @@ class PopulationManager {
     }    // Initialize connection to the server with retry logic
     async connect() {
         try {
-            this.socket = io();
+            this.socket = io({
+                timeout: 30000,
+                transports: ['polling'], // Use only polling to bypass WebSocket proxy issues
+                upgrade: false, // Disable upgrading to WebSocket
+                forceNew: false,
+                reconnection: true,
+                reconnectionDelay: 1000,
+                reconnectionDelayMax: 5000,
+                maxReconnectionAttempts: 5
+            });
 
             this.socket.on('connect', () => {
                 console.log('🔗 Connected to population server');
@@ -32,11 +41,15 @@ class PopulationManager {
                 this.socket.emit('getPopulation');
             });
 
-            this.socket.on('disconnect', () => {
-                console.log('❌ Disconnected from population server');
+            this.socket.on('disconnect', (reason) => {
+                console.log('❌ Disconnected from population server, reason:', reason);
                 this.isConnected = false;
                 this.notifyCallbacks('connected', false);
-                this.handleReconnection();
+                
+                // Only handle manual reconnection for certain disconnect reasons
+                if (reason !== 'io client disconnect' && reason !== 'io server disconnect') {
+                    this.handleReconnection();
+                }
             });
 
             this.socket.on('populationUpdate', (data) => {
@@ -45,9 +58,26 @@ class PopulationManager {
             });
 
             this.socket.on('connect_error', (error) => {
-                console.error('🔌 Connection error:', error);
+                console.error('🔌 Connection error:', error.message);
+                this.isConnected = false;
                 this.handleReconnection();
             });
+
+            this.socket.on('error', (error) => {
+                console.error('🔌 Socket error:', error.message);
+            });
+
+            // Add ping/pong for connection health
+            this.socket.on('pong', () => {
+                // Connection is healthy
+            });
+
+            // Periodically ping the server to keep connection alive
+            this.pingInterval = setInterval(() => {
+                if (this.socket && this.socket.connected) {
+                    this.socket.emit('ping');
+                }
+            }, 30000); // Ping every 30 seconds
 
         } catch (error) {
             console.error('❌ Failed to connect to population server:', error);
@@ -70,10 +100,13 @@ class PopulationManager {
     // OPTIMIZED: Centralized data update logic
     updatePopulationData(data) {
         this.populationData = { ...this.populationData, ...data };
-    }
-
-    // Disconnect from the server
+    }    // Disconnect from the server
     disconnect() {
+        if (this.pingInterval) {
+            clearInterval(this.pingInterval);
+            this.pingInterval = null;
+        }
+        
         if (this.socket) {
             this.socket.disconnect();
             this.socket = null;
