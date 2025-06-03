@@ -126,7 +126,17 @@ module.exports = (env, argv) => {
         },
         progress: true,
       },
-      proxy: undefined, // Remove proxy, everything runs on 8080
+      proxy: {
+        '/api': {
+          target: 'http://localhost:3000',
+          changeOrigin: true,
+        },
+        '/socket.io': {
+          target: 'http://localhost:3000',
+          ws: true,
+          changeOrigin: true,
+        },
+      },
     },
 
     resolve: {

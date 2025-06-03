@@ -33,20 +33,46 @@ class SceneManager {
         return { scene: this.scene, renderer: this.renderer };
     }
 
-    createHexasphere(radius = 30, subdivisions = 3, tileWidthRatio = 1) {
+    async createHexasphere(radius = 30, subdivisions = 3, tileWidthRatio = 1) {
         this.clearTiles();
-        this.hexasphere = new Hexasphere(radius, subdivisions, tileWidthRatio);
+        // Instead of generating tiles locally, fetch from server
+        await this.fetchAndBuildTiles(radius, subdivisions, tileWidthRatio);
+    }
+
+    // Fetch tile data from the server and build geometry
+    async fetchAndBuildTiles(radius, subdivisions, tileWidthRatio) {
+        try {
+            // Fetch tile data from the server
+            const response = await fetch(`/api/tiles?radius=${radius}&subdivisions=${subdivisions}&tileWidthRatio=${tileWidthRatio}`);
+            if (!response.ok) throw new Error(`Failed to fetch tiles: ${response.status}`);
+            const tileData = await response.json();
+            this.buildTilesFromData(tileData);
+        } catch (error) {
+            console.error('❌ Error fetching tile data from server:', error);
+        }
+    }
+
+    // Build Three.js geometry from server-provided tile data
+    buildTilesFromData(tileData) {
+        console.log('[SceneManager] buildTilesFromData received:', tileData);
+        // tileData is expected to be an array of tile objects with all necessary properties
+        if (!tileData || !Array.isArray(tileData.tiles)) {
+            console.error('❌ Invalid tile data from server:', tileData);
+            return;
+        }
+        // Set up a pseudo-hexasphere object to keep compatibility with rest of code
+        this.hexasphere = { tiles: tileData.tiles };
         window.hexasphere = this.hexasphere;
+        this.habitableTileIds = [];
+        this.tileColorIndices.clear();
         const hexasphereGeometry = new THREE.BufferGeometry();
         const vertices = [], colors = [], indices = [];
         let vertexIndex = 0, colorIndex = 0;
-        this.habitableTileIds = [];
+        // Build geometry from each tile
         this.hexasphere.tiles.forEach((tile, idx) => {
-            const { terrainType, lat, lon } = this.calculateTileProperties(tile);
-            const Habitable = (terrainType === 'ice' || terrainType === 'ocean') ? 'no' : 'yes';
-            tile.setProperties(idx, lat, lon, isLand(tile.centerPoint), terrainType, Habitable);
-            if (Habitable === 'yes') this.habitableTileIds.push(idx);
-            const color = this.getTerrainColor(terrainType);
+            // Use tile properties from server
+            if (tile.Habitable === 'yes') this.habitableTileIds.push(tile.id);
+            const color = this.getTerrainColor(tile.terrainType);
             const tileColorStart = colorIndex;
             const tileVertexCount = (tile.boundary.length - 2) * 3 * 3;
             this.tileColorIndices.set(tile.id, {
@@ -56,8 +82,18 @@ class SceneManager {
                 currentColor: color.clone(),
                 isHighlighted: false
             });
-            this.addTileGeometry(tile, color, vertices, colors, indices, vertexIndex);
-            vertexIndex += (tile.boundary.length - 2) * 3;
+            // Build geometry (fan triangulation)
+            const boundaryPoints = tile.boundary.map(p => new THREE.Vector3(p.x, p.y, p.z));
+            for (let i = 1; i < boundaryPoints.length - 1; i++) {
+                vertices.push(boundaryPoints[0].x, boundaryPoints[0].y, boundaryPoints[0].z);
+                vertices.push(boundaryPoints[i].x, boundaryPoints[i].y, boundaryPoints[i].z);
+                vertices.push(boundaryPoints[i + 1].x, boundaryPoints[i + 1].y, boundaryPoints[i + 1].z);
+                colors.push(color.r, color.g, color.b);
+                colors.push(color.r, color.g, color.b);
+                colors.push(color.r, color.g, color.b);
+                indices.push(vertexIndex, vertexIndex + 1, vertexIndex + 2);
+                vertexIndex += 3;
+            }
             colorIndex += tileVertexCount;
         });
         this.createHexasphereMesh(hexasphereGeometry, vertices, colors, indices);

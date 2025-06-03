@@ -4,11 +4,13 @@ const router = express.Router();
 
 // Import route modules
 const populationRoutes = require('./population');
+const tilesRoutes = require('./tiles');
 const DatabaseService = require('../services/databaseService');
 const dbService = new DatabaseService();
 
 // Use route modules
 router.use('/population', populationRoutes);
+router.use('/tiles', tilesRoutes);
 
 // Health check endpoint
 router.get('/health', (req, res) => {
@@ -28,6 +30,7 @@ router.get('/', (req, res) => {
         endpoints: {
             health: '/api/health',
             population: '/api/population',
+            tiles: '/api/tiles',
             'population.get': 'GET /api/population',
             'population.update': 'POST /api/population',
             'population.initialize': 'POST /api/population/initialize',

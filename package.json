@@ -18,7 +18,7 @@
     "server": "node server/index.js",
     "server:watch": "nodemon server/index.js",
     "server:dev": "nodemon server/index.js",
-    "full-auto": "concurrently \"npm run auto-build\" \"npm run server:watch\"",
+    "full-auto": "concurrently \"npm run dev\" \"npm run server:watch\"",
     "full-dev": "concurrently \"npm run dev\" \"npm run server:dev\"",
     "prod": "npm run build && npm run server",
     "test": "echo \"Error: no test specified\" && exit 1"
