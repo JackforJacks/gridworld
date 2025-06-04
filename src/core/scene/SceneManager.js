@@ -213,7 +213,8 @@ class SceneManager {
                 lon = Math.atan2(tile.centerPoint.z, tile.centerPoint.x) * 180 / Math.PI;
             }
         } catch (e) {
-            console.warn('Could not get lat/lon for tile:', tile.id, e);        }        // Generate terrain using new system: ocean, flats, hills, mountains
+            console.warn('Could not get lat/lon for tile:', tile.id, e);
+        }        // Generate terrain using new system: ocean, flats, hills, mountains
         let terrainType;
         const y = tile.centerPoint.y;
         const absLat = Math.abs(lat);

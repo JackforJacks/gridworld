@@ -130,7 +130,7 @@ const Hexasphere = function (radius, numDivisions, hexSize) {
         } catch (e) {
             // fallback: leave as 0
         }
-        
+
         // Assign terrain type using new system: ocean, flats, hills, mountains
         let terrainType;
         const x = tile.centerPoint.x;
@@ -150,15 +150,15 @@ const Hexasphere = function (radius, numDivisions, hexSize) {
             const noise1 = Math.sin(x * 0.01 + z * 0.01) * Math.cos(y * 0.01);
             const noise2 = Math.sin(x * 0.02 - z * 0.02) * Math.cos(y * 0.015);
             const noise3 = Math.sin(x * 0.005 + y * 0.005 + z * 0.005);
-            
+
             // Combine noise functions to create elevation
-            const elevation = (noise1 * 0.5 + noise2 * 0.3 + noise3 * 0.2) + 
-                             Math.random() * 0.3 - 0.15; // Add some randomness
+            const elevation = (noise1 * 0.5 + noise2 * 0.3 + noise3 * 0.2) +
+                Math.random() * 0.3 - 0.15; // Add some randomness
 
             // Create continent-like patterns using larger-scale noise
-            const continentNoise = Math.sin(x * 0.003) * Math.cos(z * 0.003) + 
-                                  Math.sin(y * 0.004) * 0.5;
-            
+            const continentNoise = Math.sin(x * 0.003) * Math.cos(z * 0.003) +
+                Math.sin(y * 0.004) * 0.5;
+
             // Determine if it's water or land
             // Use elevation combined with continent patterns for realistic distribution
             // Adjusted to ensure at least 60% ocean coverage
@@ -170,7 +170,7 @@ const Hexasphere = function (radius, numDivisions, hexSize) {
             } else {
                 // Land types based on elevation above water level
                 const landElevation = elevation - waterThreshold;
-                
+
                 if (landElevation > 0.3) {
                     terrainType = 'mountains';
                 } else if (landElevation > 0.15) {

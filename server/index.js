@@ -14,6 +14,7 @@ const apiRoutes = require('./routes/api');
 
 // Import services
 const populationService = require('./services/populationService');
+const CalendarService = require('./services/calendarService');
 
 // Import middleware
 const errorHandler = require('./middleware/errorHandler');
@@ -24,6 +25,9 @@ class GridWorldServer {
         this.server = http.createServer(this.app);
         this.io = socketIo(this.server, socketConfig);
         this.port = serverConfig.port;
+        
+        // Initialize calendar service
+        this.calendarService = new CalendarService(this.io);
     }
 
     async initialize() {
@@ -38,10 +42,11 @@ class GridWorldServer {
         });
 
         // Error handling middleware
-        this.app.use(errorHandler);
-
-        // Initialize services
+        this.app.use(errorHandler);        // Initialize services
         await populationService.initialize(this.io);
+        
+        // Make calendar service available to routes
+        this.app.locals.calendarService = this.calendarService;
 
         // Setup socket connections
         this.setupSocketHandlers();
@@ -58,9 +63,7 @@ class GridWorldServer {
 
             socket.on('error', (error) => {
                 console.error(`❌ Socket error for ${socket.id}:`, error.message);
-            });
-
-            // Handle socket events
+            });            // Handle socket events
             socket.on('getPopulation', async () => {
                 try {
                     const data = await populationService.getAllPopulationData();
@@ -68,6 +71,19 @@ class GridWorldServer {
                 } catch (error) {
                     console.error('❌ Error getting population data:', error);
                     socket.emit('error', { message: 'Failed to get population data' });
+                }
+            });
+
+            // Calendar subscription handling
+            socket.on('subscribeToCalendar', () => {
+                console.log(`📅 Client ${socket.id} subscribed to calendar updates`);
+                // Send current calendar state immediately
+                try {
+                    const calendarState = this.app.locals.calendarService.getState();
+                    socket.emit('calendarState', calendarState);
+                } catch (error) {
+                    console.error('❌ Error getting calendar state:', error);
+                    socket.emit('error', { message: 'Failed to get calendar state' });
                 }
             });
 
@@ -94,12 +110,17 @@ class GridWorldServer {
             console.log(`🚀 GridWorld server running at http://localhost:${this.port}`);
             console.log(`📊 API available at http://localhost:${this.port}/api/`);
             console.log(`🔌 WebSocket server ready for real-time updates`);
-        });
-
-        // Graceful shutdown
+        });        // Graceful shutdown
         process.on('SIGINT', async () => {
             console.log('\n🛑 Shutting down server...');
             await populationService.shutdown();
+            
+            // Stop calendar service
+            if (this.calendarService) {
+                this.calendarService.stop();
+                console.log('📅 Calendar service stopped');
+            }
+            
             this.server.close(() => {
                 console.log('👋 Server closed gracefully');
                 process.exit(0);

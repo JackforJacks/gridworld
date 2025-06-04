@@ -614,3 +614,82 @@ kbd {
    These have been removed in this refactoring. If any are still needed,
    they should be reinstated from version control.
 */
+
+/* ==========================================================================
+   6. Calendar Date Display Component Styles
+   ========================================================================== */
+
+.calendar-date-display {
+    padding: 8px 12px;
+    background: rgba(0, 0, 34, 0.9);
+    border: 1px solid #444;
+    border-radius: 6px;
+    margin-right: 10px;
+    font-family: 'Segoe UI', Arial, sans-serif;
+    color: #fff;
+    font-size: 14px;
+    font-weight: 500;
+    backdrop-filter: blur(5px);
+    white-space: nowrap;
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.3);
+}
+
+#calendar-current-date {
+    color: #4CAF50;
+    font-weight: 600;
+}
+
+.date-label, .total-label {
+    font-size: 12px;
+    color: #ccc;
+}
+
+.date-value, .total-value {
+    font-size: 14px;
+    font-weight: 600;
+    color: #4CAF50;
+}
+
+.calendar-controls {
+    margin-bottom: 16px;
+}
+
+.control-group {
+    margin-bottom: 12px;
+}
+
+.control-group label {
+    display: block;
+    font-size: 12px;
+    color: #ccc;
+    margin-bottom: 4px;
+}
+
+.speed-selector {
+    width: 100%;
+    padding: 8px;
+    background: rgba(255, 255, 255, 0.1);
+    border: 1px solid #444;
+    border-radius: 4px;
+    color: #fff;
+    font-size: 14px;
+}
+
+.speed-selector:focus {
+    outline: none;
+    border-color: #4CAF50;
+    box-shadow: 0 0 0 2px rgba(76, 175, 80, 0.2);
+}
+
+.speed-selector option {
+    background: #1a1a4a;
+    color: #fff;
+}
+
+.control-buttons {
+    display: flex;
+    gap: 8px;
+    margin-top: 12px;
+}
+
+/* End of Calendar Date Display Styles */

@@ -5,12 +5,14 @@ const router = express.Router();
 // Import route modules
 const populationRoutes = require('./population');
 const tilesRoutes = require('./tiles');
+const calendarRoutes = require('./calendar');
 const DatabaseService = require('../services/databaseService');
 const dbService = new DatabaseService();
 
 // Use route modules
 router.use('/population', populationRoutes);
 router.use('/tiles', tilesRoutes);
+router.use('/calendar', calendarRoutes);
 
 // Config endpoint to expose environment variables
 router.get('/config', (req, res) => {

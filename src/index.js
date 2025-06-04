@@ -14,8 +14,11 @@ import InputHandler from './components/controls/InputHandler.js';
 import TileSelector from './components/controls/TileSelector.js';
 import SceneManager from './core/scene/SceneManager.js';
 import UIManager from './managers/ui/UIManager.js';
+import CalendarManager from './managers/calendar/CalendarManager.js';
+import CalendarDisplay from './components/dashboard/CalendarDisplay.js';
 import BackgroundStars from './core/renderer/BackgroundStars.js';
 import init from './core/scene/init.js';
+import { io } from 'socket.io-client';
 
 class GridWorldApp {
     constructor() {
@@ -28,6 +31,11 @@ class GridWorldApp {
         this.inputHandler = null;
         this.tileSelector = null;
         this.uiManager = null;
+        this.calendarManager = null;
+        this.calendarDisplay = null;
+
+        // Socket connection
+        this.socket = null;
 
         // Three.js objects
         this.scene = null;
@@ -42,6 +50,9 @@ class GridWorldApp {
         }
 
         try {
+            // Initialize socket connection first
+            await this.initializeSocket();
+
             // Initialize scene manager first, as UIManager might depend on it
             const width = window.innerWidth;
             const height = window.innerHeight - 10; // Adjust for potential UI elements
@@ -83,6 +94,12 @@ class GridWorldApp {
 
             // Initialize the game data and create hexasphere
             await this.initializeGameData();
+
+            // Initialize calendar system (but don't start it yet)
+            await this.initializeCalendar();
+
+            // Start calendar after all initialization is complete
+            await this.startCalendar();
 
             this.uiManager.hideLoadingIndicator();
             this.isInitialized = true;
@@ -148,6 +165,88 @@ class GridWorldApp {
         } catch (error) {
             console.error('Failed to initialize game data:', error);
             throw error;
+        }
+    }
+
+    /**
+     * Initialize socket connection
+     */
+    async initializeSocket() {
+        try {
+            this.socket = io({
+                timeout: 30000,
+                transports: ['polling'], // Use only polling to bypass WebSocket proxy issues
+                upgrade: false, // Disable upgrading to WebSocket
+                forceNew: false,
+                reconnection: true,
+                reconnectionDelay: 1000,
+                reconnectionDelayMax: 5000,
+                maxReconnectionAttempts: 5
+            });
+
+            return new Promise((resolve, reject) => {
+                const timeout = setTimeout(() => {
+                    reject(new Error('Socket connection timeout'));
+                }, 10000);
+
+                this.socket.on('connect', () => {
+                    console.log('🔗 Connected to server');
+                    clearTimeout(timeout);
+                    resolve();
+                });
+
+                this.socket.on('connect_error', (error) => {
+                    console.error('🔌 Socket connection error:', error.message);
+                    clearTimeout(timeout);
+                    // Don't reject - continue without socket
+                    resolve();
+                });
+            });
+        } catch (error) {
+            console.error('Failed to initialize socket:', error);
+            // Continue without socket connection
+        }
+    }
+
+    /**
+     * Initialize calendar system
+     */
+    async initializeCalendar() {
+        try {
+            if (!this.socket) {
+                console.warn('No socket connection available for calendar');
+                return;
+            }
+
+            // Initialize calendar manager
+            this.calendarManager = new CalendarManager(this.socket);
+
+            // Initialize calendar display
+            this.calendarDisplay = new CalendarDisplay(this.calendarManager);
+
+            console.log('📅 Calendar system initialized (not started yet)');
+
+        } catch (error) {
+            console.error('Failed to initialize calendar system:', error);
+        }
+    }
+
+    /**
+     * Start calendar system after build is complete
+     */
+    async startCalendar() {
+        try {
+            if (!this.calendarManager) {
+                console.warn('Calendar manager not initialized');
+                return;
+            }
+
+            // Start the calendar after build completion
+            await this.calendarManager.start();
+            console.log('📅 Calendar system started after build completion');
+
+        } catch (error) {
+            console.error('Failed to start calendar:', error);
         }
     }
 
@@ -224,6 +323,23 @@ class GridWorldApp {
 
     getSelectedTile() {
         return this.tileSelector ? this.tileSelector.getSelectedTile() : null;
+    }
+
+    /**
+     * Clean up application resources
+     */
+    destroy() {
+        if (this.calendarDisplay) {
+            this.calendarDisplay.destroy();
+        }
+        
+        if (this.calendarManager) {
+            this.calendarManager.destroy();
+        }
+        
+        if (this.socket) {
+            this.socket.disconnect();
+        }
     }
 }
 

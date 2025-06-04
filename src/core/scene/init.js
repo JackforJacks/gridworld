@@ -17,7 +17,7 @@ async function initializeAndStartGame() {
   }
 
   window.sceneInitialized = true;
-  console.log('Game initialization complete');
+  console.log('🏗️ Game initialization and build complete');
 }
 
 if (typeof window !== 'undefined') {
