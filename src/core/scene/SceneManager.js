@@ -101,13 +101,37 @@ class SceneManager {
                 originalColor: color.clone(),
                 currentColor: color.clone(),
                 isHighlighted: false
+            });            // Build geometry (fan triangulation) with NaN validation
+            const boundaryPoints = tile.boundary.map(p => {
+                // Validate and sanitize coordinates
+                const x = isNaN(p.x) ? 0 : parseFloat(p.x);
+                const y = isNaN(p.y) ? 0 : parseFloat(p.y);
+                const z = isNaN(p.z) ? 0 : parseFloat(p.z);
+                return new THREE.Vector3(x, y, z);
             });
-            // Build geometry (fan triangulation)
-            const boundaryPoints = tile.boundary.map(p => new THREE.Vector3(p.x, p.y, p.z));
+
+            // Skip tiles with invalid boundary data
+            if (boundaryPoints.length < 3) {
+                console.warn(`Skipping tile ${tile.id}: insufficient boundary points`);
+                return;
+            }
+
             for (let i = 1; i < boundaryPoints.length - 1; i++) {
-                vertices.push(boundaryPoints[0].x, boundaryPoints[0].y, boundaryPoints[0].z);
-                vertices.push(boundaryPoints[i].x, boundaryPoints[i].y, boundaryPoints[i].z);
-                vertices.push(boundaryPoints[i + 1].x, boundaryPoints[i + 1].y, boundaryPoints[i + 1].z);
+                const p0 = boundaryPoints[0];
+                const p1 = boundaryPoints[i];
+                const p2 = boundaryPoints[i + 1];
+
+                // Validate triangle vertices before adding
+                if (isNaN(p0.x) || isNaN(p0.y) || isNaN(p0.z) ||
+                    isNaN(p1.x) || isNaN(p1.y) || isNaN(p1.z) ||
+                    isNaN(p2.x) || isNaN(p2.y) || isNaN(p2.z)) {
+                    console.warn(`Skipping invalid triangle in tile ${tile.id}`);
+                    continue;
+                }
+
+                vertices.push(p0.x, p0.y, p0.z);
+                vertices.push(p1.x, p1.y, p1.z);
+                vertices.push(p2.x, p2.y, p2.z);
                 colors.push(color.r, color.g, color.b);
                 colors.push(color.r, color.g, color.b);
                 colors.push(color.r, color.g, color.b);
@@ -240,37 +264,80 @@ class SceneManager {
         return { terrainType, lat, lon };
     } getTerrainColor(terrainType) {
         return new THREE.Color(terrainColors[terrainType] || 0x808080); // Default to gray if unknown
-    }
+    }    addTileGeometry(tile, color, vertices, colors, indices, startVertexIndex) {
+        // Validate and sanitize boundary points
+        const boundaryPoints = tile.boundary.map(p => {
+            const x = isNaN(p.x) ? 0 : parseFloat(p.x);
+            const y = isNaN(p.y) ? 0 : parseFloat(p.y);
+            const z = isNaN(p.z) ? 0 : parseFloat(p.z);
+            return new THREE.Vector3(x, y, z);
+        });
 
-    addTileGeometry(tile, color, vertices, colors, indices, startVertexIndex) {
-        const boundaryPoints = tile.boundary.map(p => new THREE.Vector3(p.x, p.y, p.z));
+        // Skip tiles with invalid boundary data
+        if (boundaryPoints.length < 3) {
+            console.warn(`Skipping tile ${tile.id}: insufficient boundary points`);
+            return;
+        }
+
         for (let i = 1; i < boundaryPoints.length - 1; i++) {
-            vertices.push(boundaryPoints[0].x, boundaryPoints[0].y, boundaryPoints[0].z);
-            vertices.push(boundaryPoints[i].x, boundaryPoints[i].y, boundaryPoints[i].z);
-            vertices.push(boundaryPoints[i + 1].x, boundaryPoints[i + 1].y, boundaryPoints[i + 1].z);
+            const p0 = boundaryPoints[0];
+            const p1 = boundaryPoints[i];
+            const p2 = boundaryPoints[i + 1];
+
+            // Validate triangle vertices before adding
+            if (isNaN(p0.x) || isNaN(p0.y) || isNaN(p0.z) ||
+                isNaN(p1.x) || isNaN(p1.y) || isNaN(p1.z) ||
+                isNaN(p2.x) || isNaN(p2.y) || isNaN(p2.z)) {
+                console.warn(`Skipping invalid triangle in tile ${tile.id}`);
+                continue;
+            }
+
+            vertices.push(p0.x, p0.y, p0.z);
+            vertices.push(p1.x, p1.y, p1.z);
+            vertices.push(p2.x, p2.y, p2.z);
             colors.push(color.r, color.g, color.b);
             colors.push(color.r, color.g, color.b);
             colors.push(color.r, color.g, color.b);
             indices.push(startVertexIndex, startVertexIndex + 1, startVertexIndex + 2);
             startVertexIndex += 3;
         }
-    }
+    }    createHexasphereMesh(geometry, vertices, colors, indices) {
+        // Validate vertices array for NaN values before creating geometry
+        const hasNaN = vertices.some(v => isNaN(v));
+        if (hasNaN) {
+            console.error('❌ NaN values detected in vertices array:', vertices.filter(v => isNaN(v)));
+            // Filter out NaN values
+            const cleanVertices = vertices.filter(v => !isNaN(v));
+            if (cleanVertices.length % 3 !== 0) {
+                console.error('❌ Invalid vertex count after NaN removal');
+                return;
+            }
+        }
 
-    createHexasphereMesh(geometry, vertices, colors, indices) {
-        geometry.setAttribute('position', new THREE.Float32BufferAttribute(vertices, 3));
-        geometry.setAttribute('color', new THREE.Float32BufferAttribute(colors, 3));
-        geometry.setIndex(indices);
-        geometry.computeVertexNormals();
-        const material = new THREE.MeshPhongMaterial({
-            vertexColors: true,
-            side: THREE.DoubleSide
-        });
-        const hexasphereMesh = new THREE.Mesh(geometry, material);
-        this.hexasphereMesh = hexasphereMesh;
-        hexasphereMesh.userData = { hexasphere: this.hexasphere };
-        this.currentTiles.push(hexasphereMesh);
-        this.scene.add(hexasphereMesh);
-        window.currentTiles = this.currentTiles;
+        try {
+            geometry.setAttribute('position', new THREE.Float32BufferAttribute(vertices, 3));
+            geometry.setAttribute('color', new THREE.Float32BufferAttribute(colors, 3));
+            geometry.setIndex(indices);
+            
+            // Compute vertex normals (this is where the error was occurring)
+            geometry.computeVertexNormals();
+            
+            const material = new THREE.MeshPhongMaterial({
+                vertexColors: true,
+                side: THREE.DoubleSide
+            });
+            const hexasphereMesh = new THREE.Mesh(geometry, material);
+            this.hexasphereMesh = hexasphereMesh;
+            hexasphereMesh.userData = { hexasphere: this.hexasphere };
+            this.currentTiles.push(hexasphereMesh);
+            this.scene.add(hexasphereMesh);
+            window.currentTiles = this.currentTiles;
+        } catch (error) {
+            console.error('❌ Error creating hexasphere mesh:', error);
+            console.error('Vertices count:', vertices.length);
+            console.error('Colors count:', colors.length);
+            console.error('Indices count:', indices.length);
+        }
     }
 
     clearTiles() {

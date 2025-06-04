@@ -1,8 +1,9 @@
 const Point = function(x,y,z){
     if(x !== undefined && y !== undefined && z !== undefined){
-        this.x = x.toFixed(3);
-        this.y = y.toFixed(3);
-        this.z = z.toFixed(3);
+        // Ensure coordinates are valid numbers and round to prevent floating point precision issues
+        this.x = isNaN(x) ? 0 : parseFloat(parseFloat(x).toFixed(3));
+        this.y = isNaN(y) ? 0 : parseFloat(parseFloat(y).toFixed(3));
+        this.z = isNaN(z) ? 0 : parseFloat(parseFloat(z).toFixed(3));
     }
 
     this.faces = [];
