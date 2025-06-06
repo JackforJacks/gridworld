@@ -639,12 +639,14 @@ kbd {
     font-weight: 600;
 }
 
-.date-label, .total-label {
+.date-label,
+.total-label {
     font-size: 12px;
     color: #ccc;
 }
 
-.date-value, .total-value {
+.date-value,
+.total-value {
     font-size: 14px;
     font-weight: 600;
     color: #4CAF50;

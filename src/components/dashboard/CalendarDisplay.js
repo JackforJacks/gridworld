@@ -6,7 +6,7 @@ class CalendarDisplay {
     constructor(calendarManager) {
         this.calendarManager = calendarManager;
         this.dateElement = null;
-        
+
         // Initialize the component
         this.init();
     }
@@ -74,7 +74,7 @@ class CalendarDisplay {
 
         // Handle different state structures
         let year, month, day;
-        
+
         if (state.currentDate) {
             // From socket events that include currentDate
             year = state.currentDate.year;
@@ -88,7 +88,7 @@ class CalendarDisplay {
         }
 
         const dateText = `Year ${year}, Month ${month}, Day ${day}`;
-        
+
         const dateSpan = document.getElementById('calendar-current-date');
         if (dateSpan) {
             dateSpan.textContent = dateText;

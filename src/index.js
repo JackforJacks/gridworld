@@ -332,11 +332,11 @@ class GridWorldApp {
         if (this.calendarDisplay) {
             this.calendarDisplay.destroy();
         }
-        
+
         if (this.calendarManager) {
             this.calendarManager.destroy();
         }
-        
+
         if (this.socket) {
             this.socket.disconnect();
         }

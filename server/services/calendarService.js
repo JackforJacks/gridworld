@@ -3,10 +3,10 @@ const EventEmitter = require('events');
 class CalendarService extends EventEmitter {
     constructor(io = null) {
         super();
-        
+
         // Store socket.io instance for broadcasting
         this.io = io;
-        
+
         // Calendar configuration from environment variables
         this.config = {
             daysPerMonth: parseInt(process.env.CALENDAR_DAYS_PER_MONTH) || 8,
@@ -16,7 +16,7 @@ class CalendarService extends EventEmitter {
             defaultSpeed: process.env.CALENDAR_DEFAULT_SPEED || '1_day',
             realTimeTickMs: 1000 // Always 1 second real time
         };
-        
+
         // Current date state
         this.currentDate = {
             day: 1,
@@ -54,7 +54,7 @@ class CalendarService extends EventEmitter {
 
         // Current speed setting
         this.currentSpeed = this.config.defaultSpeed;
-        
+
         // Calendar state
         this.state = {
             isRunning: false,
@@ -63,7 +63,7 @@ class CalendarService extends EventEmitter {
             startTime: null,
             lastTickTime: null
         };
-        
+
         // Tick management
         this.tickTimer = null;
         this.subscribers = new Set();
@@ -75,7 +75,7 @@ class CalendarService extends EventEmitter {
             realTimeInterval: `${this.config.realTimeTickMs}ms`,
             startDate: this.getFormattedDate()
         });
-        
+
         // Auto-start if configured
         if (this.config.autoStart) {
             this.start();
@@ -95,17 +95,17 @@ class CalendarService extends EventEmitter {
 
         this.tickTimer = setInterval(() => {
             this.tick();
-        }, this.config.realTimeTickMs);        console.log(`🟢 Calendar started - ${this.speedModes[this.currentSpeed].name} (${this.config.realTimeTickMs}ms intervals)`);
-        
+        }, this.config.realTimeTickMs); console.log(`🟢 Calendar started - ${this.speedModes[this.currentSpeed].name} (${this.config.realTimeTickMs}ms intervals)`);
+
         const stateData = this.getState();
         this.emit('started', stateData);
-        
+
         // Broadcast to all socket clients
         if (this.io) {
             this.io.emit('calendarStarted', stateData);
             this.io.emit('calendarState', stateData);
         }
-        
+
         return true;
     }
 
@@ -119,21 +119,21 @@ class CalendarService extends EventEmitter {
         }
 
         this.state.isRunning = false;
-        
+
         if (this.tickTimer) {
             clearInterval(this.tickTimer);
             this.tickTimer = null;
-        }        console.log('🔴 Calendar stopped');
-        
+        } console.log('🔴 Calendar stopped');
+
         const stateData = this.getState();
         this.emit('stopped', stateData);
-        
+
         // Broadcast to all socket clients
         if (this.io) {
             this.io.emit('calendarStopped', stateData);
             this.io.emit('calendarState', stateData);
         }
-        
+
         return true;
     }
 
@@ -142,15 +142,15 @@ class CalendarService extends EventEmitter {
      */
     reset() {
         const wasRunning = this.state.isRunning;
-        
+
         this.stop();
-        
+
         this.currentDate = {
             day: 1,
             month: 1,
             year: this.config.startYear
         };
-        
+
         this.state = {
             isRunning: false,
             totalDays: 0,
@@ -158,16 +158,16 @@ class CalendarService extends EventEmitter {
             startTime: null,
             lastTickTime: null
         };
-        
+
         this.currentSpeed = this.config.defaultSpeed;
 
         console.log('🔄 Calendar reset to start date');
         this.emit('reset', this.getState());
-        
+
         if (wasRunning && this.config.autoStart) {
             this.start();
         }
-        
+
         return true;
     }
 
@@ -181,10 +181,10 @@ class CalendarService extends EventEmitter {
 
         this.state.totalTicks++;
         this.state.lastTickTime = Date.now();
-        
+
         const speedMode = this.speedModes[this.currentSpeed];
         const daysToAdvance = speedMode.daysPerTick;
-        
+
         const previousDate = { ...this.currentDate };
         const eventsTriggered = [];
 
@@ -194,7 +194,7 @@ class CalendarService extends EventEmitter {
             eventsTriggered.push(...dayEvents);
         }
 
-        this.state.totalDays += daysToAdvance;        console.log(`📅 Advanced ${daysToAdvance} day(s): ${this.getFormattedDate().short} (Tick #${this.state.totalTicks})`);
+        this.state.totalDays += daysToAdvance; console.log(`📅 Advanced ${daysToAdvance} day(s): ${this.getFormattedDate().short} (Tick #${this.state.totalTicks})`);
 
         // Prepare event data
         const eventData = {
@@ -211,7 +211,7 @@ class CalendarService extends EventEmitter {
 
         // Emit tick event with comprehensive data
         this.emit('tick', eventData);
-        
+
         // Broadcast to all socket clients
         if (this.io) {
             this.io.emit('calendarTick', eventData);
@@ -224,7 +224,7 @@ class CalendarService extends EventEmitter {
      */
     advanceOneDay() {
         const events = [];
-        
+
         // Store old values for event detection
         const oldMonth = this.currentDate.month;
         const oldYear = this.currentDate.year;
@@ -236,7 +236,7 @@ class CalendarService extends EventEmitter {
         if (this.currentDate.day > this.config.daysPerMonth) {
             this.currentDate.day = 1;
             this.currentDate.month++;
-            
+
             events.push({
                 type: 'newMonth',
                 date: { ...this.currentDate },
@@ -247,16 +247,16 @@ class CalendarService extends EventEmitter {
             if (this.currentDate.month > this.config.monthsPerYear) {
                 this.currentDate.month = 1;
                 this.currentDate.year++;
-                
+
                 events.push({
                     type: 'newYear',
                     date: { ...this.currentDate },
                     message: `New year started: Year ${this.currentDate.year}`
                 });
-                
+
                 this.emit('yearChanged', this.currentDate.year, oldYear);
             }
-            
+
             this.emit('monthChanged', this.currentDate.month, oldMonth);
         }
 
@@ -281,7 +281,7 @@ class CalendarService extends EventEmitter {
             newSpeed: this.speedModes[speedKey],
             currentSpeed: speedKey
         });
-        
+
         return true;
     }
 
@@ -299,19 +299,19 @@ class CalendarService extends EventEmitter {
         if (year < 1) {
             throw new Error('Year must be positive');
         }
-        
+
         const previousDate = { ...this.currentDate };
         this.currentDate = { day, month, year };
-        
+
         // Recalculate total days
         this.state.totalDays = this.calculateTotalDays(year, month, day);
-        
+
         console.log(`📅 Date manually set: ${this.getFormattedDate().short}`);
         this.emit('dateSet', {
             previousDate,
             currentDate: { ...this.currentDate }
         });
-        
+
         return true;
     }
 

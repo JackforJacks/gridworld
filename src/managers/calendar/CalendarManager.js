@@ -79,7 +79,7 @@ class CalendarManager {
         this.socket.on('calendarReset', (state) => {
             this.updateState(state);
             this.emit('reset', state);
-        });        this.socket.on('calendarDateSet', (state) => {
+        }); this.socket.on('calendarDateSet', (state) => {
             this.updateState(state);
             this.emit('dateSet', state);
         });

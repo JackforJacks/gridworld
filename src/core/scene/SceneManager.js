@@ -18,6 +18,7 @@ class SceneManager {
         this.hexasphereMesh = null;
         this.habitableTileIds = [];
         this.sphereRadius = 30; // Store the current sphere radius for border calculations
+        this.tileOverlays = new Map(); // Map of tileId -> overlay mesh
     }
 
     initialize(width, height) {
@@ -164,7 +165,6 @@ class SceneManager {
     checkPopulationThresholds() {
         if (!this.hexasphere || !this.hexasphere.tiles || !this.hexasphereMesh) return;
         const POPULATION_THRESHOLD = 10000;
-        const redColor = new THREE.Color(0xff0000);
         let changesDetected = false;
         this.hexasphere.tiles.forEach(tile => {
             if (tile.Habitable === 'yes' && tile.population !== undefined) {
@@ -172,30 +172,62 @@ class SceneManager {
                 if (!colorInfo) return;
                 const shouldBeRed = tile.population >= POPULATION_THRESHOLD;
                 if (shouldBeRed && !colorInfo.isHighlighted) {
-                    this.updateTileColor(tile.id, redColor);
+                    this.addTileOverlay(tile);
                     colorInfo.isHighlighted = true;
-                    colorInfo.currentColor = redColor.clone();
                     changesDetected = true;
                 } else if (!shouldBeRed && colorInfo.isHighlighted) {
-                    this.updateTileColor(tile.id, colorInfo.originalColor);
+                    this.removeTileOverlay(tile.id);
                     colorInfo.isHighlighted = false;
-                    colorInfo.currentColor = colorInfo.originalColor.clone();
                     changesDetected = true;
                 }
             }
         });
     }
 
-    updateTileColor(tileId, newColor) {
-        if (!this.hexasphereMesh || !this.hexasphereMesh.geometry) return;
-        const colorInfo = this.tileColorIndices.get(tileId);
-        if (!colorInfo) return;
-        const colorAttribute = this.hexasphereMesh.geometry.getAttribute('color');
-        if (!colorAttribute) return;
-        for (let i = colorInfo.start; i < colorInfo.start + colorInfo.count; i += 3) {
-            colorAttribute.setXYZ(i / 3, newColor.r, newColor.g, newColor.b);
+    addTileOverlay(tile) {
+        // Remove if already exists
+        this.removeTileOverlay(tile.id);
+        // Build overlay geometry (same as tile, but slightly scaled out)
+        const boundaryPoints = tile.boundary.map(p => {
+            // Scale out from center for overlay
+            const center = tile.centerPoint;
+            const scale = 1.0; // Same size as tile
+            const x = center.x + (p.x - center.x) * scale;
+            const y = center.y + (p.y - center.y) * scale;
+            const z = center.z + (p.z - center.z) * scale;
+            return new THREE.Vector3(x, y, z);
+        });
+        if (boundaryPoints.length < 3) return;
+        const geometry = new THREE.BufferGeometry();
+        const vertices = [];
+        for (let i = 1; i < boundaryPoints.length - 1; i++) {
+            const p0 = boundaryPoints[0], p1 = boundaryPoints[i], p2 = boundaryPoints[i + 1];
+            vertices.push(p0.x, p0.y, p0.z);
+            vertices.push(p1.x, p1.y, p1.z);
+            vertices.push(p2.x, p2.y, p2.z);
         }
-        colorAttribute.needsUpdate = true;
+        geometry.setAttribute('position', new THREE.Float32BufferAttribute(vertices, 3));
+        geometry.computeVertexNormals();
+        const material = new THREE.MeshBasicMaterial({
+            color: 0xff0000,
+            transparent: true,
+            opacity: 0.15, // More transparent effect
+            depthWrite: true
+        });
+        const overlayMesh = new THREE.Mesh(geometry, material);
+        overlayMesh.renderOrder = 10; // Render on top
+        this.scene.add(overlayMesh);
+        this.tileOverlays.set(tile.id, overlayMesh);
+    }
+
+    removeTileOverlay(tileId) {
+        const overlay = this.tileOverlays.get(tileId);
+        if (overlay) {
+            this.scene.remove(overlay);
+            overlay.geometry.dispose();
+            overlay.material.dispose();
+            this.tileOverlays.delete(tileId);
+        }
     }
 
     resetTileColors() {
@@ -203,7 +235,7 @@ class SceneManager {
         this.hexasphere.tiles.forEach(tile => {
             const colorInfo = this.tileColorIndices.get(tile.id);
             if (colorInfo && colorInfo.isHighlighted) {
-                this.updateTileColor(tile.id, colorInfo.originalColor);
+                this.removeTileOverlay(tile.id);
                 colorInfo.isHighlighted = false;
                 colorInfo.currentColor = colorInfo.originalColor.clone();
             }
@@ -264,7 +296,7 @@ class SceneManager {
         return { terrainType, lat, lon };
     } getTerrainColor(terrainType) {
         return new THREE.Color(terrainColors[terrainType] || 0x808080); // Default to gray if unknown
-    }    addTileGeometry(tile, color, vertices, colors, indices, startVertexIndex) {
+    } addTileGeometry(tile, color, vertices, colors, indices, startVertexIndex) {
         // Validate and sanitize boundary points
         const boundaryPoints = tile.boundary.map(p => {
             const x = isNaN(p.x) ? 0 : parseFloat(p.x);
@@ -301,7 +333,7 @@ class SceneManager {
             indices.push(startVertexIndex, startVertexIndex + 1, startVertexIndex + 2);
             startVertexIndex += 3;
         }
-    }    createHexasphereMesh(geometry, vertices, colors, indices) {
+    } createHexasphereMesh(geometry, vertices, colors, indices) {
         // Validate vertices array for NaN values before creating geometry
         const hasNaN = vertices.some(v => isNaN(v));
         if (hasNaN) {
@@ -318,10 +350,10 @@ class SceneManager {
             geometry.setAttribute('position', new THREE.Float32BufferAttribute(vertices, 3));
             geometry.setAttribute('color', new THREE.Float32BufferAttribute(colors, 3));
             geometry.setIndex(indices);
-            
+
             // Compute vertex normals (this is where the error was occurring)
             geometry.computeVertexNormals();
-            
+
             const material = new THREE.MeshPhongMaterial({
                 vertexColors: true,
                 side: THREE.DoubleSide

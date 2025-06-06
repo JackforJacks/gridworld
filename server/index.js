@@ -25,7 +25,7 @@ class GridWorldServer {
         this.server = http.createServer(this.app);
         this.io = socketIo(this.server, socketConfig);
         this.port = serverConfig.port;
-        
+
         // Initialize calendar service
         this.calendarService = new CalendarService(this.io);
     }
@@ -44,7 +44,7 @@ class GridWorldServer {
         // Error handling middleware
         this.app.use(errorHandler);        // Initialize services
         await populationService.initialize(this.io);
-        
+
         // Make calendar service available to routes
         this.app.locals.calendarService = this.calendarService;
 
@@ -114,13 +114,13 @@ class GridWorldServer {
         process.on('SIGINT', async () => {
             console.log('\n🛑 Shutting down server...');
             await populationService.shutdown();
-            
+
             // Stop calendar service
             if (this.calendarService) {
                 this.calendarService.stop();
                 console.log('📅 Calendar service stopped');
             }
-            
+
             this.server.close(() => {
                 console.log('👋 Server closed gracefully');
                 process.exit(0);
