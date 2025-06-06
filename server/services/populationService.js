@@ -116,8 +116,26 @@ class PopulationService {
                 totalTiles: 0,
                 lastUpdated: new Date().toISOString()
             };
-        }        // Remove all people for a fresh start
+        }
+        // Remove all people for a fresh start
         await pool.query('DELETE FROM people');
+
+        // Get current calendar date for age calculation
+        let currentYear = 4000, currentMonth = 1, currentDay = 1;
+        try {
+            const calendarService = require('./calendarService');
+            if (calendarService && typeof calendarService.getState === 'function') {
+                const state = calendarService.getState();
+                if (state && state.currentDate) {
+                    currentYear = state.currentDate.year;
+                    currentMonth = state.currentDate.month;
+                    currentDay = state.currentDate.day;
+                }
+            }
+        } catch (e) {
+            // Fallback to default year 4000
+        }
+
         // Insert people: 51% males, age 1-90, median 25
         // Generate random population per tile (average 100, range 80-120)
         const people = [];
@@ -129,13 +147,18 @@ class PopulationService {
                 // Age: skewed distribution for median ~25
                 // Use log-normal distribution for realistic age
                 let age = Math.round(Math.min(90, Math.max(1, Math.exp(3 + Math.random() * 0.7))));
-                // Clamp and adjust for median
                 if (age > 90) age = 90;
                 if (age < 1) age = 1;
-                // Calculate date_of_birth
-                const birthYear = 4000 - age;
-                const birthMonth = Math.floor(Math.random() * 12) + 1;
-                const birthDay = Math.floor(Math.random() * 7) + 1;
+                // Calculate date_of_birth based on current calendar date
+                let birthYear = currentYear - age;
+                let birthMonth = Math.floor(Math.random() * 12) + 1;
+                let birthDay = Math.floor(Math.random() * 8) + 1;
+                // Clamp to not exceed current date (custom calendar: 8 days/month)
+                if (birthYear === currentYear) {
+                    if (birthMonth > currentMonth) birthMonth = currentMonth;
+                    if (birthMonth === currentMonth && birthDay > currentDay) birthDay = currentDay;
+                }
+                if (birthDay > 8) birthDay = 8; // Clamp to 8 days per month
                 const date_of_birth = `${birthYear}-${String(birthMonth).padStart(2, '0')}-${String(birthDay).padStart(2, '0')}`;
                 people.push([tile_id, sex, date_of_birth, tile_id]); // residency = tile_id
             }
@@ -350,15 +373,35 @@ class PopulationService {
         console.log('💾 Population data saved on shutdown');
     } async getPopulationStats() {
         try {
-            // Query for male, female, under 18, over 65
+            // Get current calendar date from calendarService if available
+            let currentDate = new Date();
+            try {
+                const calendarService = require('./calendarService');
+                if (calendarService && typeof calendarService.getState === 'function') {
+                    const state = calendarService.getState();
+                    if (state && state.currentDate) {
+                        // Format as YYYY-MM-DD
+                        const y = state.currentDate.year;
+                        const m = String(state.currentDate.month).padStart(2, '0');
+                        const d = String(state.currentDate.day).padStart(2, '0');
+                        currentDate = new Date(`${y}-${m}-${d}`);
+                    }
+                }
+            } catch (e) {
+                // Fallback to system date
+            }
+            // Use currentDate as benchmark for age calculations
+            const year = currentDate.getFullYear();
+            const month = String(currentDate.getMonth() + 1).padStart(2, '0');
+            const day = String(currentDate.getDate()).padStart(2, '0');
+            const dateStr = `${year}-${month}-${day}`;
             const result = await pool.query(`
                 SELECT 
                     COUNT(*) FILTER (WHERE sex = true) AS male,
                     COUNT(*) FILTER (WHERE sex = false) AS female,
-                    COUNT(*) FILTER (WHERE date_of_birth > CURRENT_DATE - INTERVAL '18 years') AS under18,
-                    COUNT(*) FILTER (WHERE date_of_birth < CURRENT_DATE - INTERVAL '65 years') AS over65
-                FROM people;
-            `);
+                    COUNT(*) FILTER (WHERE date_of_birth > DATE $1 - INTERVAL '18 years') AS under18,
+                    COUNT(*) FILTER (WHERE date_of_birth < DATE $1 - INTERVAL '65 years') AS over65
+                FROM people;`, [dateStr]);
             return result.rows[0];
         } catch (error) {
             console.error('Error getting population stats:', error);
