@@ -156,7 +156,7 @@ class GridWorldApp {
 
             // Update camera controller
             if (this.cameraController) {
-                this.cameraController.tick(deltaTime);
+                this.cameraController.animate();
             }
             // Update camera-bound light
             if (this.sceneManager && this.camera) {

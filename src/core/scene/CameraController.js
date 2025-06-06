@@ -2,52 +2,54 @@
 // Handles camera movement, zoom, and rotation logic
 
 class CameraController {
-    constructor(camera, initialDistance = 65) {
+    constructor(camera, initialDistance = 160) {
         this.camera = camera;
         this.distance = initialDistance;
-        this.minDistance = 40;
-        this.maxDistance = 120;
-        
+        this.minDistance = 55;  // Increased to prevent bumping inside sphere
+        this.maxDistance = 200; // Increased for more zoom out range
+
         this.rotation = { x: 0, y: 0 };
         this.targetRotation = { x: 0, y: 0 };
-        this.autoRotate = true;
+        this.autoRotate = false;
         this.rotationSpeed = 0.003;
-        this.autoRotateSpeed = 0.0001;
     }
 
     // Update camera position based on current rotation and distance
     updatePosition() {
         this.camera.position.set(0, 0, this.distance);
         this.camera.lookAt(0, 0, 0);
-        
+
         // Apply rotations
         this.camera.position.applyAxisAngle(new THREE.Vector3(1, 0, 0), this.rotation.x);
         this.camera.position.applyAxisAngle(new THREE.Vector3(0, 1, 0), this.rotation.y);
         this.camera.lookAt(0, 0, 0);
     }
 
-    // Smooth rotation interpolation
-    tick(deltaTime) {
-        const lerpFactor = 0.1;
-        
-        // Auto-rotation
+    // Animate camera movements
+    animate() {
+        // Smooth rotation transitions
+        this.rotation.x += (this.targetRotation.x - this.rotation.x) * 0.1;
+        this.rotation.y += (this.targetRotation.y - this.rotation.y) * 0.1;
+
+        // Auto-rotate if enabled
         if (this.autoRotate) {
-            this.targetRotation.y += this.autoRotateSpeed * deltaTime;
+            this.targetRotation.y += 0.005;
         }
-        
-        // Smooth interpolation to target rotation
-        this.rotation.x += (this.targetRotation.x - this.rotation.x) * lerpFactor;
-        this.rotation.y += (this.targetRotation.y - this.rotation.y) * lerpFactor;
-        
+
         this.updatePosition();
     }
 
-    // Handle mouse drag rotation
-    handleMouseDrag(deltaX, deltaY) {
+    // Handle mouse movement (for orbit controls)
+    handleMouseMove(deltaX, deltaY) {
         this.targetRotation.y -= deltaX * this.rotationSpeed;
         this.targetRotation.x += deltaY * this.rotationSpeed;
-        this.targetRotation.x = Math.max(-Math.PI/2, Math.min(Math.PI/2, this.targetRotation.x));
+        this.targetRotation.x = Math.max(-Math.PI / 2, Math.min(Math.PI / 2, this.targetRotation.x));
         this.autoRotate = false;
+    }
+
+    // Alias for compatibility with InputHandler
+    handleMouseDrag(deltaX, deltaY) {
+        this.handleMouseMove(deltaX, deltaY);
     }
 
     // Handle zoom
@@ -60,56 +62,56 @@ class CameraController {
     reset() {
         this.targetRotation.x = 0;
         this.targetRotation.y = 0;
-        this.distance = 65;
+        this.distance = 160;
         this.autoRotate = true;
         this.updatePosition();
     }
 
     // Handle keyboard controls
     handleKeyboard(key, step = 0.1, zoomStep = 2) {
-        switch(key.toLowerCase()) {
+        switch (key.toLowerCase()) {
             case 'w':
             case 'arrowup':
                 this.targetRotation.x -= step;
-                this.targetRotation.x = Math.max(-Math.PI/2, this.targetRotation.x);
+                this.targetRotation.x = Math.max(-Math.PI / 2, this.targetRotation.x);
                 this.autoRotate = false;
                 break;
-                
+
             case 's':
             case 'arrowdown':
                 this.targetRotation.x += step;
-                this.targetRotation.x = Math.min(Math.PI/2, this.targetRotation.x);
+                this.targetRotation.x = Math.min(Math.PI / 2, this.targetRotation.x);
                 this.autoRotate = false;
                 break;
-                
+
             case 'a':
             case 'arrowleft':
                 this.targetRotation.y -= step;
                 this.autoRotate = false;
                 break;
-                
+
             case 'd':
             case 'arrowright':
                 this.targetRotation.y += step;
                 this.autoRotate = false;
                 break;
-                
+
             case '=':
             case '+':
                 this.zoom(-zoomStep);
                 break;
-                
+
             case '-':
             case '_':
                 this.zoom(zoomStep);
                 break;
-                
+
             case 'r':
                 this.reset();
                 break;
-                
+
             case 'c':
-                this.distance = 65;
+                this.distance = 160;
                 this.targetRotation.x = 0;
                 this.targetRotation.y = 0;
                 this.updatePosition();

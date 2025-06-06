@@ -20,7 +20,8 @@ class PopulationManager {
     }    // Initialize connection to the server with retry logic
     async connect() {
         try {
-            this.socket = io({
+            // Connect to the socket.io server through the webpack dev server proxy
+            this.socket = io('http://localhost:8080', {
                 timeout: 30000,
                 transports: ['polling'], // Use only polling to bypass WebSocket proxy issues
                 upgrade: false, // Disable upgrading to WebSocket

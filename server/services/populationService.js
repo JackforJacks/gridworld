@@ -14,16 +14,31 @@ class PopulationService {
     async ensureTableExists() {
         try {
             await pool.query(`
-                CREATE TABLE IF NOT EXISTS tile_populations (
-                    tile_id INTEGER PRIMARY KEY,
-                    population INTEGER NOT NULL DEFAULT 0,
+                CREATE TABLE IF NOT EXISTS people (
+                    id SERIAL PRIMARY KEY,
+                    tile_id INTEGER,
+                    sex BOOLEAN,
+                    date_of_birth DATE,
+                    residency INTEGER,
                     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
                 );
             `);
+            // Ensure residency column exists (in case table was created before this column was added)
+            try {
+                await pool.query(`
+                    ALTER TABLE people ADD COLUMN IF NOT EXISTS residency INTEGER;
+                `);
+            } catch (alterError) {
+                // Column might already exist, ignore error
+                console.log('Note: residency column handling:', alterError.message);
+            }
             await pool.query(`
-                CREATE INDEX IF NOT EXISTS idx_updated_at ON tile_populations(updated_at);
+                CREATE INDEX IF NOT EXISTS idx_people_tile_id ON people(tile_id);
             `);
-            console.log('Table tile_populations is ready.');
+            await pool.query(`
+                CREATE INDEX IF NOT EXISTS idx_people_residency ON people(residency);
+            `);
+            console.log('Table people is ready.');
         } catch (error) {
             console.error('Error ensuring table exists:', error);
         }
@@ -51,10 +66,11 @@ class PopulationService {
 
     async loadData() {
         try {
-            const result = await pool.query('SELECT tile_id, population FROM tile_populations');
+            // Aggregate population from people table
+            const result = await pool.query('SELECT tile_id, COUNT(*) as population FROM people GROUP BY tile_id');
             const populations = {};
             result.rows.forEach(row => {
-                populations[row.tile_id] = row.population;
+                populations[row.tile_id] = parseInt(row.population, 10);
             });
             return populations;
         } catch (error) {
@@ -78,7 +94,9 @@ class PopulationService {
         }
     } async resetPopulation() {
         try {
-            await pool.query('DELETE FROM tile_populations');
+            // Drop the people table completely and recreate it
+            await pool.query('DROP TABLE IF EXISTS people CASCADE');
+            await this.ensureTableExists();
             await this.broadcastUpdate('populationReset');
 
             // Return the empty state after reset
@@ -98,17 +116,47 @@ class PopulationService {
                 totalTiles: 0,
                 lastUpdated: new Date().toISOString()
             };
+        }        // Remove all people for a fresh start
+        await pool.query('DELETE FROM people');
+        // Insert people: 51% males, age 1-90, median 25
+        // Generate random population per tile (average 100, range 80-120)
+        const people = [];
+        for (const tile_id of tileIds) {
+            const tilePopulation = Math.floor(80 + Math.random() * 41); // 80-120 people per tile
+            for (let i = 0; i < tilePopulation; i++) {
+                // 51% chance male
+                const sex = Math.random() < 0.51;
+                // Age: skewed distribution for median ~25
+                // Use log-normal distribution for realistic age
+                let age = Math.round(Math.min(90, Math.max(1, Math.exp(3 + Math.random() * 0.7))));
+                // Clamp and adjust for median
+                if (age > 90) age = 90;
+                if (age < 1) age = 1;
+                // Calculate date_of_birth
+                const birthYear = 4000 - age;
+                const birthMonth = Math.floor(Math.random() * 12) + 1;
+                const birthDay = Math.floor(Math.random() * 7) + 1;
+                const date_of_birth = `${birthYear}-${String(birthMonth).padStart(2, '0')}-${String(birthDay).padStart(2, '0')}`;
+                people.push([tile_id, sex, date_of_birth, tile_id]); // residency = tile_id
+            }
         }
-        // Generate random populations between 1000-10000 for each tile (like the old JSON system)
-        const values = tileIds.map(id => {
-            const randomPopulation = Math.floor(Math.random() * 11000) + 500; // 50-150
-            return `(${id}, ${randomPopulation})`;
-        }).join(',');
-
-        await pool.query(
-            `INSERT INTO tile_populations (tile_id, population) VALUES ${values} 
-             ON CONFLICT (tile_id) DO UPDATE SET population = EXCLUDED.population, updated_at = CURRENT_TIMESTAMP`
-        );
+        // Batch insert in chunks to avoid SQL size limits
+        const batchSize = 250; // Lowered to avoid exceeding parameter limits
+        for (let i = 0; i < people.length; i += batchSize) {
+            const batch = people.slice(i, i + batchSize);
+            const valuesPlaceholders = batch.map((_, idx) => `($${idx * 4 + 1}, $${idx * 4 + 2}, $${idx * 4 + 3}, $${idx * 4 + 4})`).join(',');
+            const flatValues = batch.flat();
+            try {
+                await pool.query(
+                    `INSERT INTO people (tile_id, sex, date_of_birth, residency) VALUES ${valuesPlaceholders}`,
+                    flatValues
+                );
+            } catch (err) {
+                console.error(`Error inserting people batch at index ${i} (batch size: ${batch.length}):`, err);
+                console.error('Sample batch data:', batch.slice(0, 3));
+                throw err;
+            }
+        }
         // Return the new state after initialization
         const populations = await this.loadData();
         return this.getFormattedPopulationData(populations);
@@ -188,9 +236,8 @@ class PopulationService {
     }    // Centralized broadcasting logic
     async broadcastUpdate(eventType = 'populationUpdate') {
         if (this.io) {
-            const populations = await this.loadData();
-            const formattedData = this.getFormattedPopulationData(populations);
-            this.io.emit(eventType, formattedData);
+            const data = await this.getAllPopulationData();
+            this.io.emit(eventType, data);
         }
     } async updateDataAndBroadcast(eventType = 'populationUpdate') {
         await this.saveData();
@@ -199,7 +246,11 @@ class PopulationService {
 
     async getAllPopulationData() {
         const populations = await this.loadData();
-        return this.getFormattedPopulationData(populations);
+        const stats = await this.getPopulationStats();
+        return {
+            ...this.getFormattedPopulationData(populations),
+            ...stats
+        };
     }
 
     validateTileIds(tileIds) {
@@ -297,6 +348,28 @@ class PopulationService {
         this.stopAutoSave();
         await this.saveData();
         console.log('💾 Population data saved on shutdown');
+    } async getPopulationStats() {
+        try {
+            // Query for male, female, under 18, over 65
+            const result = await pool.query(`
+                SELECT 
+                    COUNT(*) FILTER (WHERE sex = true) AS male,
+                    COUNT(*) FILTER (WHERE sex = false) AS female,
+                    COUNT(*) FILTER (WHERE date_of_birth > CURRENT_DATE - INTERVAL '18 years') AS under18,
+                    COUNT(*) FILTER (WHERE date_of_birth < CURRENT_DATE - INTERVAL '65 years') AS over65
+                FROM people;
+            `);
+            return result.rows[0];
+        } catch (error) {
+            console.error('Error getting population stats:', error);
+            // Return default values if query fails
+            return {
+                male: '0',
+                female: '0',
+                under18: '0',
+                over65: '0'
+            };
+        }
     }
 }
 

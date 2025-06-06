@@ -140,7 +140,17 @@ class UIManager {
         }
 
         try {
+            // Get tile stats from sceneManager
             const stats = window.sceneManager.getPopulationStats();
+            // Get demographic stats from populationManager
+            const popData = populationManager.getPopulationData();
+            // Merge demographic stats if available
+            if (popData) {
+                if (typeof popData.male !== 'undefined') stats.male = Number(popData.male);
+                if (typeof popData.female !== 'undefined') stats.female = Number(popData.female);
+                if (typeof popData.under18 !== 'undefined') stats.under18 = Number(popData.under18);
+                if (typeof popData.over65 !== 'undefined') stats.over65 = Number(popData.over65);
+            }
             const growthStats = populationManager.getGrowthStats();
             this.showStatsModal(stats, growthStats);
             console.log('📊 Population Statistics:', { stats, growthStats });
@@ -184,6 +194,10 @@ class UIManager {
         // Add Total Population first
         content.innerHTML = `
             <p><strong>Total Population:</strong> <span id="stats-modal-total-population">${this.currentTotalPopulation.toLocaleString()}</span></p>
+            <p><strong>Male Population:</strong> <span id="stats-modal-male-population">${stats.male?.toLocaleString() ?? 'N/A'}</span></p>
+            <p><strong>Female Population:</strong> <span id="stats-modal-female-population">${stats.female?.toLocaleString() ?? 'N/A'}</span></p>
+            <p><strong>Under 18:</strong> <span id="stats-modal-under18">${stats.under18?.toLocaleString() ?? 'N/A'}</span></p>
+            <p><strong>Over 65:</strong> <span id="stats-modal-over65">${stats.over65?.toLocaleString() ?? 'N/A'}</span></p>
             <hr class="stats-modal-separator">
             <p><strong>Total Tiles:</strong> ${stats.totalTiles}</p>
             <p><strong>Habitable Tiles:</strong> ${stats.habitableTiles}</p>
