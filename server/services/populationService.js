@@ -84,10 +84,45 @@ class PopulationService {
         return true;
     } async updatePopulation(tileId, population) {
         try {
-            await pool.query(
-                'INSERT INTO tile_populations (tile_id, population) VALUES ($1, $2) ON CONFLICT (tile_id) DO UPDATE SET population = $2, updated_at = CURRENT_TIMESTAMP',
-                [tileId, population]
-            );
+            // Remove tile_populations update, update people table instead
+            // This will set the residency of people in the given tile to match the new population count
+            // Remove or add people as needed
+            // Get current count
+            const result = await pool.query('SELECT COUNT(*) FROM people WHERE tile_id = $1', [tileId]);
+            const currentCount = parseInt(result.rows[0].count, 10);
+            if (population > currentCount) {
+                // Add new people
+                const toAdd = population - currentCount;
+                const people = [];
+                for (let i = 0; i < toAdd; i++) {
+                    // Random sex, random age (1-90), residency = tileId
+                    const sex = Math.random() < 0.51;
+                    const age = Math.round(Math.min(90, Math.max(1, Math.exp(3 + Math.random() * 0.7))));
+                    const now = new Date();
+                    const birthYear = now.getFullYear() - age;
+                    const birthMonth = Math.floor(Math.random() * 12) + 1;
+                    const birthDay = Math.floor(Math.random() * 8) + 1;
+                    const date_of_birth = `${birthYear}-${String(birthMonth).padStart(2, '0')}-${String(birthDay).padStart(2, '0')}`;
+                    people.push([tileId, sex, date_of_birth, tileId]);
+                }
+                const batchSize = 1000;
+                for (let i = 0; i < people.length; i += batchSize) {
+                    const batch = people.slice(i, i + batchSize);
+                    const valuesPlaceholders = batch.map((_, idx) => `($${idx * 4 + 1}, $${idx * 4 + 2}, $${idx * 4 + 3}, $${idx * 4 + 4})`).join(',');
+                    const flatValues = batch.flat();
+                    await pool.query(
+                        `INSERT INTO people (tile_id, sex, date_of_birth, residency) VALUES ${valuesPlaceholders}`,
+                        flatValues
+                    );
+                }
+            } else if (population < currentCount) {
+                // Remove people (delete oldest first)
+                const toRemove = currentCount - population;
+                await pool.query(
+                    'DELETE FROM people WHERE id IN (SELECT id FROM people WHERE tile_id = $1 ORDER BY date_of_birth ASC LIMIT $2)',
+                    [tileId, toRemove]
+                );
+            }
             await this.broadcastUpdate('populationUpdate');
         } catch (error) {
             console.error('Error updating population:', error);
@@ -164,7 +199,7 @@ class PopulationService {
             }
         }
         // Batch insert in chunks to avoid SQL size limits
-        const batchSize = 250; // Lowered to avoid exceeding parameter limits
+        const batchSize = 1000; // Lowered to avoid exceeding parameter limits
         for (let i = 0; i < people.length; i += batchSize) {
             const batch = people.slice(i, i + batchSize);
             const valuesPlaceholders = batch.map((_, idx) => `($${idx * 4 + 1}, $${idx * 4 + 2}, $${idx * 4 + 3}, $${idx * 4 + 4})`).join(',');
@@ -375,33 +410,53 @@ class PopulationService {
         try {
             // Get current calendar date from calendarService if available
             let currentDate = new Date();
+            let calendarCutoffUnder18 = null;
+            let calendarCutoffOver65 = null;
             try {
                 const calendarService = require('./calendarService');
                 if (calendarService && typeof calendarService.getState === 'function') {
                     const state = calendarService.getState();
                     if (state && state.currentDate) {
-                        // Format as YYYY-MM-DD
-                        const y = state.currentDate.year;
-                        const m = String(state.currentDate.month).padStart(2, '0');
-                        const d = String(state.currentDate.day).padStart(2, '0');
-                        currentDate = new Date(`${y}-${m}-${d}`);
+                        // Use custom calendar system for cutoff dates
+                        const { year, month, day } = state.currentDate;
+                        // Under 18 cutoff
+                        const under18Year = year - 18;
+                        calendarCutoffUnder18 = `${under18Year}-${String(month).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
+                        // Over 65 cutoff
+                        const over65Year = year - 65;
+                        calendarCutoffOver65 = `${over65Year}-${String(month).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
+                        // Also set currentDate for reference
+                        currentDate = new Date(`${year}-${String(month).padStart(2, '0')}-${String(day).padStart(2, '0')}`);
                     }
                 }
             } catch (e) {
                 // Fallback to system date
             }
-            // Use currentDate as benchmark for age calculations
-            const year = currentDate.getFullYear();
-            const month = String(currentDate.getMonth() + 1).padStart(2, '0');
-            const day = String(currentDate.getDate()).padStart(2, '0');
-            const dateStr = `${year}-${month}-${day}`;
+            // Fallback to JS date logic if calendarService is not available
+            if (!calendarCutoffUnder18 || !calendarCutoffOver65) {
+                const year = currentDate.getFullYear();
+                const month = String(currentDate.getMonth() + 1).padStart(2, '0');
+                const day = String(currentDate.getDate()).padStart(2, '0');
+                // Under 18
+                const under18Date = new Date(currentDate);
+                under18Date.setFullYear(under18Date.getFullYear() - 18);
+                calendarCutoffUnder18 = `${under18Date.getFullYear()}-${String(under18Date.getMonth() + 1).padStart(2, '0')}-${String(under18Date.getDate()).padStart(2, '0')}`;
+                // Over 65
+                const over65Date = new Date(currentDate);
+                over65Date.setFullYear(over65Date.getFullYear() - 65);
+                calendarCutoffOver65 = `${over65Date.getFullYear()}-${String(over65Date.getMonth() + 1).padStart(2, '0')}-${String(over65Date.getDate()).padStart(2, '0')}`;
+            }
+            // Debug output
+            console.log('[DEBUG] getPopulationStats custom calendar under18 cutoff:', calendarCutoffUnder18);
+            console.log('[DEBUG] getPopulationStats custom calendar over65 cutoff:', calendarCutoffOver65);
             const result = await pool.query(`
                 SELECT 
                     COUNT(*) FILTER (WHERE sex = true) AS male,
                     COUNT(*) FILTER (WHERE sex = false) AS female,
-                    COUNT(*) FILTER (WHERE date_of_birth > DATE $1 - INTERVAL '18 years') AS under18,
-                    COUNT(*) FILTER (WHERE date_of_birth < DATE $1 - INTERVAL '65 years') AS over65
-                FROM people;`, [dateStr]);
+                    COUNT(*) FILTER (WHERE date_of_birth > $1) AS under18,
+                    COUNT(*) FILTER (WHERE date_of_birth < $2) AS over65
+                FROM people;`, [calendarCutoffUnder18, calendarCutoffOver65]);
+            console.log('[DEBUG] getPopulationStats query result:', result.rows[0]);
             return result.rows[0];
         } catch (error) {
             console.error('Error getting population stats:', error);
@@ -412,6 +467,17 @@ class PopulationService {
                 under18: '0',
                 over65: '0'
             };
+        }
+    }
+
+    // DEBUG: Print a sample of people table to diagnose demographic stats
+    async printPeopleSample(limit = 10) {
+        try {
+            const result = await pool.query('SELECT id, sex, date_of_birth FROM people LIMIT $1', [limit]);
+            console.log('Sample people table rows:');
+            result.rows.forEach(row => console.log(row));
+        } catch (err) {
+            console.error('Error printing people sample:', err);
         }
     }
 }
