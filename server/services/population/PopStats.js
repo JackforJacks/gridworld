@@ -63,7 +63,13 @@ async function getPopulationStats(pool, calendarService, populationServiceInstan
 
         const stats = result.rows[0] || {};
         const rates = calculateRates(populationServiceInstance);
-
+        // In-game rates
+        let inGameRatesYear = { birthRateYear: 0, deathRateYear: 0, birthCountYear: 0, deathCountYear: 0 };
+        let inGameRates12m = { birthRate12m: 0, deathRate12m: 0, birthCount12m: 0, deathCount12m: 0 };
+        if (populationServiceInstance && populationServiceInstance.calendarService) {
+            inGameRatesYear = calculateRatesInGame(populationServiceInstance, populationServiceInstance.calendarService, 'year');
+            inGameRates12m = calculateRatesInGame(populationServiceInstance, populationServiceInstance.calendarService, '12months');
+        }
         return {
             totalPopulation: parseInt(stats.total_population, 10) || 0,
             male: parseInt(stats.male, 10) || 0,
@@ -71,7 +77,9 @@ async function getPopulationStats(pool, calendarService, populationServiceInstan
             minors: parseInt(stats.minors, 10) || 0,
             working_age: parseInt(stats.working_age, 10) || 0,
             elderly: parseInt(stats.elderly, 10) || 0,
-            ...rates
+            ...rates,
+            ...inGameRatesYear,
+            ...inGameRates12m
         };
     } catch (error) {
         console.error('Error getting population stats:', error);
@@ -221,15 +229,57 @@ function trackDeaths(context, count) {
 }
 
 /**
- * Calculates birth and death rates based on context tracking
+ * Calculates birth and death rates based on in-game event log
+ * @param {Object} context - PopulationService instance
+ * @param {Object} calendarService - Calendar service instance
+ * @param {string} mode - 'year' or '12months'
+ */
+function calculateRatesInGame(context, calendarService, mode = 'year') {
+    if (!context || !context.eventLog || !calendarService) return { birthRate: 0, deathRate: 0, birthCount: 0, deathCount: 0, timeElapsed: 0 };
+    const now = calendarService.getCurrentDate();
+    let startYear, startMonth;
+    if (mode === 'year') {
+        startYear = now.year;
+        startMonth = 1;
+    } else {
+        // last 12 months
+        startYear = now.year;
+        startMonth = now.month - 11;
+        if (startMonth <= 0) {
+            startYear -= 1;
+            startMonth += 12;
+        }
+    }
+    // Filter events in the period
+    const isInPeriod = (date) => {
+        if (date.year > startYear) return true;
+        if (date.year < startYear) return false;
+        return date.month >= startMonth;
+    };
+    const births = context.eventLog.filter(e => e.type === 'birth' && isInPeriod(e.date));
+    const deaths = context.eventLog.filter(e => e.type === 'death' && isInPeriod(e.date));
+    // Calculate in-game minutes elapsed
+    let monthsElapsed = (now.year - startYear) * 12 + (now.month - startMonth) + 1;
+    let daysElapsed = (monthsElapsed - 1) * 8 + now.day; // 8 days per month
+    let minutesElapsed = daysElapsed * 24 * 60; // 24 hours per day
+    if (minutesElapsed <= 0) minutesElapsed = 1;
+    return {
+        birthRate: Math.round((births.length / minutesElapsed) * 10000) / 10000 * 60, // per minute
+        deathRate: Math.round((deaths.length / minutesElapsed) * 10000) / 10000 * 60,
+        birthCount: births.length,
+        deathCount: deaths.length,
+        timeElapsed: minutesElapsed
+    };
+}
+
+/**
+ * Legacy real-time rate calculation (used for backward compatibility)
  */
 function calculateRates(context) {
     if (!context) return { birthRate: 0, deathRate: 0, birthCount: 0, deathCount: 0, timeElapsed: 0 };
-
     const now = Date.now();
     const timeElapsed = now - context.lastRateReset;
     const minutesElapsed = timeElapsed / 60000;
-
     if (minutesElapsed < 0.1) {
         return {
             birthRate: 0,
@@ -239,10 +289,8 @@ function calculateRates(context) {
             timeElapsed: timeElapsed
         };
     }
-
     const birthRate = minutesElapsed > 0 ? (context.birthCount / minutesElapsed) : 0;
     const deathRate = minutesElapsed > 0 ? (context.deathCount / minutesElapsed) : 0;
-
     return {
         birthRate: Math.round(birthRate * 100) / 100,
         deathRate: Math.round(deathRate * 100) / 100,
@@ -295,7 +343,7 @@ module.exports = {
     // Rate tracking functions
     trackBirths,
     trackDeaths,
-    calculateRates,
+    calculateRatesInGame,
     resetRateCounters,
     startRateTracking,
     stopRateTracking,

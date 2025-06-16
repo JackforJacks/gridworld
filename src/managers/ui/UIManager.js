@@ -145,9 +145,38 @@ class UIManager {
         // Icon for connection status
         populationWrapper.innerHTML = `<span id="connection-icon" class="population-panel-icon">👥</span>`;
 
-        const statsButton = document.getElementById('show-stats');
-        const toggleHelpButton = document.getElementById('toggle-help');
+        // --- Add calendar year display ---
+        const yearSpan = document.createElement('span');
+        yearSpan.id = 'dashboard-calendar-year';
+        yearSpan.className = 'dashboard-calendar-year';
+        yearSpan.style.marginRight = '12px';
+        // Helper to update year label
+        function updateYearLabel() {
+            let calendarYear = '';
+            if (window.calendarManager && window.calendarManager.state && window.calendarManager.state.year) {
+                calendarYear = window.calendarManager.state.year;
+            }
+            yearSpan.textContent = calendarYear ? `Year: ${calendarYear}` : '';
+        }
+        updateYearLabel();
+        // Listen for year changes if calendarManager exists
+        if (window.calendarManager && typeof window.calendarManager.on === 'function') {
+            window.calendarManager.on('yearChanged', (newYear) => {
+                yearSpan.textContent = `Year: ${newYear}`;
+            });
+            // Also listen for stateChanged in case of reload
+            window.calendarManager.on('stateChanged', updateYearLabel);
+        }
 
+        // Insert yearSpan before the tooltip/help button
+        const toggleHelpButton = document.getElementById('toggle-help');
+        if (toggleHelpButton) {
+            dashboard.insertBefore(yearSpan, toggleHelpButton);
+        } else {
+            dashboard.appendChild(yearSpan);
+        }
+
+        const statsButton = document.getElementById('show-stats');
         if (statsButton) {
             statsButton.insertAdjacentElement('afterend', populationWrapper);
         } else if (toggleHelpButton) {
@@ -225,7 +254,7 @@ class UIManager {
                 if (typeof popData.deathRate !== 'undefined') stats.deathRate = Number(popData.deathRate);
                 if (typeof popData.birthCount !== 'undefined') stats.birthCount = Number(popData.birthCount);
                 if (typeof popData.deathCount !== 'undefined') stats.deathCount = Number(popData.deathCount);
-                
+
                 // Add family statistics
                 if (typeof popData.totalFamilies !== 'undefined') stats.totalFamilies = Number(popData.totalFamilies);
                 if (typeof popData.pregnantFamilies !== 'undefined') stats.pregnantFamilies = Number(popData.pregnantFamilies);
@@ -301,8 +330,8 @@ class UIManager {
             <p><strong>Families with Children:</strong> <span id="stats-modal-families-with-children">${stats.familiesWithChildren?.toLocaleString() ?? '0'}</span></p>
             <p><strong>Avg. Children per Family:</strong> <span id="stats-modal-avg-children">${stats.avgChildrenPerFamily?.toFixed(1) ?? '0.0'}</span></p>
             <hr class="stats-modal-separator">
-            <p><strong>Birth Rate:</strong> <span id="stats-modal-birth-rate">${stats.birthRate?.toFixed(2) ?? '0.00'} per minute</span></p>
-            <p><strong>Death Rate:</strong> <span id="stats-modal-death-rate">${stats.deathRate?.toFixed(2) ?? '0.00'} per minute</span></p>
+            <p><strong>Birth Rate:</strong> <span id="stats-modal-birth-rate">${stats.birthRate?.toFixed(2) ?? '0.00'} %</span></p>
+            <p><strong>Death Rate:</strong> <span id="stats-modal-death-rate">${stats.deathRate?.toFixed(2) ?? '0.00'} %</span></p>
             <p><strong>Total Births:</strong> <span id="stats-modal-birth-count">${stats.birthCount?.toLocaleString() ?? '0'}</span></p>
             <p><strong>Total Deaths:</strong> <span id="stats-modal-death-count">${stats.deathCount?.toLocaleString() ?? '0'}</span></p>
             <hr class="stats-modal-separator">

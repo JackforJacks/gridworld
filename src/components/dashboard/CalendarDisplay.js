@@ -35,7 +35,6 @@ class CalendarDisplay {
         this.dateElement = document.createElement('div');
         this.dateElement.id = 'calendar-date-display';
         this.dateElement.className = 'calendar-date-display';
-        // Central moon phase button and circular month progress
         this.dateElement.innerHTML = `
             <div id="calendar-circular-container" style="position: relative; width: 120px; height: 120px; margin: 0 auto;">
                 <div id="calendar-moon-phase-btn" style="position: absolute; left: 50%; top: 50%; transform: translate(-50%, -50%); width: 60px; height: 60px; border-radius: 50%; background: #222; color: #fff; display: flex; flex-direction: column; align-items: center; justify-content: center; font-size: 2rem; box-shadow: 0 2px 8px rgba(0,0,0,0.2); border: 2px solid #444; cursor: pointer;">
@@ -64,6 +63,22 @@ class CalendarDisplay {
         this.dateElement.style.boxShadow = '';
         // Draw the month steps for the first time
         this.drawMonthSteps(1, 1, 4000); // default values, will be updated
+
+        // --- Move the year label to be a sibling of the toggle-help button, immediately before it ---
+        let yearLabel = document.getElementById('calendar-year-inline');
+        if (!yearLabel) {
+            yearLabel = document.createElement('span');
+            yearLabel.id = 'calendar-year-inline';
+            yearLabel.className = 'calendar-year-inline';
+            yearLabel.style.cssText = 'margin-left: 12px; margin-right: 0; font-size: 1.1rem; color: #333; font-weight: bold; background: rgba(255,255,255,0.85); padding: 2px 12px; border-radius: 16px; vertical-align: middle; z-index: 20; display: inline-block;';
+        }
+        // Find the toggle-help button and insert the year label immediately before it in the DOM
+        const helpBtn = document.getElementById('toggle-help');
+        if (helpBtn && helpBtn.parentNode) {
+            helpBtn.parentNode.insertBefore(yearLabel, helpBtn);
+        } else {
+            dashboard.appendChild(yearLabel);
+        }
     }
 
     /**
@@ -170,7 +185,13 @@ class CalendarDisplay {
         // Update circular month steps
         this.drawMonthSteps(month, day, year);
 
-        // Remove date label below
+        // Update inline year label
+        const yearLabel = document.getElementById('calendar-year-inline');
+        if (yearLabel) {
+            yearLabel.textContent = `Year: ${year}`;
+        }
+
+        // Remove year from below the calendar (keep only inline)
         const dateLabel = document.getElementById('calendar-date-label');
         if (dateLabel) {
             dateLabel.textContent = '';

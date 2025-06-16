@@ -69,6 +69,8 @@ class PopulationService {
         this.birthCount = 0;
         this.deathCount = 0;
         this.lastRateReset = Date.now();
+        // In-memory event log for births and deaths
+        this.eventLog = [];
     }
 
     getPool() { return this.#pool; }    async initialize(io, calendarService = null) {
@@ -168,12 +170,22 @@ class PopulationService {
     }
 
     // Rate tracking methods
+    // Track births with in-game date
     trackBirths(count) {
-        trackBirths(this, count);
+        if (!this.calendarService) return;
+        const date = this.calendarService.getCurrentDate();
+        for (let i = 0; i < count; i++) {
+            this.eventLog.push({ type: 'birth', date: { ...date } });
+        }
     }
-    
+
+    // Track deaths with in-game date
     trackDeaths(count) {
-        trackDeaths(this, count);
+        if (!this.calendarService) return;
+        const date = this.calendarService.getCurrentDate();
+        for (let i = 0; i < count; i++) {
+            this.eventLog.push({ type: 'death', date: { ...date } });
+        }
     }
 
     // Communication
