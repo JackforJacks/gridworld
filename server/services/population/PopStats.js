@@ -108,10 +108,12 @@ async function getAllPopulationData(pool, calendarService, populationServiceInst
 
     const populations = await loadPopulationData(pool);
     const stats = await getPopulationStats(pool, calendarService, populationServiceInstance);
+    const familyStats = await getFamilyStatistics(pool);
 
     return {
         ...formatPopulationData(populations),
-        ...stats
+        ...stats,
+        ...familyStats
     };
 }
 
@@ -142,6 +144,40 @@ async function getPopulationDistribution(pool) {
     } catch (error) {
         console.error('Error getting population distribution:', error);
         return { totalTiles: 0, distribution: [] };
+    }
+}
+
+/**
+ * Gets family statistics
+ * @param {Pool} pool - Database pool instance
+ * @returns {Object} Family statistics
+ */
+async function getFamilyStatistics(pool) {
+    try {
+        const result = await pool.query(`
+            SELECT 
+                COUNT(*) as total_families,
+                COUNT(*) FILTER (WHERE pregnancy = TRUE) as pregnant_families,
+                AVG(array_length(children_ids, 1)) as avg_children_per_family,
+                COUNT(*) FILTER (WHERE array_length(children_ids, 1) > 0) as families_with_children
+            FROM family
+        `);
+
+        const stats = result.rows[0] || {};
+        return {
+            totalFamilies: parseInt(stats.total_families, 10) || 0,
+            pregnantFamilies: parseInt(stats.pregnant_families, 10) || 0,
+            avgChildrenPerFamily: parseFloat(stats.avg_children_per_family) || 0,
+            familiesWithChildren: parseInt(stats.families_with_children, 10) || 0
+        };
+    } catch (error) {
+        console.error('Error getting family statistics:', error);
+        return {
+            totalFamilies: 0,
+            pregnantFamilies: 0,
+            avgChildrenPerFamily: 0,
+            familiesWithChildren: 0
+        };
     }
 }
 
@@ -250,6 +286,7 @@ module.exports = {
     getAllPopulationData,
     getDemographicStats,
     getPopulationDistribution,
+    getFamilyStatistics,
 
     // Utility functions
     printPeopleSample,

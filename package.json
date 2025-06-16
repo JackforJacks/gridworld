@@ -49,6 +49,7 @@
     "ecsy": "^0.4.3",
     "express": "^5.1.0",
     "fs-extra": "^11.3.0",
+    "node-fetch": "^3.3.2",
     "pg": "^8.11.3",
     "socket.io": "^4.8.1",
     "socket.io-client": "^4.8.1",

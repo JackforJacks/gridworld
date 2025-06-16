@@ -452,6 +452,10 @@ kbd {
     box-shadow: 0 5px 15px rgba(0, 0, 0, 0.3);
     width: 90%;
     max-width: 500px;
+    max-height: 80vh;
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
 }
 
 .stats-modal-header {
@@ -461,12 +465,33 @@ kbd {
     border-bottom: 1px solid #eee;
     padding-bottom: 10px;
     margin-bottom: 15px;
+    flex-shrink: 0;
 }
 
 .stats-modal-header h3 {
     margin: 0;
     font-size: 1.5em;
     color: #4CAF50;
+}
+
+.stats-modal-refresh {
+    background: #4CAF50;
+    color: white;
+    border: none;
+    padding: 6px 12px;
+    border-radius: 4px;
+    cursor: pointer;
+    font-size: 0.9em;
+    transition: background-color 0.2s;
+}
+
+.stats-modal-refresh:hover {
+    background: #45a049;
+}
+
+.stats-modal-refresh:disabled {
+    background: #ccc;
+    cursor: not-allowed;
 }
 
 .stats-modal-close {
@@ -480,6 +505,30 @@ kbd {
 
 .stats-modal-close:hover {
     color: #333;
+}
+
+.stats-modal-content {
+    overflow-y: auto;
+    flex: 1;
+    padding-right: 10px;
+}
+
+.stats-modal-content::-webkit-scrollbar {
+    width: 8px;
+}
+
+.stats-modal-content::-webkit-scrollbar-track {
+    background: #f1f1f1;
+    border-radius: 4px;
+}
+
+.stats-modal-content::-webkit-scrollbar-thumb {
+    background: #ccc;
+    border-radius: 4px;
+}
+
+.stats-modal-content::-webkit-scrollbar-thumb:hover {
+    background: #999;
 }
 
 .stats-modal-content p {

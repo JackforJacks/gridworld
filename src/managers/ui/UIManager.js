@@ -225,6 +225,12 @@ class UIManager {
                 if (typeof popData.deathRate !== 'undefined') stats.deathRate = Number(popData.deathRate);
                 if (typeof popData.birthCount !== 'undefined') stats.birthCount = Number(popData.birthCount);
                 if (typeof popData.deathCount !== 'undefined') stats.deathCount = Number(popData.deathCount);
+                
+                // Add family statistics
+                if (typeof popData.totalFamilies !== 'undefined') stats.totalFamilies = Number(popData.totalFamilies);
+                if (typeof popData.pregnantFamilies !== 'undefined') stats.pregnantFamilies = Number(popData.pregnantFamilies);
+                if (typeof popData.familiesWithChildren !== 'undefined') stats.familiesWithChildren = Number(popData.familiesWithChildren);
+                if (typeof popData.avgChildrenPerFamily !== 'undefined') stats.avgChildrenPerFamily = Number(popData.avgChildrenPerFamily);
             }// Get total population from PopulationManager
             this.currentTotalPopulation = populationManager.getTotalPopulation();
             const growthStats = populationManager.getGrowthStats();
@@ -279,9 +285,7 @@ class UIManager {
         closeButton.classList.add('stats-modal-close');
         closeButton.innerHTML = '&times;';
         closeButton.onclick = () => overlay.remove();
-        header.appendChild(closeButton);
-
-        // Modal Content
+        header.appendChild(closeButton);        // Modal Content
         const content = document.createElement('div');
         content.classList.add('stats-modal-content');        // Add Total Population first
         content.innerHTML = `
@@ -291,6 +295,11 @@ class UIManager {
             <p><strong>Minors (under 16):</strong> <span id="stats-modal-minors">${stats.minors?.toLocaleString() ?? 'N/A'}</span></p>
             <p><strong>Working Age (16-60):</strong> <span id="stats-modal-working-age">${stats.working_age?.toLocaleString() ?? 'N/A'}</span></p>
             <p><strong>Elderly (over 60):</strong> <span id="stats-modal-elderly">${stats.elderly?.toLocaleString() ?? 'N/A'}</span></p>
+            <hr class="stats-modal-separator">
+            <p><strong>Total Families:</strong> <span id="stats-modal-total-families">${stats.totalFamilies?.toLocaleString() ?? '0'}</span></p>
+            <p><strong>Pregnant Families:</strong> <span id="stats-modal-pregnant-families">${stats.pregnantFamilies?.toLocaleString() ?? '0'}</span></p>
+            <p><strong>Families with Children:</strong> <span id="stats-modal-families-with-children">${stats.familiesWithChildren?.toLocaleString() ?? '0'}</span></p>
+            <p><strong>Avg. Children per Family:</strong> <span id="stats-modal-avg-children">${stats.avgChildrenPerFamily?.toFixed(1) ?? '0.0'}</span></p>
             <hr class="stats-modal-separator">
             <p><strong>Birth Rate:</strong> <span id="stats-modal-birth-rate">${stats.birthRate?.toFixed(2) ?? '0.00'} per minute</span></p>
             <p><strong>Death Rate:</strong> <span id="stats-modal-death-rate">${stats.deathRate?.toFixed(2) ?? '0.00'} per minute</span></p>

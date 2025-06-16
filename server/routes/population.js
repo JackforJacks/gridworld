@@ -94,7 +94,7 @@ router.post('/save', async (req, res, next) => {
 // Get demographic population stats (male, female, under 18, over 65)
 router.get('/stats', async (req, res, next) => {
     try {
-        const stats = await populationService.getPopulationStats();
+        const stats = await populationService.getAllPopulationData();
         res.json(stats);
     } catch (error) {
         next(error);
@@ -119,6 +119,16 @@ router.post('/regenerate', async (req, res, next) => {
 router.post('/senescence', async (req, res, next) => {
     try {
         const responseData = await populationService.applySenescenceManually();
+        res.json(responseData);
+    } catch (error) {
+        next(error);
+    }
+});
+
+// Create families for existing population
+router.post('/create-families', async (req, res, next) => {
+    try {
+        const responseData = await populationService.createFamiliesForExistingPopulation();
         res.json(responseData);
     } catch (error) {
         next(error);

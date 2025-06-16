@@ -29,7 +29,40 @@ async function ensureTableExists(pool) {
         await pool.query(`
             CREATE INDEX IF NOT EXISTS idx_people_residency ON people(residency);
         `);
-        console.log('Table people is ready.');
+
+        // Create family table
+        await pool.query(`
+            CREATE TABLE IF NOT EXISTS family (
+                id SERIAL PRIMARY KEY,
+                husband_id INTEGER REFERENCES people(id) ON DELETE SET NULL,
+                wife_id INTEGER REFERENCES people(id) ON DELETE SET NULL,
+                pregnancy BOOLEAN DEFAULT FALSE,
+                delivery_date DATE,
+                children_ids INTEGER[] DEFAULT '{}',
+                tile_id INTEGER,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            );
+        `);
+
+        // Create indexes for the family table
+        await pool.query(`
+            CREATE INDEX IF NOT EXISTS idx_family_husband_id ON family(husband_id);
+        `);
+        await pool.query(`
+            CREATE INDEX IF NOT EXISTS idx_family_wife_id ON family(wife_id);
+        `);
+        await pool.query(`
+            CREATE INDEX IF NOT EXISTS idx_family_tile_id ON family(tile_id);
+        `);
+        await pool.query(`
+            CREATE INDEX IF NOT EXISTS idx_family_pregnancy ON family(pregnancy);
+        `);
+        await pool.query(`
+            CREATE INDEX IF NOT EXISTS idx_family_delivery_date ON family(delivery_date);
+        `);
+
+        console.log('✅ Tables and indexes created successfully.');
     } catch (error) {
         console.error('Error ensuring table exists:', error);
         // It might be critical, consider re-throwing or handling more gracefully
@@ -77,8 +110,6 @@ async function initializePopulationService(serviceInstance, io, calendarService)
         serviceInstance.calendarService.on('monthChanged', async (newMonth, oldMonth) => {
             console.log(`📅 Month changed from ${oldMonth} to ${newMonth}, applying senescence...`);
             try {
-                // Ensure serviceInstance._pool is accessible and passed correctly
-                // Corrected to use serviceInstance.getPool() or direct access if #pool is made accessible
                 const pool = serviceInstance.getPool ? serviceInstance.getPool() : serviceInstance._pool || serviceInstance['#pool'];
                 if (!pool) {
                     console.error('Error applying monthly senescence: Database pool is not available on serviceInstance.');
@@ -91,6 +122,23 @@ async function initializePopulationService(serviceInstance, io, calendarService)
                 }
             } catch (error) {
                 console.error('Error applying monthly senescence:', error);
+            }
+        });
+
+        // Add daily family events processing
+        serviceInstance.calendarService.on('dayChanged', async (newDay, oldDay) => {
+            try {
+                const pool = serviceInstance.getPool ? serviceInstance.getPool() : serviceInstance._pool || serviceInstance['#pool'];
+                if (pool) {
+                    const { processDailyFamilyEvents } = require('./lifecycle.js');
+                    const familyEvents = await processDailyFamilyEvents(pool, serviceInstance.calendarService, serviceInstance);
+                    
+                    if (familyEvents.deliveries > 0 || familyEvents.newPregnancies > 0) {
+                        await serviceInstance.broadcastUpdate('familyEvents');
+                    }
+                }
+            } catch (error) {
+                console.error('Error processing daily family events:', error);
             }
         });
     }

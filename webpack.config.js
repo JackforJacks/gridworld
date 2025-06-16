@@ -103,14 +103,21 @@ module.exports = (env, argv) => {
           }
         ]
       })
-    ], devServer: {
+    ],    devServer: {
       static: {
         directory: path.join(__dirname, 'dist'),
       },
       port: 8080,
+      host: 'localhost',
       hot: true,
-      open: true,
+      open: false, // Don't auto-open, let user choose browser
       liveReload: true,
+      allowedHosts: 'all',
+      headers: {
+        'Access-Control-Allow-Origin': '*',
+        'Access-Control-Allow-Methods': 'GET, POST, PUT, DELETE, PATCH, OPTIONS',
+        'Access-Control-Allow-Headers': 'X-Requested-With, content-type, Authorization'
+      },
       watchFiles: {
         paths: ['src/**/*', 'css/**/*', 'index.html'],
         options: {
@@ -125,7 +132,8 @@ module.exports = (env, argv) => {
           warnings: false,
         },
         progress: true,
-      }, proxy: {
+        webSocketURL: 'ws://localhost:8080/ws'
+      },proxy: {
         '/api': {
           target: 'http://localhost:3000',
           changeOrigin: true,

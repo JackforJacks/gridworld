@@ -151,11 +151,63 @@ async function applySenescence(pool, calendarService, populationServiceInstance)
     }
 }
 
+/**
+ * Processes daily family events (pregnancies, births)
+ * @param {Pool} pool - Database pool instance
+ * @param {Object} calendarService - Calendar service instance
+ * @param {PopulationService} serviceInstance - Population service instance
+ * @returns {Object} Daily family events summary
+ */
+async function processDailyFamilyEvents(pool, calendarService, serviceInstance) {
+    try {
+        const { processDeliveries } = require('./familyManager.js');
+        
+        // Process deliveries for families ready to give birth
+        const deliveries = await processDeliveries(pool, calendarService, serviceInstance);
+        
+        // Random chance for new pregnancies in existing families
+        const familiesResult = await pool.query(`
+            SELECT id FROM family 
+            WHERE pregnancy = FALSE 
+            AND array_length(children_ids, 1) < 5
+            ORDER BY RANDOM() 
+            LIMIT 10
+        `);
+        
+        let newPregnancies = 0;
+        for (const family of familiesResult.rows) {
+            // 5% daily chance of pregnancy for eligible families
+            if (Math.random() < 0.05) {
+                try {
+                    const { startPregnancy } = require('./familyManager.js');
+                    await startPregnancy(pool, calendarService, family.id);
+                    newPregnancies++;
+                } catch (error) {
+                    // Silent fail for pregnancy attempts
+                }
+            }
+        }
+        
+        if (deliveries > 0 || newPregnancies > 0) {
+            console.log(`👪 Daily family events: ${deliveries} births, ${newPregnancies} new pregnancies`);
+        }
+        
+        return {
+            deliveries,
+            newPregnancies
+        };
+    } catch (error) {
+        console.error('Error processing daily family events:', error);
+        return { deliveries: 0, newPregnancies: 0 };
+    }
+}
+
 module.exports = {
     startGrowth,
     stopGrowth,
     updatePopulations,
     calculateGrowthForTile,
     updateGrowthRate,
-    applySenescence
+    applySenescence,
+    processDailyFamilyEvents
 };

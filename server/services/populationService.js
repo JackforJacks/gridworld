@@ -4,7 +4,13 @@ const config = require('../config/server.js');
 
 // Core modules
 const { applySenescence } = require('./population/lifecycle.js');
-const { stopRateTracking } = require('./population/PopStats.js');
+const { 
+    stopRateTracking, 
+    trackBirths, 
+    trackDeaths, 
+    startRateTracking, 
+    resetRateCounters 
+} = require('./population/PopStats.js');
 
 // Service modules
 const {
@@ -65,11 +71,12 @@ class PopulationService {
         this.lastRateReset = Date.now();
     }
 
-    getPool() { return this.#pool; }
-
-    async initialize(io, calendarService = null) {
+    getPool() { return this.#pool; }    async initialize(io, calendarService = null) {
         await initializePopulationService(this, io, calendarService);
         setupRealtimeListeners(io, this);
+        // Initialize rate tracking
+        resetRateCounters(this);
+        startRateTracking(this);
     }
 
     async loadData() { return await loadPopulationData(this.#pool); }
@@ -93,9 +100,7 @@ class PopulationService {
 
     startGrowth() { startGrowth(this); }
     stopGrowth() { stopGrowth(this); }
-    async updateGrowthRate(rate) { return await updateGrowthRate(this, rate); }
-
-    async applySenescenceManually() {
+    async updateGrowthRate(rate) { return await updateGrowthRate(this, rate); }    async applySenescenceManually() {
         try {
             const deaths = await applySenescence(this.#pool, this.calendarService, this);
             if (deaths > 0) await this.broadcastUpdate('senescenceApplied');
@@ -109,6 +114,47 @@ class PopulationService {
         } catch (error) {
             throw error;
         }
+    }    async createFamiliesForExistingPopulation() {
+        try {
+            const { createRandomFamilies } = require('./population/family.js');
+            
+            // Get all tiles with population
+            const tilesResult = await this.#pool.query('SELECT DISTINCT tile_id FROM people');
+            const tileIds = tilesResult.rows.map(row => row.tile_id);
+            
+            let totalFamiliesCreated = 0;
+            for (const tileId of tileIds) {
+                const beforeCount = await this.#pool.query('SELECT COUNT(*) FROM family WHERE tile_id = $1', [tileId]);
+                const beforeFamilies = parseInt(beforeCount.rows[0].count, 10);
+                
+                await createRandomFamilies(this.#pool, tileId, this.calendarService);
+                
+                const afterCount = await this.#pool.query('SELECT COUNT(*) FROM family WHERE tile_id = $1', [tileId]);
+                const afterFamilies = parseInt(afterCount.rows[0].count, 10);
+                
+                const newFamilies = afterFamilies - beforeFamilies;
+                totalFamiliesCreated += newFamilies;
+                
+                if (newFamilies > 0) {
+                    console.log(`🏠 Created ${newFamilies} new families on tile ${tileId}`);
+                }
+            }
+            
+            if (totalFamiliesCreated > 0) {
+                await this.broadcastUpdate('familiesCreated');
+            }
+            
+            const populations = await this.loadData();
+            return {
+                success: true,
+                familiesCreated: totalFamiliesCreated,
+                message: `Created ${totalFamiliesCreated} new families across ${tileIds.length} tiles`,
+                data: this.getFormattedPopulationData(populations)
+            };
+        } catch (error) {
+            console.error('Error creating families for existing population:', error);
+            throw error;
+        }
     }
 
     // Statistics and reporting: delegate directly to PopStats.js
@@ -117,9 +163,17 @@ class PopulationService {
     }
     async getAllPopulationData() {
         return await getAllPopulationData(this.#pool, this.calendarService, this);
-    }
-    async printPeopleSample(limit = 10) {
+    }    async printPeopleSample(limit = 10) {
         await printPeopleSample(this.#pool, limit);
+    }
+
+    // Rate tracking methods
+    trackBirths(count) {
+        trackBirths(this, count);
+    }
+    
+    trackDeaths(count) {
+        trackDeaths(this, count);
     }
 
     // Communication

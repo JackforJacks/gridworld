@@ -38,14 +38,17 @@ function calculateAge(birthDate, currentYear, currentMonth, currentDay) {
 
 function getRandomBirthDate(currentYear, currentMonth, currentDay, age) {
     let birthYear = currentYear - age;
-    let birthMonth = Math.floor(Math.random() * 12) + 1;
-    let birthDay = Math.floor(Math.random() * 8) + 1;
+    let birthMonth = Math.floor(Math.random() * 12) + 1; // 12 months per year
+    
+    // Custom calendar has 8 days per month, not 28-31 like standard calendar
+    let birthDay = Math.floor(Math.random() * 8) + 1; // 1-8 days per month
+    
+    // Ensure the birth date is valid for the current context
     if (birthYear === currentYear) {
         if (birthMonth > currentMonth) birthMonth = currentMonth;
         if (birthMonth === currentMonth && birthDay > currentDay) birthDay = currentDay;
     }
-    if (birthDay > 8) birthDay = 8;
-    if (birthMonth > 12) birthMonth = 12;
+    
     return `${birthYear}-${String(birthMonth).padStart(2, '0')}-${String(birthDay).padStart(2, '0')}`;
 }
 

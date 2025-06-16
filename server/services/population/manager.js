@@ -1,7 +1,7 @@
 // server/services/population/manager.js
-import { getRandomSex, getRandomAge, getRandomBirthDate } from './calculator.js';
-import { trackBirths, trackDeaths } from './PopStats.js';
-import config from '../../config/server.js';
+const { getRandomSex, getRandomAge, getRandomBirthDate } = require('./calculator.js');
+const { trackBirths, trackDeaths } = require('./PopStats.js');
+const config = require('../../config/server.js');
 
 async function addPeopleToTile(pool, tileId, count, currentYear, currentMonth, currentDay, populationServiceInstance, doTrackBirths = false) {
     const people = [];
@@ -66,8 +66,7 @@ async function removePeopleFromTile(pool, tileId, count, populationServiceInstan
         console.warn('Error removing people from tile, rolling back transaction:', error);
         throw error;
     } finally {
-        client.release();
-    }
+        client.release();    }
 }
 
-export { addPeopleToTile, removePeopleFromTile };
+module.exports = { addPeopleToTile, removePeopleFromTile };
