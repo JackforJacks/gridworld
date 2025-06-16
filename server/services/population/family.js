@@ -1,11 +1,11 @@
 // Population Family Operations - Enhanced with family table integration
 const { addPeopleToTile, removePeopleFromTile } = require('./manager.js');
-const { 
-    createFamily, 
-    startPregnancy, 
-    deliverBaby, 
+const {
+    createFamily,
+    startPregnancy,
+    deliverBaby,
     processDeliveries,
-    getFamiliesOnTile 
+    getFamiliesOnTile
 } = require('./familyManager.js');
 
 /**
@@ -38,18 +38,18 @@ async function Procreation(pool, calendarService, populationServiceInstance, til
 
         if (population > currentCount) {
             const birthCount = population - currentCount;
-            
+
             // Try to handle births through existing families first
             await processDeliveries(pool, calendarService, populationServiceInstance);
-            
+
             // Check if we still need more people after deliveries
             const updatedResult = await pool.query('SELECT COUNT(*) FROM people WHERE tile_id = $1', [tileId]);
             const updatedCount = parseInt(updatedResult.rows[0].count, 10);
             const remainingNeeded = population - updatedCount;
-            
+
             if (remainingNeeded > 0) {
                 await addPeopleToTile(pool, tileId, remainingNeeded, currentYear, currentMonth, currentDay, populationServiceInstance, true);
-                
+
                 // Potentially create new families from new adults
                 await createRandomFamilies(pool, tileId);
             }
@@ -118,7 +118,7 @@ async function createRandomFamilies(pool, tileId, calendarService = null) {
         for (let i = 0; i < maxPairs && i < 5; i++) { // Limit to 5 new families per tile per update
             try {
                 await createFamily(pool, males[i].id, females[i].id, tileId);
-                
+
                 // 30% chance of immediate pregnancy for new families
                 if (Math.random() < 0.3) {
                     const familyResult = await pool.query(

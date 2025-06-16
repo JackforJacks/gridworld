@@ -132,7 +132,7 @@ async function initializePopulationService(serviceInstance, io, calendarService)
                 if (pool) {
                     const { processDailyFamilyEvents } = require('./lifecycle.js');
                     const familyEvents = await processDailyFamilyEvents(pool, serviceInstance.calendarService, serviceInstance);
-                    
+
                     if (familyEvents.deliveries > 0 || familyEvents.newPregnancies > 0) {
                         await serviceInstance.broadcastUpdate('familyEvents');
                     }

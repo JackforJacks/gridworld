@@ -66,7 +66,8 @@ async function removePeopleFromTile(pool, tileId, count, populationServiceInstan
         console.warn('Error removing people from tile, rolling back transaction:', error);
         throw error;
     } finally {
-        client.release();    }
+        client.release();
+    }
 }
 
 module.exports = { addPeopleToTile, removePeopleFromTile };

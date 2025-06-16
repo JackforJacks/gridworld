@@ -4,12 +4,12 @@ const config = require('../config/server.js');
 
 // Core modules
 const { applySenescence } = require('./population/lifecycle.js');
-const { 
-    stopRateTracking, 
-    trackBirths, 
-    trackDeaths, 
-    startRateTracking, 
-    resetRateCounters 
+const {
+    stopRateTracking,
+    trackBirths,
+    trackDeaths,
+    startRateTracking,
+    resetRateCounters
 } = require('./population/PopStats.js');
 
 // Service modules
@@ -73,7 +73,7 @@ class PopulationService {
         this.eventLog = [];
     }
 
-    getPool() { return this.#pool; }    async initialize(io, calendarService = null) {
+    getPool() { return this.#pool; } async initialize(io, calendarService = null) {
         await initializePopulationService(this, io, calendarService);
         setupRealtimeListeners(io, this);
         // Initialize rate tracking
@@ -102,7 +102,7 @@ class PopulationService {
 
     startGrowth() { startGrowth(this); }
     stopGrowth() { stopGrowth(this); }
-    async updateGrowthRate(rate) { return await updateGrowthRate(this, rate); }    async applySenescenceManually() {
+    async updateGrowthRate(rate) { return await updateGrowthRate(this, rate); } async applySenescenceManually() {
         try {
             const deaths = await applySenescence(this.#pool, this.calendarService, this);
             if (deaths > 0) await this.broadcastUpdate('senescenceApplied');
@@ -116,36 +116,36 @@ class PopulationService {
         } catch (error) {
             throw error;
         }
-    }    async createFamiliesForExistingPopulation() {
+    } async createFamiliesForExistingPopulation() {
         try {
             const { createRandomFamilies } = require('./population/family.js');
-            
+
             // Get all tiles with population
             const tilesResult = await this.#pool.query('SELECT DISTINCT tile_id FROM people');
             const tileIds = tilesResult.rows.map(row => row.tile_id);
-            
+
             let totalFamiliesCreated = 0;
             for (const tileId of tileIds) {
                 const beforeCount = await this.#pool.query('SELECT COUNT(*) FROM family WHERE tile_id = $1', [tileId]);
                 const beforeFamilies = parseInt(beforeCount.rows[0].count, 10);
-                
+
                 await createRandomFamilies(this.#pool, tileId, this.calendarService);
-                
+
                 const afterCount = await this.#pool.query('SELECT COUNT(*) FROM family WHERE tile_id = $1', [tileId]);
                 const afterFamilies = parseInt(afterCount.rows[0].count, 10);
-                
+
                 const newFamilies = afterFamilies - beforeFamilies;
                 totalFamiliesCreated += newFamilies;
-                
+
                 if (newFamilies > 0) {
                     console.log(`🏠 Created ${newFamilies} new families on tile ${tileId}`);
                 }
             }
-            
+
             if (totalFamiliesCreated > 0) {
                 await this.broadcastUpdate('familiesCreated');
             }
-            
+
             const populations = await this.loadData();
             return {
                 success: true,
@@ -165,7 +165,7 @@ class PopulationService {
     }
     async getAllPopulationData() {
         return await getAllPopulationData(this.#pool, this.calendarService, this);
-    }    async printPeopleSample(limit = 10) {
+    } async printPeopleSample(limit = 10) {
         await printPeopleSample(this.#pool, limit);
     }
 

@@ -103,7 +103,7 @@ module.exports = (env, argv) => {
           }
         ]
       })
-    ],    devServer: {
+    ], devServer: {
       static: {
         directory: path.join(__dirname, 'dist'),
       },
@@ -133,7 +133,7 @@ module.exports = (env, argv) => {
         },
         progress: true,
         webSocketURL: 'ws://localhost:8080/ws'
-      },proxy: {
+      }, proxy: {
         '/api': {
           target: 'http://localhost:3000',
           changeOrigin: true,
