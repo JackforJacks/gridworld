@@ -18,9 +18,7 @@ class CalendarDisplay {
         this.createDateDisplay();
         this.setupEventListeners();
         this.updateDisplay();
-    }
-
-    /**
+    }    /**
      * Create the date display element in the dashboard
      */
     createDateDisplay() {
@@ -29,65 +27,96 @@ class CalendarDisplay {
         if (!dashboard) {
             console.error('Dashboard not found');
             return;
-        }
-
-        // Create date display element
+        }        // Create date display element
         this.dateElement = document.createElement('div');
         this.dateElement.id = 'calendar-date-display';
-        this.dateElement.className = 'calendar-date-display';
-        this.dateElement.innerHTML = `
-            <div id="calendar-circular-container" style="position: relative; width: 120px; height: 120px; margin: 0 auto;">
-                <div id="calendar-moon-phase-btn" style="position: absolute; left: 50%; top: 50%; transform: translate(-50%, -50%); width: 60px; height: 60px; border-radius: 50%; background: #222; color: #fff; display: flex; flex-direction: column; align-items: center; justify-content: center; font-size: 2rem; box-shadow: 0 2px 8px rgba(0,0,0,0.2); border: 2px solid #444; cursor: pointer;">
-                    <span id="calendar-moon-emoji">🌑</span>
-                    <span id="calendar-day-label" style="font-size: 0.9rem; margin-top: 2px;">Day 1</span>
+        this.dateElement.className = 'calendar-date-display'; this.dateElement.innerHTML = `            <div id="calendar-circular-container" style="position: relative; width: 110px; height: 110px; margin: 0 auto; border-radius: 50%; overflow: hidden; background: rgba(255,255,255,0.2); border: 1px solid rgba(200,200,200,0.4); box-shadow: 0 1px 4px rgba(0,0,0,0.1);">                <div id="calendar-moon-phase-btn" style="position: absolute; left: 50%; top: 50%; transform: translate(-50%, -50%); width: 64px; height: 64px; border-radius: 50%; background: #222; color: #fff; display: flex; flex-direction: column; align-items: center; justify-content: center; box-shadow: 0 2px 8px rgba(0,0,0,0.2); border: 2px solid #444; cursor: pointer; padding: 0; overflow: hidden; box-sizing: border-box;">
+                    <div style="display: flex; flex-direction: column; align-items: center; justify-content: center; width: 100%; height: 100%;">
+                        <div style="display: flex; justify-content: center; align-items: center; margin-top: -3px;">
+                            <span id="calendar-moon-emoji" style="font-size: 2rem; display: block; line-height: 1;">🌑</span>
+                        </div>
+                        <div style="margin-top: -4px;">
+                            <span id="calendar-day-label" style="font-size: 0.9rem; display: block; line-height: 1;">Day 1</span>
+                        </div>
+                    </div>
                 </div>
                 <div id="calendar-month-steps"></div>
             </div>
-            <div id="calendar-date-label" style="text-align: center; margin-top: 8px; font-size: 1.1rem; color: #333;"></div>
-        `;
-
-        // Insert the date display at the beginning of the dashboard
-        dashboard.insertBefore(this.dateElement, dashboard.firstChild);
-        // Restore original positioning, but move the calendar down 0px
+            <div id="calendar-date-label" style="text-align: center; font-size: 0.9rem; color: #333; position: absolute; bottom: 2px; left: 0; right: 0;"></div>
+        `;        // Insert the date display into the dashboard
+        dashboard.insertBefore(this.dateElement, dashboard.firstChild);        // Position the calendar vertically centered and at the bottom edge of the dashboard
         this.dateElement.style.position = 'absolute';
         this.dateElement.style.left = '50%';
-        this.dateElement.style.top = '0px';
-        this.dateElement.style.transform = 'translateX(-50%)';
+        this.dateElement.style.bottom = '0'; // Align to bottom edge of dashboard
+        this.dateElement.style.transform = 'translateX(-50%) translateY(55%)'; // Center horizontally and push 55% of height downward
+        this.dateElement.style.display = 'block';
+        this.dateElement.style.padding = '0';
         this.dateElement.style.zIndex = '10';
-        // Remove circular container styles
-        this.dateElement.style.width = '';
-        this.dateElement.style.height = '';
-        this.dateElement.style.borderRadius = '';
-        this.dateElement.style.overflow = '';
-        this.dateElement.style.background = '';
-        this.dateElement.style.boxShadow = '';
+        this.dateElement.style.borderRadius = '50%';
+        this.dateElement.style.overflow = 'hidden';
+
         // Draw the month steps for the first time
         this.drawMonthSteps(1, 1, 4000); // default values, will be updated
 
-        // --- Move the year label to be a sibling of the toggle-help button, immediately before it ---
-        let yearLabel = document.getElementById('calendar-year-inline');
-        if (!yearLabel) {
-            yearLabel = document.createElement('span');
-            yearLabel.id = 'calendar-year-inline';
-            yearLabel.className = 'calendar-year-inline';
-            yearLabel.style.cssText = 'margin-left: 12px; margin-right: 0; font-size: 1.1rem; color: #333; font-weight: bold; background: rgba(255,255,255,0.85); padding: 2px 12px; border-radius: 16px; vertical-align: middle; z-index: 20; display: inline-block;';
+        // --- Create and position the year label at the right edge ---
+        // First, remove any existing year label
+        const existingYearLabel = document.getElementById('calendar-year-inline');
+        if (existingYearLabel && existingYearLabel.parentNode) {
+            existingYearLabel.parentNode.removeChild(existingYearLabel);
         }
-        // Find the toggle-help button and insert the year label immediately before it in the DOM
+
+        // Create a new year label
+        const yearLabel = document.createElement('span');
+        yearLabel.id = 'calendar-year-inline';
+        yearLabel.className = 'calendar-year-inline';
+        yearLabel.style.fontSize = '1.1rem';
+        yearLabel.style.color = '#333';
+        yearLabel.style.fontWeight = 'bold';
+        yearLabel.style.background = 'rgba(255,255,255,0.85)';
+        yearLabel.style.padding = '2px 12px';
+        yearLabel.style.borderRadius = '16px';
+        yearLabel.style.verticalAlign = 'middle';
+        yearLabel.style.zIndex = '20';
+        yearLabel.style.display = 'inline-block';
+        yearLabel.style.marginRight = '8px';
+
+        // Find the help button
         const helpBtn = document.getElementById('toggle-help');
-        if (helpBtn && helpBtn.parentNode) {
-            helpBtn.parentNode.insertBefore(yearLabel, helpBtn);
-        } else {
-            dashboard.appendChild(yearLabel);
+
+        // Create a container for elements at the right side of the dashboard
+        const rightElements = document.createElement('div');
+        rightElements.style.position = 'absolute';
+        rightElements.style.right = '10px';
+        rightElements.style.top = '10px';
+        rightElements.style.display = 'flex';
+        rightElements.style.alignItems = 'center';
+        rightElements.id = 'dashboard-right-elements';
+
+        // Remove existing container if it exists
+        const existingRightElements = document.getElementById('dashboard-right-elements');
+        if (existingRightElements && existingRightElements.parentNode) {
+            existingRightElements.parentNode.removeChild(existingRightElements);
         }
+
+        // Add the year label to the container first
+        rightElements.appendChild(yearLabel);
+
+        // If the help button exists, also move it to the container (after the year label)
+        if (helpBtn && helpBtn.parentNode) {
+            helpBtn.parentNode.removeChild(helpBtn);
+            rightElements.appendChild(helpBtn);
+        }
+
+        // Add the container to the dashboard
+        dashboard.appendChild(rightElements);
     }
 
     /**
      * Draw the 12-step circular month progress indicator
-     */
-    drawMonthSteps(currentMonth, day, year) {
+     */    drawMonthSteps(currentMonth, day, year) {
         const steps = 12;
-        const radius = 52; // px, from center
-        const size = 16; // px, step dot size
+        const radius = 44; // px, from center (doubled from previous size)
+        const size = 8; // px, step dot size (doubled from previous size)
         const container = document.getElementById('calendar-month-steps');
         if (!container) return;
         container.innerHTML = '';
@@ -96,10 +125,9 @@ class CalendarDisplay {
         container.style.top = '0';
         container.style.width = '100%';
         container.style.height = '100%';
-        for (let i = 0; i < steps; i++) {
-            const angle = (i / steps) * 2 * Math.PI - Math.PI / 2;
-            const x = Math.cos(angle) * radius + 60 - size / 2;
-            const y = Math.sin(angle) * radius + 60 - size / 2;
+        for (let i = 0; i < steps; i++) {            const angle = (i / steps) * 2 * Math.PI - Math.PI / 2;
+            const x = Math.cos(angle) * radius + 55 - size / 2; // Adjusted for 110px container
+            const y = Math.sin(angle) * radius + 55 - size / 2; // Adjusted for 110px container
             const step = document.createElement('div');
             step.style.position = 'absolute';
             step.style.left = `${x}px`;
