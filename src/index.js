@@ -101,14 +101,14 @@ class GridWorldApp {
             // Start calendar after all initialization is complete
             await this.startCalendar();
 
-            this.uiManager.hideLoadingIndicator();
+            if (this.uiManager) this.uiManager.hideLoadingIndicator();
             this.isInitialized = true;
             return true;
 
         } catch (error) {
             console.error('Failed to initialize GridWorld:', error);
-            this.uiManager.hideLoadingIndicator();
-            this.uiManager.showMessage('Failed to initialize GridWorld', 'error');
+            if (this.uiManager) this.uiManager.hideLoadingIndicator();
+            if (this.uiManager) this.uiManager.showMessage('Failed to initialize GridWorld', 'error');
             return false;
         }
     }

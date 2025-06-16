@@ -14,6 +14,8 @@ class UIManager {
         this.sceneManager = sceneManager; // Store sceneManager instance
         this.currentTotalPopulation = 0; // Store current total population
         this.isConnected = false; // Store connection status
+        this.loadingIndicator = null; // Store loading indicator element
+        this.messageTimeout = null; // Store message timeout
     }
 
     initialize() { // sceneManager parameter removed
@@ -23,6 +25,70 @@ class UIManager {
         this.setupResetButtons();
         this.connectToPopulationManager();
         this.isInitialized = true;
+    }
+
+    getContainer() {
+        // Return the main container element where the renderer should be attached
+        return document.getElementById('container') || document.body;
+    }
+
+    showLoadingIndicator(message = 'Loading...') {
+        // Remove existing loading indicator if any
+        this.hideLoadingIndicator();
+
+        // Create loading indicator
+        const indicator = document.createElement('div');
+        indicator.className = 'loading-indicator';
+        indicator.innerHTML = `
+            <div class="loading-indicator-spinner"></div>
+            <span>${message}</span>
+        `;
+
+        document.body.appendChild(indicator);
+        this.loadingIndicator = indicator;
+    }
+
+    hideLoadingIndicator() {
+        if (this.loadingIndicator) {
+            this.loadingIndicator.remove();
+            this.loadingIndicator = null;
+        }
+    }
+
+    showMessage(message, type = 'info', duration = 3000) {
+        // Clear any existing message timeout
+        if (this.messageTimeout) {
+            clearTimeout(this.messageTimeout);
+            this.messageTimeout = null;
+        }
+
+        // Remove existing message if any
+        const existingMessage = document.querySelector('.message-element');
+        if (existingMessage) {
+            existingMessage.remove();
+        }
+
+        // Create message element
+        const messageElement = document.createElement('div');
+        messageElement.className = `message-element ${type}`;
+        messageElement.textContent = message;
+
+        document.body.appendChild(messageElement);
+
+        // Show message with animation
+        setTimeout(() => {
+            messageElement.classList.add('visible');
+        }, 10);
+
+        // Auto-hide message after duration
+        this.messageTimeout = setTimeout(() => {
+            messageElement.classList.remove('visible');
+            setTimeout(() => {
+                if (messageElement.parentNode) {
+                    messageElement.remove();
+                }
+            }, 300); // Wait for fade-out animation
+        }, duration);
     }
 
     setupControlsPanel() {
@@ -53,7 +119,9 @@ class UIManager {
 
         this.controlsPanel.classList.add('collapsed');
         this.toggleHelpButton.textContent = '?';
-    } expandControlsPanel() {
+    }
+
+    expandControlsPanel() {
         if (!this.controlsPanel || !this.toggleHelpButton) return;
 
         this.controlsPanel.classList.remove('collapsed');
@@ -140,21 +208,31 @@ class UIManager {
         }
 
         try {
+            // Show loading indicator while fetching
+            this.showLoadingIndicator('Loading statistics...');
+
             // Get tile stats from sceneManager
             const stats = window.sceneManager.getPopulationStats();
-            // Get demographic stats from populationManager
-            const popData = populationManager.getPopulationData();
-            // Merge demographic stats if available
+            // Fetch demographic stats from backend API (force fresh)
+            const popData = await populationManager.makeApiRequest('/stats', 'GET');            // Merge demographic stats if available
             if (popData) {
                 if (typeof popData.male !== 'undefined') stats.male = Number(popData.male);
                 if (typeof popData.female !== 'undefined') stats.female = Number(popData.female);
-                if (typeof popData.under18 !== 'undefined') stats.under18 = Number(popData.under18);
-                if (typeof popData.over65 !== 'undefined') stats.over65 = Number(popData.over65);
-            }
+                if (typeof popData.minors !== 'undefined') stats.minors = Number(popData.minors);
+                if (typeof popData.working_age !== 'undefined') stats.working_age = Number(popData.working_age);
+                if (typeof popData.elderly !== 'undefined') stats.elderly = Number(popData.elderly);
+                if (typeof popData.birthRate !== 'undefined') stats.birthRate = Number(popData.birthRate);
+                if (typeof popData.deathRate !== 'undefined') stats.deathRate = Number(popData.deathRate);
+                if (typeof popData.birthCount !== 'undefined') stats.birthCount = Number(popData.birthCount);
+                if (typeof popData.deathCount !== 'undefined') stats.deathCount = Number(popData.deathCount);
+            }// Get total population from PopulationManager
+            this.currentTotalPopulation = populationManager.getTotalPopulation();
             const growthStats = populationManager.getGrowthStats();
+            this.hideLoadingIndicator();
             this.showStatsModal(stats, growthStats);
-            console.log('📊 Population Statistics:', { stats, growthStats });
+            console.log('📊 Population Statistics:', { stats, growthStats, totalPopulation: this.currentTotalPopulation });
         } catch (error) {
+            this.hideLoadingIndicator();
             console.error('Failed to get statistics:', error);
             this.showMessage('Failed to get statistics', 'error');
         }
@@ -181,6 +259,22 @@ class UIManager {
         header.classList.add('stats-modal-header');
         header.innerHTML = '<h3>📊 Population Statistics</h3>';
 
+        // Add Refresh button
+        const refreshButton = document.createElement('button');
+        refreshButton.classList.add('stats-modal-refresh');
+        refreshButton.innerHTML = '⟳ Refresh';
+        refreshButton.style.marginRight = '8px';
+        refreshButton.onclick = async () => {
+            refreshButton.disabled = true;
+            refreshButton.textContent = 'Refreshing...';
+            try {
+                await this.handleShowStats();
+            } finally {
+                // The modal will be replaced, so no need to re-enable
+            }
+        };
+        header.appendChild(refreshButton);
+
         const closeButton = document.createElement('button');
         closeButton.classList.add('stats-modal-close');
         closeButton.innerHTML = '&times;';
@@ -189,15 +283,19 @@ class UIManager {
 
         // Modal Content
         const content = document.createElement('div');
-        content.classList.add('stats-modal-content');
-
-        // Add Total Population first
+        content.classList.add('stats-modal-content');        // Add Total Population first
         content.innerHTML = `
             <p><strong>Total Population:</strong> <span id="stats-modal-total-population">${this.currentTotalPopulation.toLocaleString()}</span></p>
             <p><strong>Male Population:</strong> <span id="stats-modal-male-population">${stats.male?.toLocaleString() ?? 'N/A'}</span></p>
             <p><strong>Female Population:</strong> <span id="stats-modal-female-population">${stats.female?.toLocaleString() ?? 'N/A'}</span></p>
-            <p><strong>Under 18:</strong> <span id="stats-modal-under18">${stats.under18?.toLocaleString() ?? 'N/A'}</span></p>
-            <p><strong>Over 65:</strong> <span id="stats-modal-over65">${stats.over65?.toLocaleString() ?? 'N/A'}</span></p>
+            <p><strong>Minors (under 16):</strong> <span id="stats-modal-minors">${stats.minors?.toLocaleString() ?? 'N/A'}</span></p>
+            <p><strong>Working Age (16-60):</strong> <span id="stats-modal-working-age">${stats.working_age?.toLocaleString() ?? 'N/A'}</span></p>
+            <p><strong>Elderly (over 60):</strong> <span id="stats-modal-elderly">${stats.elderly?.toLocaleString() ?? 'N/A'}</span></p>
+            <hr class="stats-modal-separator">
+            <p><strong>Birth Rate:</strong> <span id="stats-modal-birth-rate">${stats.birthRate?.toFixed(2) ?? '0.00'} per minute</span></p>
+            <p><strong>Death Rate:</strong> <span id="stats-modal-death-rate">${stats.deathRate?.toFixed(2) ?? '0.00'} per minute</span></p>
+            <p><strong>Total Births:</strong> <span id="stats-modal-birth-count">${stats.birthCount?.toLocaleString() ?? '0'}</span></p>
+            <p><strong>Total Deaths:</strong> <span id="stats-modal-death-count">${stats.deathCount?.toLocaleString() ?? '0'}</span></p>
             <hr class="stats-modal-separator">
             <p><strong>Total Tiles:</strong> ${stats.totalTiles}</p>
             <p><strong>Habitable Tiles:</strong> ${stats.habitableTiles}</p>
@@ -221,13 +319,11 @@ class UIManager {
 
     connectToPopulationManager() {
         this.populationUnsubscribe = populationManager.subscribe((eventType, eventData) => {
-            if (eventType === 'populationUpdate') {
-                this.currentTotalPopulation = eventData.totalPopulation || 0;
-                this.updateStatsModalPopulation(); // Update modal if open
-            } else if (eventType === 'connected') {
+            if (eventType === 'connected') {
                 this.isConnected = eventData;
                 this.updateConnectionVisuals(); // Update dashboard icon color
             }
+            // Do NOT update currentTotalPopulation on populationUpdate anymore
         });
         populationManager.connect();
     }
@@ -256,108 +352,18 @@ class UIManager {
     cleanup() {
         if (this.populationUnsubscribe) {
             this.populationUnsubscribe();
+            this.populationUnsubscribe = null;
         }
-        populationManager.disconnect();
-    }
-
-    showMessage(message, type = 'info', duration = 3000) {
-        // Create or get message container
-        let messageContainer = document.getElementById('message-container');
-        if (!messageContainer) {
-            messageContainer = document.createElement('div');
-            messageContainer.id = 'message-container';
-            messageContainer.classList.add('message-container'); // Add class
-            document.body.appendChild(messageContainer);
+        // Remove controls panel and population display if they exist
+        if (this.controlsPanel) {
+            this.controlsPanel.remove();
+            this.controlsPanel = null;
         }
-
-        // Create message element
-        const messageElement = document.createElement('div');
-        messageElement.classList.add('message-element', type); // Add base and type class
-        messageElement.textContent = message;
-
-        messageContainer.appendChild(messageElement);
-
-        // Animate in
-        setTimeout(() => {
-            messageElement.classList.add('visible');
-        }, 10);
-
-        // Auto remove
-        setTimeout(() => {
-            this.removeMessage(messageElement);
-        }, duration);
-
-        return messageElement;
-    }
-
-    removeMessage(messageElement) {
-        if (messageElement && messageElement.parentNode) {
-            messageElement.classList.remove('visible');
-            setTimeout(() => {
-                if (messageElement.parentNode) {
-                    messageElement.parentNode.removeChild(messageElement);
-                }
-            }, 300); // Corresponds to transition duration
+        if (this.populationDisplay) {
+            this.populationDisplay.remove();
+            this.populationDisplay = null;
         }
-    }
-
-    showLoadingIndicator(text = 'Loading...') {
-        let loader = document.getElementById('loading-indicator');
-        if (!loader) {
-            loader = document.createElement('div');
-            loader.id = 'loading-indicator';
-            loader.classList.add('loading-indicator'); // Add class
-
-            // Add spinner
-            const spinner = document.createElement('div');
-            spinner.classList.add('loading-indicator-spinner'); // Add class
-
-            loader.appendChild(spinner);
-            loader.appendChild(document.createTextNode(text));
-            document.body.appendChild(loader);
-        } else {
-            loader.style.display = 'flex'; // Keep this for toggling visibility
-            loader.lastChild.textContent = text;
-        }
-
-        return loader;
-    }
-
-    hideLoadingIndicator() {
-        const loader = document.getElementById('loading-indicator');
-        if (loader) {
-            loader.style.display = 'none'; // Keep this for toggling visibility
-        }
-    }
-
-    // updateStats(stats) { // This method is no longer used for the primary stats display
-    //     // Update or create stats panel
-    //     let statsPanel = document.getElementById('stats-panel');
-    //     if (!statsPanel) {
-    //         statsPanel = document.createElement('div');
-    //         statsPanel.id = 'stats-panel';
-    //         statsPanel.classList.add('stats-panel'); // Add class
-    //         document.body.appendChild(statsPanel);
-    //     }
-
-    //     const statsText = Object.entries(stats)
-    //         .map(([key, value]) => `${key}: ${value}`)
-    //         .join('<br>');
-
-    //     statsPanel.innerHTML = statsText;
-    // }
-
-    getContainer() {
-        const container = document.getElementById("container");
-        if (!container) {
-            console.error("Container element not found in HTML");
-            return null;
-        }
-        return container;
-    }
-
-    isControlsPanelVisible() {
-        return this.controlsPanel && !this.controlsPanel.classList.contains('collapsed');
+        this.isInitialized = false;
     }
 }
 

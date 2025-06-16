@@ -1,30 +1,16 @@
 const EventEmitter = require('events');
+const calendarConfig = require('../config/calendar'); // Import the new config file
 
 class CalendarService extends EventEmitter {
     constructor(io = null) {
         super();
 
-        // Store socket.io instance for broadcasting
         this.io = io;
-
-        // Calendar configuration from environment variables
-        this.config = {
-            daysPerMonth: parseInt(process.env.CALENDAR_DAYS_PER_MONTH) || 8,
-            monthsPerYear: parseInt(process.env.CALENDAR_MONTHS_PER_YEAR) || 12,
-            startYear: parseInt(process.env.CALENDAR_START_YEAR) || 1,
-            autoStart: process.env.CALENDAR_AUTO_START !== 'false',
-            defaultSpeed: process.env.CALENDAR_DEFAULT_SPEED || '1_day',
-            realTimeTickMs: 1000 // Always 1 second real time
-        };
-
-        // Current date state
-        this.currentDate = {
-            day: 1,
-            month: 1,
-            year: this.config.startYear
-        };
+        // Use the imported config directly
+        this.config = calendarConfig;
 
         // Speed modes - defines how much game time passes per real second
+        // This can remain defined here or be moved to config if preferred
         this.speedModes = {
             '1_day': {
                 name: '1 Day/sec',
@@ -40,20 +26,27 @@ class CalendarService extends EventEmitter {
             },
             '1_month': {
                 name: '1 Month/sec',
-                daysPerTick: 8, // 8 days = 1 month
+                daysPerTick: this.config.daysPerMonth, // Use configured daysPerMonth
                 description: 'Advance 1 month every second',
-                populationUpdatesPerTick: 8
+                populationUpdatesPerTick: this.config.daysPerMonth
             },
             '4_month': {
                 name: '4 Months/sec',
-                daysPerTick: 32, // 8 * 4 = 32 days = 4 months
+                daysPerTick: this.config.daysPerMonth * 4,
                 description: 'Advance 4 months every second',
-                populationUpdatesPerTick: 32
+                populationUpdatesPerTick: this.config.daysPerMonth * 4
             }
         };
 
-        // Current speed setting
-        this.currentSpeed = this.config.defaultSpeed;
+        // Current date state - initialized from config
+        this.currentDate = {
+            day: this.config.startDay,
+            month: this.config.startMonth,
+            year: this.config.startYear
+        };
+
+        // Current speed setting - ensure defaultSpeed from config is valid
+        this.currentSpeed = this.speedModes[this.config.defaultSpeed] ? this.config.defaultSpeed : '1_day';
 
         // Calendar state
         this.state = {
@@ -68,16 +61,23 @@ class CalendarService extends EventEmitter {
         this.tickTimer = null;
         this.subscribers = new Set();
 
+        // Add realTimeTickMs to the internal config object if it's not coming from calendarConfig
+        // This makes it explicit that CalendarService uses it.
+        this.internalConfig = {
+            ...this.config, // Spread the loaded config
+            realTimeTickMs: parseInt(process.env.CALENDAR_TICK_INTERVAL_MS) || 1000 // Load directly or use default
+        };
+
         console.log('📅 Calendar Service initialized:', {
-            daysPerMonth: this.config.daysPerMonth,
-            monthsPerYear: this.config.monthsPerYear,
+            daysPerMonth: this.internalConfig.daysPerMonth,
+            monthsPerYear: this.internalConfig.monthsPerYear,
             currentSpeed: this.speedModes[this.currentSpeed].name,
-            realTimeInterval: `${this.config.realTimeTickMs}ms`,
+            realTimeInterval: `${this.internalConfig.realTimeTickMs}ms`,
             startDate: this.getFormattedDate()
         });
 
         // Auto-start if configured
-        if (this.config.autoStart) {
+        if (this.internalConfig.autoStart) {
             this.start();
         }
     }/**
@@ -95,7 +95,8 @@ class CalendarService extends EventEmitter {
 
         this.tickTimer = setInterval(() => {
             this.tick();
-        }, this.config.realTimeTickMs); console.log(`🟢 Calendar started - ${this.speedModes[this.currentSpeed].name} (${this.config.realTimeTickMs}ms intervals)`);
+        }, this.internalConfig.realTimeTickMs); // Use internalConfig for realTimeTickMs
+        console.log(`🟢 Calendar started - ${this.speedModes[this.currentSpeed].name} (${this.internalConfig.realTimeTickMs}ms intervals)`);
 
         const stateData = this.getState();
         this.emit('started', stateData);
@@ -145,9 +146,10 @@ class CalendarService extends EventEmitter {
 
         this.stop();
 
+        // Reset to configured start date
         this.currentDate = {
-            day: 1,
-            month: 1,
+            day: this.config.startDay,
+            month: this.config.startMonth,
             year: this.config.startYear
         };
 
@@ -338,19 +340,31 @@ class CalendarService extends EventEmitter {
      */
     getState() {
         return {
-            currentDate: { ...this.currentDate },
-            config: { ...this.config },
+            currentDate: this.currentDate,
+            isPaused: !this.state.isRunning, // Corrected: isPaused is true if not running
+            simulationTime: this.state.totalDays,
+            config: this.internalConfig, // Expose internalConfig which includes realTimeTickMs
             currentSpeed: this.currentSpeed,
-            speedMode: this.speedModes[this.currentSpeed],
-            availableSpeeds: Object.keys(this.speedModes).map(key => ({
-                key,
-                ...this.speedModes[key]
-            })),
-            isRunning: this.state.isRunning,
-            totalTicks: this.state.totalTicks,
-            totalDaysAdvanced: this.state.totalDays,
-            uptime: this.state.startTime ? Date.now() - this.state.startTime : 0,
-            formattedDate: this.getFormattedDate()
+            speedModeDetails: this.speedModes[this.currentSpeed],
+            totalTicks: this.state.totalTicks
+        };
+    }
+
+    /**
+     * Gets the current calendar date with fallback handling
+     * This is the authoritative method for getting the current game date
+     * @returns {Object} Calendar date object with year, month, day
+     */
+    getCurrentDate() {
+        if (this.currentDate) {
+            return { ...this.currentDate }; // Return a copy to prevent external modification
+        }
+
+        console.warn('[CalendarService] currentDate not initialized. Using default start date.');
+        return {
+            year: this.config.startYear || 1,
+            month: this.config.startMonth || 1,
+            day: this.config.startDay || 1
         };
     }
 

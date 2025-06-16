@@ -1,4 +1,5 @@
 // GridWorld Server - Main Entry Point
+// Restarting server to fix port issue
 require('dotenv').config(); // Load environment variables from .env
 const express = require('express');
 const http = require('http');
@@ -43,7 +44,7 @@ class GridWorldServer {
 
         // Error handling middleware
         this.app.use(errorHandler);        // Initialize services
-        await populationService.initialize(this.io);
+        await populationService.initialize(this.io, this.calendarService);
 
         // Make calendar service available to routes
         this.app.locals.calendarService = this.calendarService;

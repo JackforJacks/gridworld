@@ -91,4 +91,38 @@ router.post('/save', async (req, res, next) => {
     }
 });
 
+// Get demographic population stats (male, female, under 18, over 65)
+router.get('/stats', async (req, res, next) => {
+    try {
+        const stats = await populationService.getPopulationStats();
+        res.json(stats);
+    } catch (error) {
+        next(error);
+    }
+});
+
+// Regenerate population with new age distribution
+router.post('/regenerate', async (req, res, next) => {
+    try {
+        const responseData = await populationService.regeneratePopulationWithNewAgeDistribution();
+        res.json({
+            success: true,
+            message: 'Population regenerated with new age distribution',
+            data: responseData
+        });
+    } catch (error) {
+        next(error);
+    }
+});
+
+// Apply senescence (death by old age) manually
+router.post('/senescence', async (req, res, next) => {
+    try {
+        const responseData = await populationService.applySenescenceManually();
+        res.json(responseData);
+    } catch (error) {
+        next(error);
+    }
+});
+
 module.exports = router;

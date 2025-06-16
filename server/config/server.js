@@ -6,4 +6,5 @@ module.exports = {
     autoSaveInterval: 1000, // 5 minutes
     populationGrowthInterval: 1000, // 1 second
     defaultGrowthRate: 1,
+    populationBatchSize: 100 // Added during previous refactoring, ensure it's here
 };
