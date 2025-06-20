@@ -743,4 +743,203 @@ kbd {
     margin-top: 12px;
 }
 
+/* Calendar Display Styles */
+.calendar-display {
+    position: absolute;
+    left: 50%;
+    bottom: 0;
+    transform: translateX(-50%) translateY(55%);
+    z-index: 20;
+}
+
+.calendar-date-display {
+    display: block;
+    width: 110px;
+    height: 110px;
+    padding: 0;
+    margin: 0;
+    background: rgba(255, 255, 255, 0.2);
+    border: 1px solid rgba(200, 200, 200, 0.4);
+    border-radius: 50%;
+    box-shadow: 0 1px 4px rgba(0, 0, 0, 0.1);
+    position: absolute;
+    left: 50%;
+    bottom: 0;
+    transform: translateX(-50%) translateY(55%);
+    z-index: 10;
+    box-sizing: border-box;
+    /* Ensure consistent sizing */
+    overflow: visible;
+}
+
+.calendar-circular-container {
+    position: relative;
+    width: 110px;
+    /* Matches this.calendarSize from JS */
+    height: 110px;
+    /* Matches this.calendarSize from JS */
+    margin: 0;
+    padding: 0;
+    border-radius: 50%;
+    overflow: visible;
+    box-sizing: border-box;
+    background: rgba(255, 255, 255, 0.15);
+    /* Acts like #outer-circle */
+    box-shadow: 0 0 15px rgba(0, 0, 0, 0.2);
+}
+
+.calendar-moon-phase-btn {
+    position: absolute;
+    width: 64px;
+    /* Matches this.moonButtonSize */
+    height: 64px;
+    top: 50%;
+    left: 50%;
+    margin: -32px 0 0 -32px;
+    /* half of height and width (64/2 = 32) */
+    box-sizing: border-box;
+    background: rgba(0, 0, 34, 0.1);
+    color: #fff;
+    border: 2px solid rgba(200, 200, 200, 0.6);
+    padding: 0;
+    border-radius: 50%;
+    cursor: pointer;
+    z-index: 2;
+    /* Acts like #inner-circle */
+    overflow: hidden;
+    /* Keep emoji contained within */
+    box-shadow: 0 0 6px rgba(0, 0, 0, 0.3);
+    transition: all 0.2s ease-in-out;
+}
+
+.calendar-moon-phase-btn:hover {
+    transform: scale(1.05);
+    border-color: rgba(255, 255, 255, 0.8);
+    box-shadow: 0 0 12px rgba(255, 255, 255, 0.3);
+}
+
+.moon-emoji-container {
+    position: absolute;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    border-radius: 50%;
+    overflow: hidden;
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    box-sizing: border-box;
+}
+
+.calendar-moon-emoji {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 100%;
+    height: 100%;
+    font-size: 72px;
+    line-height: 1;
+    margin: 0;
+    padding: 0;
+}
+
+.day-label-container {
+    position: absolute;
+    bottom: 0;
+    left: 0;
+    width: 100%;
+    text-align: center;
+    height: auto;
+    z-index: 3;
+    pointer-events: none;
+    /* Ensures it doesn't block clicks */
+    opacity: 0;
+    /* Hidden for now to let emoji take full space */
+}
+
+.calendar-day-label {
+    font-size: 0.7rem;
+    text-align: center;
+    margin: 0;
+    line-height: 1;
+    background-color: rgba(0, 0, 0, 0.5);
+    border-radius: 8px;
+    padding: 1px 4px;
+    color: white;
+    text-shadow: 0 0 2px black;
+    /* Text outline for legibility */
+}
+
+.calendar-date-label {
+    text-align: center;
+    font-size: 0.9rem;
+    color: #333;
+    position: absolute;
+    bottom: 2px;
+    left: 0;
+    right: 0;
+}
+
+.calendar-month-steps {
+    position: absolute;
+    left: 0;
+    top: 0;
+    width: 110px;
+    /* Matches this.calendarSize from JS */
+    height: 110px;
+    /* Matches this.calendarSize from JS */
+    z-index: 1;
+    pointer-events: none;
+    box-sizing: border-box;
+}
+
+.month-step {
+    position: absolute;
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 0.8rem;
+    pointer-events: none;
+    /* Allow clicks to pass through */
+    transition: background 0.2s;
+}
+
+.month-step-active {
+    background: #4caf50;
+    border: 1px solid rgba(255, 255, 255, 0.8);
+    box-shadow: 0 0 4px rgba(76, 175, 80, 0.6);
+    /* Using 1px border with glow effect */
+}
+
+.month-step-inactive {
+    background: rgba(187, 187, 187, 0.7);
+    border: 1px solid rgba(200, 200, 200, 0.4);
+    /* Slightly transparent to blend better */
+}
+
+.dashboard-right-elements {
+    position: absolute;
+    right: 10px;
+    top: 10px;
+    display: flex;
+    align-items: center;
+}
+
+.calendar-year-inline {
+    font-size: 1.1rem;
+    color: #333;
+    font-weight: bold;
+    background: rgba(255, 255, 255, 0.85);
+    padding: 2px 12px;
+    border-radius: 16px;
+    vertical-align: middle;
+    z-index: 20;
+    display: inline-block;
+    margin-right: 8px;
+}
+
 /* End of Calendar Date Display Styles */
