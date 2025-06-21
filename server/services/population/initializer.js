@@ -62,6 +62,27 @@ async function ensureTableExists(pool) {
             CREATE INDEX IF NOT EXISTS idx_family_delivery_date ON family(delivery_date);
         `);
 
+        // Create families table (not family)
+        await pool.query(`
+            CREATE TABLE IF NOT EXISTS families (
+                id SERIAL PRIMARY KEY,
+                male_id INTEGER NOT NULL REFERENCES people(id),
+                female_id INTEGER NOT NULL REFERENCES people(id),
+                created_at TIMESTAMP DEFAULT NOW()
+            );
+        `);
+        await pool.query(`
+            CREATE INDEX IF NOT EXISTS idx_families_male_id ON families(male_id);
+        `);
+        await pool.query(`
+            CREATE INDEX IF NOT EXISTS idx_families_female_id ON families(female_id);
+        `);
+
+        // Add family_id column to people if not exists (after families table exists)
+        await pool.query(`
+            ALTER TABLE people ADD COLUMN IF NOT EXISTS family_id INTEGER REFERENCES families(id);
+        `);
+
         console.log('✅ Tables and indexes created successfully.');
     } catch (error) {
         console.error('Error ensuring table exists:', error);

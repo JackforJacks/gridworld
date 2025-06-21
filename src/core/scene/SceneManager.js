@@ -243,9 +243,23 @@ class SceneManager {
     }
 
     async reinitializePopulation() {
-        if (!this.habitableTileIds || this.habitableTileIds.length === 0) return;
+        // Ensure habitableTileIds is populated before re-initializing
+        if (!this.habitableTileIds || this.habitableTileIds.length === 0) {
+            if (this.hexasphere && this.hexasphere.tiles) {
+                this.habitableTileIds = this.hexasphere.tiles
+                    .filter(t => t.Habitable === 'yes')
+                    .map(t => t.id);
+            }
+        }
+
+        if (!this.habitableTileIds || this.habitableTileIds.length === 0) {
+            console.error('❌ No habitable tiles found to reinitialize population.');
+            return;
+        }
+
         try {
-            await this.initializeTilePopulations(this.habitableTileIds);
+            await populationManager.initializeTilePopulations(this.habitableTileIds);
+            this.updateTilePopulations(); // Refresh local tile data
             this.checkPopulationThresholds();
         } catch (error) {
             console.error('❌ Failed to reinitialize population:', error);

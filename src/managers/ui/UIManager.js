@@ -142,39 +142,19 @@ class UIManager {
         populationWrapper.id = 'population-panel'; // Keep ID for consistency if needed elsewhere
         populationWrapper.classList.add('population-panel-wrapper');
 
-        // Icon for connection status
-        // --- Add calendar year display ---
-        const yearSpan = document.createElement('span');
-        yearSpan.id = 'dashboard-calendar-year';
-        yearSpan.className = 'dashboard-calendar-year';
-        yearSpan.style.marginRight = '12px';
-        // Helper to update year label
-        function updateYearLabel() {
-            let calendarYear = '';
-            if (window.calendarManager && window.calendarManager.state && window.calendarManager.state.year) {
-                calendarYear = window.calendarManager.state.year;
-            }
-            yearSpan.textContent = calendarYear ? `Year: ${calendarYear}` : '';
-        }
-        updateYearLabel();
-        // Listen for year changes if calendarManager exists
-        if (window.calendarManager && typeof window.calendarManager.on === 'function') {
-            window.calendarManager.on('yearChanged', (newYear) => {
-                yearSpan.textContent = `Year: ${newYear}`;
-            });
-            // Also listen for stateChanged in case of reload
-            window.calendarManager.on('stateChanged', updateYearLabel);
-        }
+        // Create the connection status icon, which was previously missing
+        const icon = document.createElement('span');
+        icon.id = 'connection-icon';
+        icon.className = 'connection-icon';
+        icon.textContent = '●'; // Default icon, color will be set by CSS
+        populationWrapper.appendChild(icon);
 
-        // Insert yearSpan before the tooltip/help button
-        const toggleHelpButton = document.getElementById('toggle-help');
-        if (toggleHelpButton) {
-            dashboard.insertBefore(yearSpan, toggleHelpButton);
-        } else {
-            dashboard.appendChild(yearSpan);
-        }
+        // The year display logic has been removed from here and is now exclusively
+        // handled by the CalendarDisplay component to avoid duplication.
 
         const statsButton = document.getElementById('show-stats');
+        const toggleHelpButton = document.getElementById('toggle-help');
+
         if (statsButton) {
             statsButton.insertAdjacentElement('afterend', populationWrapper);
         } else if (toggleHelpButton) {
@@ -220,6 +200,12 @@ class UIManager {
             await this.sceneManager.reinitializePopulation();
             console.log("🌱 Population re-initialized on habitable tiles.");
 
+            // 4. Refresh the stats modal to show the new population, only if it's open
+            const statsModal = document.getElementById('stats-modal-overlay');
+            if (statsModal) {
+                await this.handleShowStats();
+            }
+
             // Population display will update via events if modal is open or for connection status
             console.log("✅ All data reset successfully!");
 
@@ -249,6 +235,7 @@ class UIManager {
                 if (typeof popData.minors !== 'undefined') stats.minors = Number(popData.minors);
                 if (typeof popData.working_age !== 'undefined') stats.working_age = Number(popData.working_age);
                 if (typeof popData.elderly !== 'undefined') stats.elderly = Number(popData.elderly);
+                if (typeof popData.bachelors !== 'undefined') stats.bachelors = Number(popData.bachelors);
                 if (typeof popData.birthRate !== 'undefined') stats.birthRate = Number(popData.birthRate);
                 if (typeof popData.deathRate !== 'undefined') stats.deathRate = Number(popData.deathRate);
                 if (typeof popData.birthCount !== 'undefined') stats.birthCount = Number(popData.birthCount);
@@ -322,6 +309,7 @@ class UIManager {
             <p><strong>Minors (under 16):</strong> <span id="stats-modal-minors">${stats.minors?.toLocaleString() ?? 'N/A'}</span></p>
             <p><strong>Working Age (16-60):</strong> <span id="stats-modal-working-age">${stats.working_age?.toLocaleString() ?? 'N/A'}</span></p>
             <p><strong>Elderly (over 60):</strong> <span id="stats-modal-elderly">${stats.elderly?.toLocaleString() ?? 'N/A'}</span></p>
+            <p><strong>Bachelors:</strong> <span id="stats-modal-bachelors">${stats.bachelors?.toLocaleString() ?? 'N/A'}</span></p>
             <hr class="stats-modal-separator">
             <p><strong>Total Families:</strong> <span id="stats-modal-total-families">${stats.totalFamilies?.toLocaleString() ?? '0'}</span></p>
             <p><strong>Pregnant Families:</strong> <span id="stats-modal-pregnant-families">${stats.pregnantFamilies?.toLocaleString() ?? '0'}</span></p>

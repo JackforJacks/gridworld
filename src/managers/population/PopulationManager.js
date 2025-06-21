@@ -215,8 +215,18 @@ class PopulationManager {
 
     // OPTIMIZED: Reset all tile populations to zero
     async resetPopulation() {
-        const data = await this.makeApiRequest('/reset');
+        const data = await this.makeApiRequest('/reset', 'POST');
         console.log('✅ All tile populations reset successfully:', data);
+        // Clear local data immediately
+        this.populationData = {
+            globalData: {
+                lastUpdated: 0,
+                growth: { rate: 1, interval: 1000 }
+            },
+            tilePopulations: {},
+            totalPopulation: 0
+        };
+        this.notifyCallbacks('populationUpdate', this.populationData);
         return data;
     }    // OPTIMIZED: Enhanced connection status with health check
     isConnectedToServer() {

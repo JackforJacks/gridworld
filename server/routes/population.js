@@ -64,7 +64,7 @@ router.post('/initialize', async (req, res, next) => {
 });
 
 // Reset all population data
-router.get('/reset', async (req, res, next) => {
+router.post('/reset', async (req, res, next) => {
     try {
         const responseData = await populationService.resetPopulation();
         res.json({

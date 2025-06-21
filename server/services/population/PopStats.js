@@ -35,10 +35,14 @@ function getCalendarCutoffs(calendarService) {
 
     const minorsYear = year - 16;
     const elderlyYear = year - 60;
+    const bachelorMaleYear = year - 45;
+    const bachelorFemaleYear = year - 30;
 
     return {
         minorsCutoff: `${minorsYear}-${String(month).padStart(2, '0')}-${String(day).padStart(2, '0')}`,
-        elderlyCutoff: `${elderlyYear}-${String(month).padStart(2, '0')}-${String(day).padStart(2, '0')}`
+        elderlyCutoff: `${elderlyYear}-${String(month).padStart(2, '0')}-${String(day).padStart(2, '0')}`,
+        bachelorMaleCutoff: `${bachelorMaleYear}-${String(month).padStart(2, '0')}-${String(day).padStart(2, '0')}`,
+        bachelorFemaleCutoff: `${bachelorFemaleYear}-${String(month).padStart(2, '0')}-${String(day).padStart(2, '0')}`
     };
 }
 
@@ -49,7 +53,7 @@ function getCalendarCutoffs(calendarService) {
  */
 async function getPopulationStats(pool, calendarService, populationServiceInstance) {
     try {
-        const { minorsCutoff, elderlyCutoff } = getCalendarCutoffs(calendarService);
+        const { minorsCutoff, elderlyCutoff, bachelorMaleCutoff, bachelorFemaleCutoff } = getCalendarCutoffs(calendarService);
 
         const result = await pool.query(`
             SELECT 
@@ -58,8 +62,14 @@ async function getPopulationStats(pool, calendarService, populationServiceInstan
                 COUNT(*) FILTER (WHERE sex = false) AS female,
                 COUNT(*) FILTER (WHERE date_of_birth > $1) AS minors,
                 COUNT(*) FILTER (WHERE date_of_birth <= $1 AND date_of_birth > $2) AS working_age,
-                COUNT(*) FILTER (WHERE date_of_birth <= $2) AS elderly
-            FROM people;`, [minorsCutoff, elderlyCutoff]);
+                COUNT(*) FILTER (WHERE date_of_birth <= $2) AS elderly,
+                COUNT(*) FILTER (
+                    WHERE family_id IS NULL AND (
+                        (sex = true AND date_of_birth <= $1 AND date_of_birth > $3) OR
+                        (sex = false AND date_of_birth <= $1 AND date_of_birth > $4)
+                    )
+                ) AS bachelors
+            FROM people;`, [minorsCutoff, elderlyCutoff, bachelorMaleCutoff, bachelorFemaleCutoff]);
 
         const stats = result.rows[0] || {};
         const rates = calculateRates(populationServiceInstance);
@@ -77,6 +87,7 @@ async function getPopulationStats(pool, calendarService, populationServiceInstan
             minors: parseInt(stats.minors, 10) || 0,
             working_age: parseInt(stats.working_age, 10) || 0,
             elderly: parseInt(stats.elderly, 10) || 0,
+            bachelors: parseInt(stats.bachelors, 10) || 0,
             ...rates,
             ...inGameRatesYear,
             ...inGameRates12m
@@ -85,7 +96,7 @@ async function getPopulationStats(pool, calendarService, populationServiceInstan
         console.error('Error getting population stats:', error);
         const rates = calculateRates(populationServiceInstance);
         return {
-            totalPopulation: 0, male: 0, female: 0, minors: 0, working_age: 0, elderly: 0,
+            totalPopulation: 0, male: 0, female: 0, minors: 0, working_age: 0, elderly: 0, bachelors: 0,
             ...rates
         };
     }
@@ -98,13 +109,12 @@ async function getDemographicStats(pool, calendarService) {
     const stats = await getPopulationStats(pool, calendarService, null);
     return {
         totalPopulation: stats.totalPopulation,
-        demographics: {
-            male: stats.male,
-            female: stats.female,
-            minors: stats.minors,
-            working_age: stats.working_age,
-            elderly: stats.elderly
-        }
+        male: stats.male,
+        female: stats.female,
+        minors: stats.minors,
+        working_age: stats.working_age,
+        elderly: stats.elderly,
+        bachelors: stats.bachelors
     };
 }
 

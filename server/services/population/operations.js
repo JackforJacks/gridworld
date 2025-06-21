@@ -23,14 +23,15 @@ async function updateTilePopulation(pool, calendarService, serviceInstance, tile
  */
 async function resetAllPopulation(pool, serviceInstance) {
     try {
-        await pool.query('DROP TABLE IF EXISTS people CASCADE');
-        await ensureTableExists(pool);
+        console.log('[resetAllPopulation] Attempting to truncate people and families tables...');
+        // Truncate both tables to clear all data and reset sequences.
+        await pool.query('TRUNCATE TABLE people, families RESTART IDENTITY CASCADE');
+        console.log('[resetAllPopulation] Truncate successful. Broadcasting update...');
         await serviceInstance.broadcastUpdate('populationReset');
-
         const { formatPopulationData } = require('./dataOperations.js');
         return formatPopulationData({});
     } catch (error) {
-        console.error('Error resetting population:', error);
+        console.error('[resetAllPopulation] Error details:', error);
         throw error;
     }
 }
