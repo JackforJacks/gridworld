@@ -219,7 +219,7 @@ class PopulationService {
                 };
             }
 
-            await this.#pool.query('DELETE FROM people');
+            await this.#pool.query('TRUNCATE TABLE families, people RESTART IDENTITY CASCADE');
             const { year: currentYear, month: currentMonth, day: currentDay } = this.getCurrentCalendarDate();
 
             for (const tile_id of tileIds) {
@@ -275,7 +275,7 @@ class PopulationService {
             }
 
             const currentPopulations = { ...existingPopulations };
-            await this.#pool.query('DELETE FROM people');
+            await this.#pool.query('TRUNCATE TABLE families, people RESTART IDENTITY CASCADE');
             const { year: currentYear, month: currentMonth, day: currentDay } = this.getCurrentCalendarDate();
 
             for (const tileId of tileIds) {

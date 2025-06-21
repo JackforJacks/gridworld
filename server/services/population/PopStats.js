@@ -176,13 +176,20 @@ async function getPopulationDistribution(pool) {
  */
 async function getFamilyStatistics(pool) {
     try {
+        // Use the correct 'families' table, not legacy 'family'
+        // Count children by joining people table
         const result = await pool.query(`
             SELECT 
                 COUNT(*) as total_families,
-                COUNT(*) FILTER (WHERE pregnancy = TRUE) as pregnant_families,
-                AVG(array_length(children_ids, 1)) as avg_children_per_family,
-                COUNT(*) FILTER (WHERE array_length(children_ids, 1) > 0) as families_with_children
-            FROM family
+                0 as pregnant_families, -- Not tracked in 'families' table
+                COALESCE(AVG(child_count),0) as avg_children_per_family,
+                COUNT(*) FILTER (WHERE child_count > 0) as families_with_children
+            FROM (
+                SELECT f.id, COUNT(p.id) as child_count
+                FROM families f
+                LEFT JOIN people p ON p.family_id = f.id AND EXTRACT(YEAR FROM AGE(p.date_of_birth)) < 16
+                GROUP BY f.id
+            ) sub;
         `);
 
         const stats = result.rows[0] || {};
