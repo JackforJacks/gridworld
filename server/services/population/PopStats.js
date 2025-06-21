@@ -118,8 +118,12 @@ async function getAllPopulationData(pool, calendarService, populationServiceInst
     const stats = await getPopulationStats(pool, calendarService, populationServiceInstance);
     const familyStats = await getFamilyStatistics(pool);
 
+    // Use stats.totalPopulation (from SQL) as the only source of truth
+    const formatted = formatPopulationData(populations);
+    formatted.totalPopulation = stats.totalPopulation;
+
     return {
-        ...formatPopulationData(populations),
+        ...formatted,
         ...stats,
         ...familyStats
     };

@@ -1,12 +1,12 @@
 const EventEmitter = require('events');
 const calendarConfig = require('../config/calendar'); // Import the new config file
+const { getCalendarState, setCalendarState } = require('../models/calendarState');
 
 class CalendarService extends EventEmitter {
     constructor(io = null) {
         super();
 
         this.io = io;
-        // Use the imported config directly
         this.config = calendarConfig;
 
         // Speed modes - defines how much game time passes per real second
@@ -38,14 +38,6 @@ class CalendarService extends EventEmitter {
             }
         };
 
-        // Current date state - initialized from config
-        this.currentDate = {
-            day: this.config.startDay,
-            month: this.config.startMonth,
-            year: this.config.startYear
-        };
-
-        // Current speed setting - ensure defaultSpeed from config is valid
         this.currentSpeed = this.speedModes[this.config.defaultSpeed] ? this.config.defaultSpeed : '1_day';
 
         // Calendar state
@@ -68,18 +60,20 @@ class CalendarService extends EventEmitter {
             realTimeTickMs: parseInt(process.env.CALENDAR_TICK_INTERVAL_MS) || 1000 // Load directly or use default
         };
 
-        console.log('📅 Calendar Service initialized:', {
-            daysPerMonth: this.internalConfig.daysPerMonth,
-            monthsPerYear: this.internalConfig.monthsPerYear,
-            currentSpeed: this.speedModes[this.currentSpeed].name,
-            realTimeInterval: `${this.internalConfig.realTimeTickMs}ms`,
-            startDate: this.getFormattedDate()
-        });
-
-        // Auto-start if configured
-        if (this.internalConfig.autoStart) {
-            this.start();
-        }
+        // Defer all initialization until DB state is loaded
+        (async () => {
+            await this.loadStateFromDB();
+            console.log('📅 Calendar Service initialized:', {
+                daysPerMonth: this.internalConfig.daysPerMonth,
+                monthsPerYear: this.internalConfig.monthsPerYear,
+                currentSpeed: this.speedModes[this.currentSpeed].name,
+                realTimeInterval: `${this.internalConfig.realTimeTickMs}ms`,
+                startDate: this.getFormattedDate()
+            });
+            if (this.internalConfig.autoStart) {
+                this.start();
+            }
+        })();
     }/**
      * Start the calendar ticking system (always 1 second intervals)
      */
@@ -176,7 +170,7 @@ class CalendarService extends EventEmitter {
     /**
      * Advance time based on current speed mode
      */
-    tick() {
+    async tick() {
         if (!this.state.isRunning) {
             return;
         }
@@ -219,6 +213,8 @@ class CalendarService extends EventEmitter {
             this.io.emit('calendarTick', eventData);
             this.io.emit('calendarState', this.getState());
         }
+
+        await this.saveStateToDB();
     }
 
     /**
@@ -313,6 +309,8 @@ class CalendarService extends EventEmitter {
             previousDate,
             currentDate: { ...this.currentDate }
         });
+
+        this.saveStateToDB();
 
         return true;
     }
@@ -442,6 +440,37 @@ class CalendarService extends EventEmitter {
         this.stop();
         this.removeAllListeners();
         this.subscribers.clear();
+    }
+
+    async loadStateFromDB() {
+        let dbState = await getCalendarState();
+        if (dbState) {
+            this.currentDate = {
+                year: dbState.current_year,
+                month: dbState.current_month,
+                day: dbState.current_day
+            };
+        } else {
+            // If DB is empty, initialize with config and persist to DB
+            this.currentDate = {
+                year: this.config.startYear,
+                month: this.config.startMonth,
+                day: this.config.startDay
+            };
+            await setCalendarState({
+                year: this.currentDate.year,
+                month: this.currentDate.month,
+                day: this.currentDate.day
+            });
+        }
+    }
+
+    async saveStateToDB() {
+        await setCalendarState({
+            year: this.currentDate.year,
+            month: this.currentDate.month,
+            day: this.currentDate.day
+        });
     }
 }
 

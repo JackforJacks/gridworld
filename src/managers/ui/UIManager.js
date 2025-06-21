@@ -143,8 +143,6 @@ class UIManager {
         populationWrapper.classList.add('population-panel-wrapper');
 
         // Icon for connection status
-        populationWrapper.innerHTML = `<span id="connection-icon" class="population-panel-icon">👥</span>`;
-
         // --- Add calendar year display ---
         const yearSpan = document.createElement('span');
         yearSpan.id = 'dashboard-calendar-year';
@@ -243,7 +241,8 @@ class UIManager {
             // Get tile stats from sceneManager
             const stats = window.sceneManager.getPopulationStats();
             // Fetch demographic stats from backend API (force fresh)
-            const popData = await populationManager.makeApiRequest('/stats', 'GET');            // Merge demographic stats if available
+            const popData = await populationManager.makeApiRequest('/stats', 'GET');
+            // Merge demographic stats if available
             if (popData) {
                 if (typeof popData.male !== 'undefined') stats.male = Number(popData.male);
                 if (typeof popData.female !== 'undefined') stats.female = Number(popData.female);
@@ -254,14 +253,13 @@ class UIManager {
                 if (typeof popData.deathRate !== 'undefined') stats.deathRate = Number(popData.deathRate);
                 if (typeof popData.birthCount !== 'undefined') stats.birthCount = Number(popData.birthCount);
                 if (typeof popData.deathCount !== 'undefined') stats.deathCount = Number(popData.deathCount);
-
-                // Add family statistics
                 if (typeof popData.totalFamilies !== 'undefined') stats.totalFamilies = Number(popData.totalFamilies);
                 if (typeof popData.pregnantFamilies !== 'undefined') stats.pregnantFamilies = Number(popData.pregnantFamilies);
                 if (typeof popData.familiesWithChildren !== 'undefined') stats.familiesWithChildren = Number(popData.familiesWithChildren);
                 if (typeof popData.avgChildrenPerFamily !== 'undefined') stats.avgChildrenPerFamily = Number(popData.avgChildrenPerFamily);
-            }// Get total population from PopulationManager
-            this.currentTotalPopulation = populationManager.getTotalPopulation();
+                if (typeof popData.totalPopulation !== 'undefined') stats.totalPopulation = Number(popData.totalPopulation);
+            }
+            this.currentTotalPopulation = stats.totalPopulation;
             const growthStats = populationManager.getGrowthStats();
             this.hideLoadingIndicator();
             this.showStatsModal(stats, growthStats);
@@ -318,7 +316,7 @@ class UIManager {
         const content = document.createElement('div');
         content.classList.add('stats-modal-content');        // Add Total Population first
         content.innerHTML = `
-            <p><strong>Total Population:</strong> <span id="stats-modal-total-population">${this.currentTotalPopulation.toLocaleString()}</span></p>
+            <p><strong>Total Population:</strong> <span id="stats-modal-total-population">${stats.totalPopulation?.toLocaleString() ?? 'N/A'}</span></p>
             <p><strong>Male Population:</strong> <span id="stats-modal-male-population">${stats.male?.toLocaleString() ?? 'N/A'}</span></p>
             <p><strong>Female Population:</strong> <span id="stats-modal-female-population">${stats.female?.toLocaleString() ?? 'N/A'}</span></p>
             <p><strong>Minors (under 16):</strong> <span id="stats-modal-minors">${stats.minors?.toLocaleString() ?? 'N/A'}</span></p>
@@ -340,7 +338,6 @@ class UIManager {
             <p><strong>Populated Tiles:</strong> ${stats.populatedTiles}</p>
             <p><strong>High Pop Tiles (≥${stats.threshold}):</strong> ${stats.highPopulationTiles}</p>
             <p><strong>Red Tiles:</strong> ${stats.redTiles}</p>
-            <p><strong>Average Pop/Tile:</strong> ${Math.round(growthStats.averagePopulationPerTile)}</p>
         `;
 
         modal.appendChild(header);
