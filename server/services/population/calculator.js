@@ -6,12 +6,18 @@ function getRandomSex() {
 
 function getRandomAge() {
     const rand = Math.random();
-    if (rand < 0.20) { // 20% minors (0-15)
-        return Math.floor(Math.random() * 16);
-    } else if (rand < 0.65) { // 45% working age (16-60)
-        return 16 + Math.floor(Math.random() * 45);
-    } else { // 35% elderly (61-90)
+    if (rand < 0.05) { // 5% elderly (61-90)
         return 61 + Math.floor(Math.random() * 30);
+    } else {
+        // 95% non-elderly (0-60), split for median 22
+        const nonElderlyRand = Math.random();
+        if (nonElderlyRand < 0.5) {
+            // 0-22 (50% of non-elderly)
+            return Math.floor(Math.random() * 23);
+        } else {
+            // 23-60 (50% of non-elderly)
+            return 23 + Math.floor(Math.random() * 38);
+        }
     }
 }
 
