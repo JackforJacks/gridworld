@@ -38,8 +38,15 @@ async function runMigrations() {
                     console.log(`Successfully ran and recorded migration: ${file}`);
                 } catch (err) {
                     await client.query('ROLLBACK');
-                    console.error(`Failed to run migration ${file}:`, err);
-                    throw err; // Stop on first error
+                    // If error is column/table already exists, log and skip
+                    if (err.code === '42701' || err.code === '42P07') {
+                        console.warn(`Migration ${file} skipped: already applied (${err.code})`);
+                        await client.query('INSERT INTO schema_migrations (version) VALUES ($1)', [file]);
+                        continue;
+                    } else {
+                        console.error(`Failed to run migration ${file}:`, err);
+                        throw err; // Stop on first serious error
+                    }
                 }
             }
         }

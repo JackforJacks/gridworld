@@ -152,29 +152,35 @@ class SceneManager {
         } catch (error) {
             console.error('❌ Failed to initialize tile populations:', error);
         }
-    }
-
-    updateTilePopulations() {
+    }    updateTilePopulations() {
         if (!this.hexasphere || !this.hexasphere.tiles) return;
         const tilePopulations = populationManager.getAllTilePopulations();
+        console.log('🔍 Updating tile populations:', tilePopulations);
         this.hexasphere.tiles.forEach(tile => {
+            const oldPop = tile.population;
             tile.population = tile.Habitable === 'yes' ? (tilePopulations[tile.id] || 0) : 0;
+            if (oldPop !== tile.population && tile.population > 0) {
+                console.log(`📊 Tile ${tile.id} population: ${oldPop} → ${tile.population}`);
+            }
         });
-    }
-
-    checkPopulationThresholds() {
+    }    checkPopulationThresholds() {
         if (!this.hexasphere || !this.hexasphere.tiles || !this.hexasphereMesh) return;
-        const POPULATION_THRESHOLD = 10000;
+        const POPULATION_THRESHOLD = 0; // Changed to 0 - any tile with population > 0 will be red
         let changesDetected = false;
+        console.log('🔍 Checking population thresholds...');
         this.hexasphere.tiles.forEach(tile => {
             if (tile.Habitable === 'yes' && tile.population !== undefined) {
                 const colorInfo = this.tileColorIndices.get(tile.id);
                 if (!colorInfo) return;
-                const shouldBeRed = tile.population >= POPULATION_THRESHOLD;
+                const shouldBeRed = tile.population > POPULATION_THRESHOLD;
+                if (tile.population > 0) {
+                    console.log(`🟥 Tile ${tile.id}: population=${tile.population}, shouldBeRed=${shouldBeRed}, isHighlighted=${colorInfo.isHighlighted}`);
+                }
                 if (shouldBeRed && !colorInfo.isHighlighted) {
                     this.addTileOverlay(tile);
                     colorInfo.isHighlighted = true;
                     changesDetected = true;
+                    console.log(`🟥 Added red overlay to tile ${tile.id} (pop: ${tile.population})`);
                 } else if (!shouldBeRed && colorInfo.isHighlighted) {
                     this.removeTileOverlay(tile.id);
                     colorInfo.isHighlighted = false;
@@ -228,21 +234,23 @@ class SceneManager {
             overlay.material.dispose();
             this.tileOverlays.delete(tileId);
         }
-    }
-
-    resetTileColors() {
+    }    resetTileColors() {
         if (!this.hexasphere || !this.hexasphere.tiles || !this.hexasphereMesh) return;
+        console.log('🎨 Resetting tile colors and removing overlays...');
+        let removedCount = 0;
         this.hexasphere.tiles.forEach(tile => {
             const colorInfo = this.tileColorIndices.get(tile.id);
             if (colorInfo && colorInfo.isHighlighted) {
                 this.removeTileOverlay(tile.id);
                 colorInfo.isHighlighted = false;
                 colorInfo.currentColor = colorInfo.originalColor.clone();
+                removedCount++;
             }
+            // Clear population data as well
+            tile.population = 0;
         });
-    }
-
-    async reinitializePopulation() {
+        console.log(`🎨 Removed ${removedCount} red overlays`);
+    }    async reinitializePopulation() {
         // Ensure habitableTileIds is populated before re-initializing
         if (!this.habitableTileIds || this.habitableTileIds.length === 0) {
             if (this.hexasphere && this.hexasphere.tiles) {
@@ -258,9 +266,12 @@ class SceneManager {
         }
 
         try {
+            console.log('🌱 Reinitializing population on', this.habitableTileIds.length, 'habitable tiles...');
             await populationManager.initializeTilePopulations(this.habitableTileIds);
+            console.log('🌱 Population initialization complete, updating visuals...');
             this.updateTilePopulations(); // Refresh local tile data
-            this.checkPopulationThresholds();
+            this.checkPopulationThresholds(); // This should add red overlays
+            console.log('🌱 Population reinitialization complete!');
         } catch (error) {
             console.error('❌ Failed to reinitialize population:', error);
         }

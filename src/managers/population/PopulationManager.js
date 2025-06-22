@@ -175,6 +175,17 @@ class PopulationManager {
             habitableTiles: habitableTileIds
         });
         console.log('✅ Tile populations initialized:', data.message);
+
+        // After initializing, fetch the latest population data to ensure the client is up to date
+        try {
+            const populationData = await this.makeApiRequest(''); // GET request to /api/population
+            this.updatePopulationData(populationData);
+            this.notifyCallbacks('populationUpdate', populationData);
+            console.log('✅ Fetched latest population data after initialization.');
+        } catch (error) {
+            console.error('❌ Failed to fetch population data after initialization:', error);
+        }
+
         return data;
     }
 

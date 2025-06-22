@@ -190,7 +190,7 @@ class CalendarService extends EventEmitter {
             eventsTriggered.push(...dayEvents);
         }
 
-        this.state.totalDays += daysToAdvance; console.log(`📅 Advanced ${daysToAdvance} day(s): ${this.getFormattedDate().short} (Tick #${this.state.totalTicks})`);
+        this.state.totalDays += daysToAdvance;
 
         // Prepare event data
         const eventData = {

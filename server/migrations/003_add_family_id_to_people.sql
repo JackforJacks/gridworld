@@ -1,2 +1,2 @@
 -- Migration: Add family_id to people table
-ALTER TABLE people ADD COLUMN family_id INTEGER REFERENCES families(id);
+ALTER TABLE people ADD COLUMN IF NOT EXISTS family_id INTEGER REFERENCES family(id);

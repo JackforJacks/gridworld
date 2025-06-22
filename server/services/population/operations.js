@@ -24,8 +24,8 @@ async function updateTilePopulation(pool, calendarService, serviceInstance, tile
 async function resetAllPopulation(pool, serviceInstance) {
     try {
         console.log('[resetAllPopulation] Attempting to truncate people and families tables...');
-        // Truncate people, families, and family tables to clear all data and reset sequences.
-        await pool.query('TRUNCATE TABLE families, people RESTART IDENTITY CASCADE');
+        // Truncate people and family tables to clear all data and reset sequences.
+        await pool.query('TRUNCATE TABLE family, people RESTART IDENTITY CASCADE');
         console.log('[resetAllPopulation] Truncate successful. Broadcasting update...');
         await serviceInstance.broadcastUpdate('populationReset');
         const { formatPopulationData } = require('./dataOperations.js');
@@ -51,13 +51,15 @@ async function initializeTilePopulations(pool, calendarService, serviceInstance,
         const { validateTileIds } = require('./validation.js');
         const { loadPopulationData, formatPopulationData } = require('./dataOperations.js');
 
-        validateTileIds(tileIds);
+        validateTileIds(tileIds);        // Select only 10 random tiles for initialization
+        const selectedTiles = tileIds.sort(() => 0.5 - Math.random()).slice(0, 10);
+        console.log(`[PopulationOperations] Selected ${selectedTiles.length} random tiles for initialization:`, selectedTiles);
 
-        if (!Array.isArray(tileIds) || tileIds.length === 0) {
-            console.warn('[PopulationOperations] initializeTilePopulations: No tile IDs provided or empty array.');
+        if (selectedTiles.length === 0) {
+            console.warn('[PopulationOperations] initializeTilePopulations: No tiles selected.');
             return {
                 success: false,
-                message: 'No tile IDs provided',
+                message: 'No tiles selected',
                 tilePopulations: {},
                 totalPopulation: 0,
                 totalTiles: 0,
@@ -65,7 +67,7 @@ async function initializeTilePopulations(pool, calendarService, serviceInstance,
             };
         }
 
-        await pool.query('TRUNCATE TABLE families, people RESTART IDENTITY CASCADE');
+        await pool.query('TRUNCATE TABLE family, people RESTART IDENTITY CASCADE');
 
         // Get current date from calendar service
         let currentDate;
@@ -73,13 +75,13 @@ async function initializeTilePopulations(pool, calendarService, serviceInstance,
             currentDate = calendarService.getCurrentDate();
         } else {
             console.warn('[PopulationOperations] CalendarService not available. Using fallback date.');
-            currentDate = { year: 1, month: 1, day: 1 };
-        }
+            currentDate = { year: 1, month: 1, day: 1 };        }
         const { year: currentYear, month: currentMonth, day: currentDay } = currentDate;
 
-        for (const tile_id of tileIds) {
-            const tilePopulation = Math.floor(80 + Math.random() * 41);
-            const minBachelorsPerSex = 5; // Guarantee at least 5 eligible males and 5 eligible females per tile
+        for (const tile_id of selectedTiles) {
+            // Generate population around 3000 people per tile (2500-3500 range)
+            const tilePopulation = Math.floor(2500 + Math.random() * 1001);
+            const minBachelorsPerSex = Math.floor(tilePopulation * 0.15); // 15% of population are eligible bachelors of each sex
             const people = [];
             // Add guaranteed eligible males (16-45)
             for (let i = 0; i < minBachelorsPerSex; i++) {
@@ -172,16 +174,16 @@ async function initializeTilePopulations(pool, calendarService, serviceInstance,
             const pairCount = Math.floor(Math.min(bachelorMales.length, bachelorFemales.length) * 0.8);
             console.log(`[Tile ${tile_id}] Eligible bachelors: males=${bachelorMales.length}, females=${bachelorFemales.length}, pairs to create=${pairCount}`);
             for (let i = 0; i < pairCount; i++) {
-                // Create a family for each pair in the 'families' table
+                // Create a family for each pair in the 'family' table
                 const familyInsert = await pool.query(`
-                    INSERT INTO families (male_id, female_id, created_at)
-                    VALUES ($1, $2, NOW()) RETURNING id
-                `, [bachelorMales[i].id, bachelorFemales[i].id]);
+                    INSERT INTO family (husband_id, wife_id, tile_id, pregnancy, children_ids)
+                    VALUES ($1, $2, $3, FALSE, '{}') RETURNING id
+                `, [bachelorMales[i].id, bachelorFemales[i].id, tile_id]);
                 const famId = familyInsert.rows[0].id;
                 // Update people.family_id for both husband and wife
                 await pool.query('UPDATE people SET family_id = $1 WHERE id = $2', [famId, bachelorMales[i].id]);
                 await pool.query('UPDATE people SET family_id = $1 WHERE id = $2', [famId, bachelorFemales[i].id]);
-                console.log(`[Tile ${tile_id}] Created family: id=${famId}, male=${bachelorMales[i].id}, female=${bachelorFemales[i].id}`);
+                console.log(`[Tile ${tile_id}] 🎉 New family created after initialization: id=${famId}, male=${bachelorMales[i].id}, female=${bachelorFemales[i].id}`);
             }
             // 2. Assign all minors to these new families (distribute evenly)
             const minorsResult = await pool.query(`
@@ -193,7 +195,7 @@ async function initializeTilePopulations(pool, calendarService, serviceInstance,
             const minors = minorsResult.rows;
             // Get the new families created on this tile
             const newFamiliesResult = await pool.query(`
-                SELECT id FROM families WHERE id > (SELECT COALESCE(MIN(id),0) FROM families) ORDER BY id DESC LIMIT $1
+                SELECT id FROM family WHERE id > (SELECT COALESCE(MIN(id),0) FROM family) ORDER BY id DESC LIMIT $1
             `, [pairCount]);
             const newFamilyIds = newFamiliesResult.rows.map(r => r.id);
             // Distribute minors round-robin to families, only if there are families
@@ -266,7 +268,7 @@ async function regeneratePopulationWithNewAgeDistribution(pool, calendarService,
         }
 
         const currentPopulations = { ...existingPopulations };
-        await pool.query('TRUNCATE TABLE families, people RESTART IDENTITY CASCADE');
+        await pool.query('TRUNCATE TABLE family, people RESTART IDENTITY CASCADE');
 
         // Get current date from calendar service
         let currentDate;

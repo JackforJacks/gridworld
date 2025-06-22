@@ -137,6 +137,17 @@ async function applySenescence(pool, calendarService, populationServiceInstance)
 
         if (deaths.length > 0) {
             const placeholders = deaths.map((_, idx) => `$${idx + 1}`).join(',');
+            // Find families to be deleted
+            const familiesToDeleteResult = await pool.query(`SELECT id FROM family WHERE husband_id IN (${placeholders}) OR wife_id IN (${placeholders})`, deaths);
+            const familyIdsToDelete = familiesToDeleteResult.rows.map(r => r.id);
+            if (familyIdsToDelete.length > 0) {
+                const famPlaceholders = familyIdsToDelete.map((_, idx) => `$${idx + 1}`).join(',');
+                // Set family_id to NULL for all people in these families
+                await pool.query(`UPDATE people SET family_id = NULL WHERE family_id IN (${famPlaceholders})`, familyIdsToDelete);
+                // Now delete the families
+                await pool.query(`DELETE FROM family WHERE id IN (${famPlaceholders})`, familyIdsToDelete);
+            }
+            // Now delete the people
             await pool.query(`DELETE FROM people WHERE id IN (${placeholders})`, deaths);
             if (populationServiceInstance && typeof populationServiceInstance.trackDeaths === 'function') {
                 populationServiceInstance.trackDeaths(deaths.length);
@@ -186,6 +197,17 @@ async function processDailyFamilyEvents(pool, calendarService, serviceInstance) 
                     // Silent fail for pregnancy attempts
                 }
             }
+        }
+
+        // Release children who reach adulthood (age >= 16) from their family
+        const releaseAdultsResult = await pool.query(`
+            UPDATE people
+            SET family_id = NULL
+            WHERE family_id IS NOT NULL
+              AND EXTRACT(YEAR FROM AGE(date_of_birth)) >= 16
+        `);
+        if (releaseAdultsResult.rowCount > 0) {
+            console.log(`👦👧 Released ${releaseAdultsResult.rowCount} new adults from their families.`);
         }
 
         if (deliveries > 0 || newPregnancies > 0) {
