@@ -152,7 +152,7 @@ class SceneManager {
         } catch (error) {
             console.error('❌ Failed to initialize tile populations:', error);
         }
-    }    updateTilePopulations() {
+    } updateTilePopulations() {
         if (!this.hexasphere || !this.hexasphere.tiles) return;
         const tilePopulations = populationManager.getAllTilePopulations();
         console.log('🔍 Updating tile populations:', tilePopulations);
@@ -163,7 +163,7 @@ class SceneManager {
                 console.log(`📊 Tile ${tile.id} population: ${oldPop} → ${tile.population}`);
             }
         });
-    }    checkPopulationThresholds() {
+    } checkPopulationThresholds() {
         if (!this.hexasphere || !this.hexasphere.tiles || !this.hexasphereMesh) return;
         const POPULATION_THRESHOLD = 0; // Changed to 0 - any tile with population > 0 will be red
         let changesDetected = false;
@@ -234,7 +234,7 @@ class SceneManager {
             overlay.material.dispose();
             this.tileOverlays.delete(tileId);
         }
-    }    resetTileColors() {
+    } resetTileColors() {
         if (!this.hexasphere || !this.hexasphere.tiles || !this.hexasphereMesh) return;
         console.log('🎨 Resetting tile colors and removing overlays...');
         let removedCount = 0;
@@ -250,7 +250,7 @@ class SceneManager {
             tile.population = 0;
         });
         console.log(`🎨 Removed ${removedCount} red overlays`);
-    }    async reinitializePopulation() {
+    } async reinitializePopulation() {
         // Ensure habitableTileIds is populated before re-initializing
         if (!this.habitableTileIds || this.habitableTileIds.length === 0) {
             if (this.hexasphere && this.hexasphere.tiles) {

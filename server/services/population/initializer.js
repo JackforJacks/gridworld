@@ -128,13 +128,21 @@ async function initializePopulationService(serviceInstance, io, calendarService)
             } catch (error) {
                 console.error('Error applying monthly senescence:', error);
             }
-        });
-
-        // Add daily family events processing
+        });        // Add daily family events processing
         serviceInstance.calendarService.on('dayChanged', async (newDay, oldDay) => {
             try {
                 const pool = serviceInstance.getPool ? serviceInstance.getPool() : serviceInstance._pool || serviceInstance['#pool'];
                 if (pool) {
+                    // 1. Form new families from bachelors (call less frequently to avoid over-population)
+                    if (newDay % 7 === 1) { // Only on the first day of each week
+                        const { formNewFamilies } = require('./familyManager.js');
+                        const newFamilies = await formNewFamilies(pool, serviceInstance.calendarService);
+                        if (newFamilies > 0) {
+                            console.log(`[DAILY] Formed ${newFamilies} new families.`);
+                        }
+                    }
+
+                    // 2. Process daily family events (births and pregnancies)
                     const { processDailyFamilyEvents } = require('./lifecycle.js');
                     const familyEvents = await processDailyFamilyEvents(pool, serviceInstance.calendarService, serviceInstance);
 

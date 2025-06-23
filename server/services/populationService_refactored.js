@@ -494,6 +494,32 @@ class PopulationService {
 
         await this.saveData();
         console.log('💾 Population data saved on shutdown');
+    }    /**
+     * Tick method for daily updates
+     */
+    async tick() {
+        console.log('[TICK] Running daily population update...');
+
+        try {
+            // 1. Apply senescence
+            const { applySenescence, processDailyFamilyEvents } = require('./population/lifecycle.js');
+            await applySenescence(this.#pool, this.calendarService, this);
+
+            // 2. Form new families from bachelors
+            const { formNewFamilies } = require('./population/familyManager.js');
+            const newFamilies = await formNewFamilies(this.#pool, this.calendarService);
+            if (newFamilies > 0) {
+                console.log(`[TICK] Formed ${newFamilies} new families.`);
+            }
+
+            // 3. Process births and new pregnancies
+            await processDailyFamilyEvents(this.#pool, this.calendarService, this);
+
+            // 5. Broadcast updated population data
+            await this.broadcastUpdate('populationUpdate');
+        } catch (error) {
+            console.error('Error during daily tick:', error);
+        }
     }
 }
 

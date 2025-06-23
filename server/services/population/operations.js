@@ -75,7 +75,8 @@ async function initializeTilePopulations(pool, calendarService, serviceInstance,
             currentDate = calendarService.getCurrentDate();
         } else {
             console.warn('[PopulationOperations] CalendarService not available. Using fallback date.');
-            currentDate = { year: 1, month: 1, day: 1 };        }
+            currentDate = { year: 1, month: 1, day: 1 };
+        }
         const { year: currentYear, month: currentMonth, day: currentDay } = currentDate;
 
         for (const tile_id of selectedTiles) {
