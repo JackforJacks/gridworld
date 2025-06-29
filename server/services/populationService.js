@@ -53,10 +53,11 @@ const {
 
 const { validateTileIds } = require('./population/validation.js');
 
-class PopulationService {
-    #pool;
+// Statistics service for vital rates tracking
+const StatisticsService = require('./statisticsService');
 
-    constructor(io, calendarService = null) {
+class PopulationService {
+    #pool;    constructor(io, calendarService = null) {
         this.io = io;
         this.calendarService = calendarService;
         this.#pool = pool;
@@ -71,14 +72,20 @@ class PopulationService {
         this.lastRateReset = Date.now();
         // In-memory event log for births and deaths
         this.eventLog = [];
-    }
+        // Statistics service for vital rates
+        this.statisticsService = new StatisticsService();
+    }    getPool() { return this.#pool; }
 
-    getPool() { return this.#pool; } async initialize(io, calendarService = null) {
+    getStatisticsService() { 
+        return this.statisticsService; 
+    }    async initialize(io, calendarService = null) {
         await initializePopulationService(this, io, calendarService);
         setupRealtimeListeners(io, this);
         // Initialize rate tracking
         resetRateCounters(this);
         startRateTracking(this);
+        // Initialize statistics service with calendar
+        this.statisticsService.initialize(calendarService);
     }
 
     async loadData() { return await loadPopulationData(this.#pool); }
@@ -169,13 +176,21 @@ class PopulationService {
         await printPeopleSample(this.#pool, limit);
     }
 
-    // Rate tracking methods
-    // Track births with in-game date
+    // Rate tracking methods    // Track births with in-game date
     trackBirths(count) {
         if (!this.calendarService) return;
         const date = this.calendarService.getCurrentDate();
         for (let i = 0; i < count; i++) {
             this.eventLog.push({ type: 'birth', date: { ...date } });
+        }
+        // Record in statistics service asynchronously
+        if (this.statisticsService) {
+            this.getPopulationStats().then(stats => {
+                const totalPop = stats?.totalPopulation || 0;
+                for (let i = 0; i < count; i++) {
+                    this.statisticsService.recordBirth(totalPop);
+                }
+            }).catch(err => console.error('Error recording births in statistics:', err));
         }
     }
 
@@ -185,6 +200,15 @@ class PopulationService {
         const date = this.calendarService.getCurrentDate();
         for (let i = 0; i < count; i++) {
             this.eventLog.push({ type: 'death', date: { ...date } });
+        }
+        // Record in statistics service asynchronously
+        if (this.statisticsService) {
+            this.getPopulationStats().then(stats => {
+                const totalPop = stats?.totalPopulation || 0;
+                for (let i = 0; i < count; i++) {
+                    this.statisticsService.recordDeath(totalPop);
+                }
+            }).catch(err => console.error('Error recording deaths in statistics:', err));
         }
     }
 
@@ -208,11 +232,14 @@ class PopulationService {
             clearInterval(this.autoSaveInterval);
             this.autoSaveInterval = null;
         }
-    }
-    async shutdown() {
+    }    async shutdown() {
         this.stopGrowth();
         this.stopAutoSave();
         stopRateTracking(this);
+        // Shutdown statistics service
+        if (this.statisticsService) {
+            this.statisticsService.shutdown();
+        }
         await this.saveData();
     }
 }

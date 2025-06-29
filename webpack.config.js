@@ -19,6 +19,12 @@ module.exports = (env, argv) => {
       clean: !isWatching // Don't clean on watch mode for faster rebuilds
     },
 
+    devServer: {
+      proxy: {
+        '/api': 'http://localhost:3000'
+      }
+    },
+
     // Watch mode configuration
     watchOptions: {
       aggregateTimeout: 300, // Delay rebuild after first change (ms)

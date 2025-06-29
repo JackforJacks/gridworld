@@ -46,8 +46,9 @@ class GridWorldServer {
         this.app.use(errorHandler);        // Initialize services
         await populationService.initialize(this.io, this.calendarService);
 
-        // Make calendar service available to routes
+        // Make services available to routes
         this.app.locals.calendarService = this.calendarService;
+        this.app.locals.populationService = populationService;
 
         // Setup socket connections
         this.setupSocketHandlers();

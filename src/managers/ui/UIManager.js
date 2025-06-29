@@ -299,9 +299,11 @@ class UIManager {
         closeButton.classList.add('stats-modal-close');
         closeButton.innerHTML = '&times;';
         closeButton.onclick = () => overlay.remove();
-        header.appendChild(closeButton);        // Modal Content
+        header.appendChild(closeButton);
+
+        // Modal Content
         const content = document.createElement('div');
-        content.classList.add('stats-modal-content');        // Add Total Population first
+        content.classList.add('stats-modal-content');
         content.innerHTML = `
             <p><strong>Total Population:</strong> <span id="stats-modal-total-population">${stats.totalPopulation?.toLocaleString() ?? 'N/A'}</span></p>
             <p><strong>Male Population:</strong> <span id="stats-modal-male-population">${stats.male?.toLocaleString() ?? 'N/A'}</span></p>
@@ -325,7 +327,11 @@ class UIManager {
             <p><strong>Habitable Tiles:</strong> ${stats.habitableTiles}</p>
             <p><strong>Populated Tiles:</strong> ${stats.populatedTiles}</p>
             <p><strong>High Pop Tiles (≥${stats.threshold}):</strong> ${stats.highPopulationTiles}</p>
-            <p><strong>Red Tiles:</strong> ${stats.redTiles}</p>
+            <p><strong>Red Tiles:</strong> ${stats.redTiles}</p>            <hr class="stats-modal-separator">
+            <div style="margin: 24px 0;">
+                <h4>Vital Rates (per 1000 people, last 25 years)</h4>
+                <canvas id="vital-rates-chart" width="600" height="300"></canvas>
+            </div>
         `;
 
         modal.appendChild(header);
@@ -333,11 +339,58 @@ class UIManager {
         overlay.appendChild(modal);
         document.body.appendChild(overlay);
 
+        // Render the vital rates chart
+        this.renderVitalRatesChart();
+
         overlay.addEventListener('click', (event) => {
             if (event.target === overlay) {
                 overlay.remove();
             }
         });
+    }    async renderVitalRatesChart() {
+        try {
+            const response = await fetch('/api/statistics/vital-rates/25');
+            const result = await response.json();
+            if (!result.success) throw new Error(result.error || 'Failed to fetch vital rates');
+            const chartData = result.data;
+
+            if (!window.Chart) {
+                throw new Error('Chart.js is not loaded. Please include <script src="https://cdn.jsdelivr.net/npm/chart.js"></script> in your HTML.');
+            }
+
+            const chartCanvas = document.getElementById('vital-rates-chart');
+            if (!chartCanvas) {
+                throw new Error('Chart container not found in the DOM.');
+            }
+            const ctx = chartCanvas.getContext('2d');
+            if (!ctx) {
+                throw new Error('Failed to get 2D context for vital rates chart.');
+            }
+
+            if (window.vitalRatesChartInstance) {
+                window.vitalRatesChartInstance.destroy();
+            }
+            window.vitalRatesChartInstance = new window.Chart(ctx, {
+                type: 'line',
+                data: chartData,
+                options: {
+                    responsive: true,
+                    plugins: {
+                        legend: { position: 'top' },
+                        title: { display: true, text: 'Birth and Death Rates per 1000 People (Last 25 Years)' }
+                    },
+                    scales: {
+                        x: { title: { display: true, text: 'Year' } },
+                        y: { title: { display: true, text: 'Rate per 1000' } }
+                    }
+                }
+            });
+        } catch (err) {
+            const chartContainer = document.getElementById('vital-rates-chart');
+            if (chartContainer) {
+                chartContainer.outerHTML = `<div style="color:red;">Failed to load vital rates chart: ${err.message}</div>`;
+            }
+        }
     }
 
     connectToPopulationManager() {

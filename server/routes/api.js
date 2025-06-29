@@ -71,4 +71,24 @@ router.post('/reset-all', async (req, res) => {
     }
 });
 
+// Vital rates endpoint (in-memory, no DB)
+router.get('/statistics/vital-rates/:years', (req, res) => {
+    try {
+        const years = parseInt(req.params.years) || 100;
+        // Get the population service (should be attached to app.locals)
+        const populationService = req.app.locals?.populationService;
+        if (!populationService || typeof populationService.getStatisticsService !== 'function') {
+            return res.status(503).json({ success: false, error: 'Statistics service not available' });
+        }
+        const statisticsService = populationService.getStatisticsService();
+        if (!statisticsService) {
+            return res.status(503).json({ success: false, error: 'Statistics service not available' });
+        }
+        const chartData = statisticsService.getVitalRatesForChart(years);
+        res.json({ success: true, data: chartData });
+    } catch (error) {
+        res.status(500).json({ success: false, error: error.message });
+    }
+});
+
 module.exports = router;
