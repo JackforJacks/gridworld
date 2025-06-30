@@ -57,7 +57,7 @@ const { validateTileIds } = require('./population/validation.js');
 const StatisticsService = require('./statisticsService');
 
 class PopulationService {
-    #pool;    constructor(io, calendarService = null) {
+    #pool; constructor(io, calendarService = null) {
         this.io = io;
         this.calendarService = calendarService;
         this.#pool = pool;
@@ -74,11 +74,11 @@ class PopulationService {
         this.eventLog = [];
         // Statistics service for vital rates
         this.statisticsService = new StatisticsService();
-    }    getPool() { return this.#pool; }
+    } getPool() { return this.#pool; }
 
-    getStatisticsService() { 
-        return this.statisticsService; 
-    }    async initialize(io, calendarService = null) {
+    getStatisticsService() {
+        return this.statisticsService;
+    } async initialize(io, calendarService = null) {
         await initializePopulationService(this, io, calendarService);
         setupRealtimeListeners(io, this);
         // Initialize rate tracking
@@ -86,6 +86,20 @@ class PopulationService {
         startRateTracking(this);
         // Initialize statistics service with calendar
         this.statisticsService.initialize(calendarService);
+
+        // Listen to calendar tick events for daily population updates
+        if (calendarService) {
+            calendarService.on('tick', async (eventData) => {
+                // Only process daily ticks, not every tick (since some ticks advance multiple days)
+                if (eventData.daysAdvanced > 0) {
+                    // Run tick for each day advanced
+                    for (let i = 0; i < eventData.daysAdvanced; i++) {
+                        await this.tick();
+                    }
+                }
+            });
+            console.log('📅 Population service listening to calendar tick events');
+        }
     }
 
     async loadData() { return await loadPopulationData(this.#pool); }
@@ -232,7 +246,7 @@ class PopulationService {
             clearInterval(this.autoSaveInterval);
             this.autoSaveInterval = null;
         }
-    }    async shutdown() {
+    } async shutdown() {
         this.stopGrowth();
         this.stopAutoSave();
         stopRateTracking(this);
@@ -241,6 +255,34 @@ class PopulationService {
             this.statisticsService.shutdown();
         }
         await this.saveData();
+    }
+
+    /**
+     * Tick method for daily updates - processes births, deaths, and family formation
+     */
+    async tick() {
+        console.log('[TICK] Running daily population update...');
+
+        try {
+            // 1. Apply senescence (aging deaths)
+            const { applySenescence, processDailyFamilyEvents } = require('./population/lifecycle.js');
+            await applySenescence(this.#pool, this.calendarService, this);
+
+            // 2. Form new families from bachelors
+            const { formNewFamilies } = require('./population/familyManager.js');
+            const newFamilies = await formNewFamilies(this.#pool, this.calendarService);
+            if (newFamilies > 0) {
+                console.log(`[TICK] Formed ${newFamilies} new families.`);
+            }
+
+            // 3. Process births and new pregnancies
+            await processDailyFamilyEvents(this.#pool, this.calendarService, this);
+
+            // 4. Broadcast updated population data
+            await this.broadcastUpdate('populationUpdate');
+        } catch (error) {
+            console.error('Error during daily tick:', error);
+        }
     }
 }
 

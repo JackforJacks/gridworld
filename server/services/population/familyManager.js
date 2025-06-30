@@ -65,6 +65,51 @@ async function startPregnancy(pool, calendarService, familyId) {
             currentDate = calendarService.getCurrentDate();
         }
 
+        // Check wife's age before allowing pregnancy
+        const familyResult = await pool.query(`
+            SELECT f.id, f.wife_id, p.date_of_birth as wife_birth_date
+            FROM family f
+            JOIN people p ON f.wife_id = p.id
+            WHERE f.id = $1 AND f.pregnancy = FALSE
+        `, [familyId]);
+
+        if (familyResult.rows.length === 0) {
+            throw new Error('Family not found or already pregnant');
+        }
+
+        const family = familyResult.rows[0];
+        const wifeBirthDate = family.wife_birth_date;
+
+        // Calculate wife's age - handle both string and Date object formats
+        let birthYear, birthMonth, birthDay;
+
+        if (typeof wifeBirthDate === 'string') {
+            // Handle string format "YYYY-MM-DD"
+            [birthYear, birthMonth, birthDay] = wifeBirthDate.split('-').map(Number);
+        } else if (wifeBirthDate instanceof Date) {
+            // Handle Date object format
+            birthYear = wifeBirthDate.getFullYear();
+            birthMonth = wifeBirthDate.getMonth() + 1; // JS months are 0-indexed
+            birthDay = wifeBirthDate.getDate();
+        } else {
+            // Fallback - treat as string and attempt conversion
+            const dateStr = String(wifeBirthDate);
+            [birthYear, birthMonth, birthDay] = dateStr.split('-').map(Number);
+        }
+
+        const { year: currentYear, month: currentMonth, day: currentDay } = currentDate;
+
+        let wifeAge = currentYear - birthYear;
+        if (currentMonth < birthMonth || (currentMonth === birthMonth && currentDay < birthDay)) {
+            wifeAge--;
+        }
+
+        // Check if wife is too old for pregnancy (limit: 33 years old)
+        if (wifeAge > 33) {
+            console.log(`❌ Pregnancy denied for family ${familyId}: wife is ${wifeAge} years old (limit: 33)`);
+            throw new Error(`Wife is too old for pregnancy (${wifeAge} years old, limit: 33)`);
+        }
+
         // Calculate delivery date (approximately 9 months later)
         const deliveryYear = currentDate.year;
         const deliveryMonth = currentDate.month + 9;
@@ -91,7 +136,7 @@ async function startPregnancy(pool, calendarService, familyId) {
             throw new Error('Family not found or already pregnant');
         }
 
-        console.log(`🤰 Pregnancy started for family ${familyId}, delivery expected: ${deliveryDate}`);
+        console.log(`🤰 Pregnancy started for family ${familyId}, wife age: ${wifeAge}, delivery expected: ${deliveryDate}`);
         return result.rows[0];
     } catch (error) {
         console.error('Error starting pregnancy:', error);
@@ -116,9 +161,6 @@ async function deliverBaby(pool, calendarService, populationServiceInstance, fam
         }
 
         const family = familyResult.rows[0];
-        if (!family.pregnancy) {
-            throw new Error('Family is not currently pregnant');
-        }
 
         // Get current calendar date
         let currentDate = { year: 1, month: 1, day: 1 };
@@ -139,13 +181,11 @@ async function deliverBaby(pool, calendarService, populationServiceInstance, fam
 
         const babyId = babyResult.rows[0].id;
 
-        // Update family record
+        // Update family record with new baby
         const updatedChildrenIds = [...family.children_ids, babyId];
         const updatedFamilyResult = await pool.query(`
             UPDATE family 
-            SET pregnancy = FALSE, 
-                delivery_date = NULL, 
-                children_ids = $1,
+            SET children_ids = $1,
                 updated_at = CURRENT_TIMESTAMP
             WHERE id = $2
             RETURNING *
@@ -211,11 +251,13 @@ async function processDeliveries(pool, calendarService, populationServiceInstanc
         const { year, month, day } = currentDate;
         const currentDateStr = `${year}-${String(month).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
 
-        // Find families ready to deliver
+        // Find families ready to deliver and mark them as delivered atomically
         const readyFamilies = await pool.query(`
-            SELECT id FROM family 
+            UPDATE family 
+            SET pregnancy = FALSE, delivery_date = NULL 
             WHERE pregnancy = TRUE 
             AND delivery_date <= $1
+            RETURNING id
         `, [currentDateStr]);
 
         let babiesDelivered = 0;
@@ -362,7 +404,7 @@ async function formNewFamilies(pool, calendarService) {
 
             const pairs = Math.min(tiledMales.length, tiledFemales.length);
             console.log(`   Tile ${tileId}: Forming ${pairs} families from ${tiledMales.length} males and ${tiledFemales.length} females`);
-            
+
             for (let i = 0; i < pairs; i++) {
                 const male = tiledMales[i];
                 const female = tiledFemales[i];
@@ -374,8 +416,8 @@ async function formNewFamilies(pool, calendarService) {
                         usedFemales.add(female.id);
                         newFamiliesCount++;
 
-                        // Small chance to start immediate pregnancy (10%)
-                        if (Math.random() < 0.1) {
+                        // Higher chance to start immediate pregnancy (40% - increased to boost birth rates to 40 per 1000 per year)
+                        if (Math.random() < 0.40) {
                             const familyResult = await pool.query(
                                 'SELECT id FROM family WHERE husband_id = $1 AND wife_id = $2',
                                 [male.id, female.id]
@@ -394,7 +436,7 @@ async function formNewFamilies(pool, calendarService) {
         // Report any remaining singles who couldn't find partners on their tile
         const remainingMales = eligibleMales.filter(m => !usedMales.has(m.id));
         const remainingFemales = eligibleFemales.filter(f => !usedFemales.has(f.id));
-        
+
         if (remainingMales.length > 0 || remainingFemales.length > 0) {
             console.log(`   ⚠️  ${remainingMales.length} males and ${remainingFemales.length} females remain single (no eligible partners on their tile)`);
         }

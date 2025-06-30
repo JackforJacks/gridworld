@@ -67,7 +67,7 @@ class StatisticsService {
     getVitalRatesForChart(years = 100) {
         const currentYear = this.getCurrentYear();
         const startYear = Math.max(1, currentYear - years + 1);
-        
+
         const labels = [];
         const birthRates = [];
         const deathRates = [];
@@ -75,7 +75,7 @@ class StatisticsService {
         for (let year = startYear; year <= currentYear; year++) {
             const stats = this.yearlyStats.get(year) || { births: 0, deaths: 0, population: 1000 };
             const population = Math.max(stats.population, 1); // Avoid division by zero
-            
+
             labels.push(year.toString());
             birthRates.push(Number(((stats.births / population) * 1000).toFixed(2)));
             deathRates.push(Number(((stats.deaths / population) * 1000).toFixed(2)));
@@ -112,10 +112,10 @@ class StatisticsService {
         const currentYear = this.getCurrentYear();
         const currentStats = this.yearlyStats.get(currentYear) || { births: 0, deaths: 0, population: 1000 };
         const lastYearStats = this.yearlyStats.get(currentYear - 1) || { births: 0, deaths: 0, population: 1000 };
-        
+
         const totalBirths = Array.from(this.yearlyStats.values()).reduce((sum, stats) => sum + stats.births, 0);
         const totalDeaths = Array.from(this.yearlyStats.values()).reduce((sum, stats) => sum + stats.deaths, 0);
-        
+
         return {
             totalEvents: this.events.length,
             totalBirths: totalBirths,

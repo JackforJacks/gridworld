@@ -44,7 +44,7 @@ class StatisticsService {
         if (!this.isTracking) return;
 
         const { year, month, births, deaths, population } = data;
-        
+
         // Find existing record or create new one
         const existingIndex = this.vitalEvents.findIndex(
             event => event.year === year && event.month === month
@@ -134,13 +134,13 @@ class StatisticsService {
     getVitalRatesForChart(years = 100) {
         const currentDate = this.getCurrentCalendarDate();
         const cutoffYear = currentDate.year - years;
-        
+
         // Filter events to the requested time period
         const relevantEvents = this.vitalEvents.filter(event => event.year >= cutoffYear);
-        
+
         // Group by year and calculate annual rates
         const yearlyData = {};
-        
+
         relevantEvents.forEach(event => {
             if (!yearlyData[event.year]) {
                 yearlyData[event.year] = {
@@ -151,7 +151,7 @@ class StatisticsService {
                     monthCount: 0
                 };
             }
-            
+
             yearlyData[event.year].totalBirths += event.births;
             yearlyData[event.year].totalDeaths += event.deaths;
             yearlyData[event.year].avgPopulation += event.population;
@@ -165,15 +165,15 @@ class StatisticsService {
 
         // Sort years and calculate rates
         const sortedYears = Object.keys(yearlyData).sort((a, b) => parseInt(a) - parseInt(b));
-        
+
         sortedYears.forEach(year => {
             const data = yearlyData[year];
             const avgPop = data.avgPopulation / Math.max(data.monthCount, 1);
-            
+
             // Calculate rates per 1000 people
             const birthRate = avgPop > 0 ? (data.totalBirths / avgPop) * 1000 : 0;
             const deathRate = avgPop > 0 ? (data.totalDeaths / avgPop) * 1000 : 0;
-            
+
             chartLabels.push(year);
             birthRates.push(parseFloat(birthRate.toFixed(2)));
             deathRates.push(parseFloat(deathRate.toFixed(2)));
@@ -216,8 +216,8 @@ class StatisticsService {
         const recentEvents = this.vitalEvents.slice(-12); // Last 12 months
         const totalBirths = recentEvents.reduce((sum, event) => sum + event.births, 0);
         const totalDeaths = recentEvents.reduce((sum, event) => sum + event.deaths, 0);
-        const avgPopulation = recentEvents.length > 0 
-            ? recentEvents.reduce((sum, event) => sum + event.population, 0) / recentEvents.length 
+        const avgPopulation = recentEvents.length > 0
+            ? recentEvents.reduce((sum, event) => sum + event.population, 0) / recentEvents.length
             : 0;
 
         return {
@@ -225,7 +225,7 @@ class StatisticsService {
             recentBirths: totalBirths,
             recentDeaths: totalDeaths,
             avgPopulation: Math.round(avgPopulation),
-            dataRange: this.vitalEvents.length > 0 
+            dataRange: this.vitalEvents.length > 0
                 ? `${Math.min(...this.vitalEvents.map(e => e.year))} - ${Math.max(...this.vitalEvents.map(e => e.year))}`
                 : 'No data'
         };

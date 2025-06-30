@@ -347,9 +347,9 @@ class UIManager {
                 overlay.remove();
             }
         });
-    }    async renderVitalRatesChart() {
+    } async renderVitalRatesChart() {
         try {
-            const response = await fetch('/api/statistics/vital-rates/25');
+            const response = await fetch('/api/statistics/vital-rates/100');
             const result = await response.json();
             if (!result.success) throw new Error(result.error || 'Failed to fetch vital rates');
             const chartData = result.data;

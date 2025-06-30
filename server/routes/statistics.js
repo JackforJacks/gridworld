@@ -7,26 +7,26 @@ router.get('/vital-rates/:years', async (req, res) => {
     try {
         const years = parseInt(req.params.years) || 100;
         const populationService = req.app.locals.populationService;
-        
+
         if (!populationService) {
-            return res.status(503).json({ 
-                success: false, 
-                error: 'Population service not available' 
+            return res.status(503).json({
+                success: false,
+                error: 'Population service not available'
             });
         }
-        
+
         const statisticsService = populationService.getStatisticsService();
-        
+
         if (!statisticsService) {
-            return res.status(503).json({ 
-                success: false, 
-                error: 'Statistics service not available' 
+            return res.status(503).json({
+                success: false,
+                error: 'Statistics service not available'
             });
         }
-        
+
         const chartData = statisticsService.getVitalRatesForChart(years);
         const summary = statisticsService.getSummaryStats();
-        
+
         res.json({
             success: true,
             data: chartData,
@@ -44,26 +44,26 @@ router.get('/vital-rates', async (req, res) => {
     try {
         const years = 100;
         const populationService = req.app.locals.populationService;
-        
+
         if (!populationService) {
-            return res.status(503).json({ 
-                success: false, 
-                error: 'Population service not available' 
+            return res.status(503).json({
+                success: false,
+                error: 'Population service not available'
             });
         }
-        
+
         const statisticsService = populationService.getStatisticsService();
-        
+
         if (!statisticsService) {
-            return res.status(503).json({ 
-                success: false, 
-                error: 'Statistics service not available' 
+            return res.status(503).json({
+                success: false,
+                error: 'Statistics service not available'
             });
         }
-        
+
         const chartData = statisticsService.getVitalRatesForChart(years);
         const summary = statisticsService.getSummaryStats();
-        
+
         res.json({
             success: true,
             data: chartData,
@@ -80,25 +80,25 @@ router.get('/vital-rates', async (req, res) => {
 router.get('/summary', async (req, res) => {
     try {
         const populationService = req.app.locals.populationService;
-        
+
         if (!populationService) {
-            return res.status(503).json({ 
-                success: false, 
-                error: 'Population service not available' 
+            return res.status(503).json({
+                success: false,
+                error: 'Population service not available'
             });
         }
-        
+
         const statisticsService = populationService.getStatisticsService();
-        
+
         if (!statisticsService) {
-            return res.status(503).json({ 
-                success: false, 
-                error: 'Statistics service not available' 
+            return res.status(503).json({
+                success: false,
+                error: 'Statistics service not available'
             });
         }
-        
+
         const summary = statisticsService.getSummaryStats();
-        
+
         res.json({
             success: true,
             data: summary
@@ -113,25 +113,25 @@ router.get('/summary', async (req, res) => {
 router.get('/health', async (req, res) => {
     try {
         const populationService = req.app.locals.populationService;
-        
+
         if (!populationService) {
-            return res.status(503).json({ 
-                success: false, 
-                error: 'Population service not available' 
+            return res.status(503).json({
+                success: false,
+                error: 'Population service not available'
             });
         }
-        
+
         const statisticsService = populationService.getStatisticsService();
-        
+
         if (!statisticsService) {
-            return res.status(503).json({ 
-                success: false, 
-                error: 'Statistics service not available' 
+            return res.status(503).json({
+                success: false,
+                error: 'Statistics service not available'
             });
         }
-        
+
         const summary = statisticsService.getSummaryStats();
-        
+
         res.json({
             success: true,
             message: 'Statistics service is healthy',

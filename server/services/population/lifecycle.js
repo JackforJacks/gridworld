@@ -176,19 +176,31 @@ async function processDailyFamilyEvents(pool, calendarService, serviceInstance) 
         // Process deliveries for families ready to give birth
         const deliveries = await processDeliveries(pool, calendarService, serviceInstance);
 
-        // Random chance for new pregnancies in existing families
+        // Get current calendar date for age calculations
+        let currentDate = { year: 1, month: 1, day: 1 };
+        if (calendarService && typeof calendarService.getCurrentDate === 'function') {
+            currentDate = calendarService.getCurrentDate();
+        }
+
+        // Calculate age limit date (wife must be born after this date to be 33 or younger)
+        const ageLimitYear = currentDate.year - 33;
+        const ageLimitDate = `${ageLimitYear}-${String(currentDate.month).padStart(2, '0')}-${String(currentDate.day).padStart(2, '0')}`;
+
+        // Random chance for new pregnancies in existing families (only wives 33 and under)
         const familiesResult = await pool.query(`
-            SELECT id FROM family 
-            WHERE pregnancy = FALSE 
-            AND array_length(children_ids, 1) < 5
+            SELECT f.id FROM family f
+            JOIN people p ON f.wife_id = p.id
+            WHERE f.pregnancy = FALSE 
+            AND array_length(f.children_ids, 1) < 5
+            AND p.date_of_birth >= $1
             ORDER BY RANDOM() 
-            LIMIT 10
-        `);
+            LIMIT 30
+        `, [ageLimitDate]);
 
         let newPregnancies = 0;
         for (const family of familiesResult.rows) {
-            // 5% daily chance of pregnancy for eligible families
-            if (Math.random() < 0.05) {
+            // 25% daily chance of pregnancy for eligible families (increased to achieve ~40 births per 1000 per year)
+            if (Math.random() < 0.25) {
                 try {
                     const { startPregnancy } = require('./familyManager.js');
                     await startPregnancy(pool, calendarService, family.id);
