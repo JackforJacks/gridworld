@@ -180,7 +180,7 @@ class UIManager {
                 this.handleShowStats();
             });
         }
-    } async handleResetData() {
+    }    async handleResetData() {
         if (!this.sceneManager) {
             console.error("SceneManager not available in UIManager for reset.");
             return;
@@ -192,15 +192,20 @@ class UIManager {
             await populationManager.resetPopulation();
             console.log("🏘️ Population data reset on server.");
 
-            // 2. Reset tile colors on the client
+            // 2. Regenerate tiles (new terrain and habitability)
+            console.log("🌍 Regenerating tiles...");
+            await this.sceneManager.regenerateTiles();
+            console.log("🗺️ Tiles regenerated with new terrain.");
+
+            // 3. Reset tile colors on the client
             this.sceneManager.resetTileColors();
             console.log("🎨 Tile colors reset on client.");
 
-            // 3. Re-initialize population on habitable tiles
+            // 4. Re-initialize population on newly generated habitable tiles
             await this.sceneManager.reinitializePopulation();
             console.log("🌱 Population re-initialized on habitable tiles.");
 
-            // 4. Refresh the stats modal to show the new population, only if it's open
+            // 5. Refresh the stats modal to show the new population, only if it's open
             const statsModal = document.getElementById('stats-modal-overlay');
             if (statsModal) {
                 await this.handleShowStats();

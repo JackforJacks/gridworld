@@ -142,15 +142,27 @@ class SceneManager {
             colorIndex += tileVertexCount;
         });
         this.createHexasphereMesh(hexasphereGeometry, vertices, colors, indices);
-        this.initializeTilePopulations(this.habitableTileIds);
+        
+        // Debug: Log habitable tiles found
+        console.log(`🏘️ Found ${this.habitableTileIds.length} habitable tiles for later initialization`);
+        
+        // Don't automatically initialize population here - let the caller decide when to initialize
     }
 
     async initializeTilePopulations(habitableTileIds) {
         try {
-            await populationManager.initializeTilePopulations(habitableTileIds);
+            console.log(`🌱 Initializing populations for ${habitableTileIds.length} habitable tiles...`);
+            const result = await populationManager.initializeTilePopulations(habitableTileIds);
             this.updateTilePopulations();
+            if (result && result.isExisting) {
+                console.log('🔄 Using existing population data - no reinitialization needed');
+            } else {
+                console.log('🚀 New population initialized successfully');
+            }
         } catch (error) {
             console.error('❌ Failed to initialize tile populations:', error);
+            console.error('❌ Habitable tiles data:', habitableTileIds);
+            throw error;
         }
     } updateTilePopulations() {
         if (!this.hexasphere || !this.hexasphere.tiles) return;
@@ -234,7 +246,19 @@ class SceneManager {
             overlay.material.dispose();
             this.tileOverlays.delete(tileId);
         }
-    } resetTileColors() {
+    }
+
+    // Clear all tile overlays
+    clearTileOverlays() {
+        this.tileOverlays.forEach((overlay, tileId) => {
+            this.scene.remove(overlay);
+            overlay.geometry.dispose();
+            overlay.material.dispose();
+        });
+        this.tileOverlays.clear();
+    }
+
+    resetTileColors() {
         if (!this.hexasphere || !this.hexasphere.tiles || !this.hexasphereMesh) return;
         console.log('🎨 Resetting tile colors and removing overlays...');
         let removedCount = 0;
@@ -274,6 +298,63 @@ class SceneManager {
             console.log('🌱 Population reinitialization complete!');
         } catch (error) {
             console.error('❌ Failed to reinitialize population:', error);
+        }
+    }
+
+    // Regenerate tiles with new terrain and habitability
+    async regenerateTiles() {
+        try {
+            console.log('🌍 Regenerating tiles with new terrain...');
+            
+            // First, restart the world to get a new seed
+            const restartResponse = await fetch('/api/tiles/restart', { method: 'POST' });
+            if (!restartResponse.ok) {
+                throw new Error(`Failed to restart world: ${restartResponse.status}`);
+            }
+            const restartData = await restartResponse.json();
+            console.log(`🎲 World restarted with new seed: ${restartData.newSeed}`);
+            
+            // Get current hexasphere parameters from server config
+            let radius = this.sphereRadius || 30;
+            let subdivisions = 3; // Fallback
+            let tileWidthRatio = 1; // Fallback
+            
+            try {
+                const configResponse = await fetch('/api/config');
+                if (configResponse.ok) {
+                    const config = await configResponse.json();
+                    radius = config.hexasphere.radius;
+                    subdivisions = config.hexasphere.subdivisions;
+                    tileWidthRatio = config.hexasphere.tileWidthRatio;
+                    console.log(`🔧 Using config: radius=${radius}, subdivisions=${subdivisions}, tileWidthRatio=${tileWidthRatio}`);
+                }
+            } catch (error) {
+                console.warn('Failed to fetch config, using fallback values:', error);
+            }
+            
+            // Clear existing mesh before regenerating
+            if (this.hexasphereMesh) {
+                this.scene.remove(this.hexasphereMesh);
+                this.hexasphereMesh.geometry.dispose();
+                this.hexasphereMesh.material.dispose();
+                this.hexasphereMesh = null;
+            }
+            
+            // Clear existing overlays
+            this.clearTileOverlays();
+            
+            // Fetch new tile data from server with regenerate flag
+            const response = await fetch(`/api/tiles?radius=${radius}&subdivisions=${subdivisions}&tileWidthRatio=${tileWidthRatio}&regenerate=true`);
+            if (!response.ok) throw new Error(`Failed to fetch tiles: ${response.status}`);
+            const tileData = await response.json();
+            
+            // Rebuild the geometry with new data
+            this.buildTilesFromData(tileData);
+            
+            console.log('🗺️ Tiles regenerated successfully with new terrain distribution');
+        } catch (error) {
+            console.error('❌ Failed to regenerate tiles:', error);
+            throw error;
         }
     }
 

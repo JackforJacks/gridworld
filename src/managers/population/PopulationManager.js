@@ -4,20 +4,73 @@ import { io } from 'socket.io-client';
 class PopulationManager {
     constructor() {
         this.socket = null;
+        this.callbacks = new Set();
         this.populationData = {
             globalData: {
                 lastUpdated: 0,
-                growth: { rate: 1, interval: 1000 }
+                growth: { 
+                    rate: 1, 
+                    interval: 1000 
+                }
             },
             tilePopulations: {},
             totalPopulation: 0
         };
-        this.callbacks = new Set();
         this.isConnected = false;
-        this.connectionRetries = 0;
-        this.maxRetries = 3;
+        this.reconnectAttempts = 0;
+        this.maxReconnectAttempts = 5;
+        this.reconnectDelay = 1000;
         this.apiBaseUrl = '/api/population';
-    }    // Initialize connection to the server with retry logic
+    }
+
+    // Check if population data already exists
+    async hasExistingPopulation() {
+        try {
+            const populationData = await this.makeApiRequest('');
+            const hasPeople = populationData &&
+                populationData.totalPopulation > 0 &&
+                Object.keys(populationData.tilePopulations).length > 0;
+            if (hasPeople) {
+                this.updatePopulationData(populationData);
+                this.notifyCallbacks('populationUpdate', populationData);
+            }
+            return hasPeople;
+        } catch (error) {
+            console.error('❌ Error checking for existing population:', error);
+            return false;
+        }
+    }
+
+    // OPTIMIZED: Initialize populations for habitable tiles
+    async initializeTilePopulations(habitableTileIds) {
+        const hasPopulation = await this.hasExistingPopulation();
+        if (hasPopulation) {
+            console.log('🌍 Using existing population data - skipping initialization');
+            return {
+                success: true,
+                message: 'Using existing population data',
+                isExisting: true
+            };
+        }
+        const data = await this.makeApiRequest('/initialize', 'POST', {
+            habitableTiles: habitableTileIds
+        });
+        console.log('✅ Tile populations initialized:', data.message);
+
+        // After initializing, fetch the latest population data to ensure the client is up to date
+        try {
+            const populationData = await this.makeApiRequest('');
+            this.updatePopulationData(populationData);
+            this.notifyCallbacks('populationUpdate', populationData);
+            console.log('✅ Fetched latest population data after initialization.');
+        } catch (error) {
+            console.error('❌ Failed to fetch population data after initialization:', error);
+        }
+
+        return data;
+    }
+
+    // Initialize connection to the server with retry logic
     async connect() {
         try {
             // Connect to the socket.io server through the webpack dev server proxy

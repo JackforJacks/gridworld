@@ -51,7 +51,25 @@ async function initializeTilePopulations(pool, calendarService, serviceInstance,
         const { validateTileIds } = require('./validation.js');
         const { loadPopulationData, formatPopulationData } = require('./dataOperations.js');
 
-        validateTileIds(tileIds);        // Select only 10 random tiles for initialization
+        validateTileIds(tileIds);
+
+        // Check if population already exists - if so, don't reinitialize
+        const existingPeopleResult = await pool.query('SELECT COUNT(*) as count FROM people');
+        const existingPeopleCount = parseInt(existingPeopleResult.rows[0].count);
+
+        if (existingPeopleCount > 0) {
+            console.log(`[PopulationOperations] Found ${existingPeopleCount} existing people. Using existing population instead of reinitializing.`);
+            const populations = await loadPopulationData(pool);
+            return {
+                success: true,
+                message: `Using existing population data (${existingPeopleCount} people)`,
+                isExisting: true,
+                ...formatPopulationData(populations)
+            };
+        }
+        console.log('[PopulationOperations] No existing population found. Proceeding with initialization...');
+
+        // Select only 10 random tiles for initialization
         const selectedTiles = tileIds.sort(() => 0.5 - Math.random()).slice(0, 10);
         console.log(`[PopulationOperations] Selected ${selectedTiles.length} random tiles for initialization:`, selectedTiles);
 
