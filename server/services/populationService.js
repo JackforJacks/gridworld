@@ -57,7 +57,7 @@ const { validateTileIds } = require('./population/validation.js');
 const StatisticsService = require('./statisticsService');
 
 class PopulationService {
-    #pool; constructor(io, calendarService = null) {
+    #pool;    constructor(io, calendarService = null, statisticsService = null) {
         this.io = io;
         this.calendarService = calendarService;
         this.#pool = pool;
@@ -72,9 +72,9 @@ class PopulationService {
         this.lastRateReset = Date.now();
         // In-memory event log for births and deaths
         this.eventLog = [];
-        // Statistics service for vital rates
-        this.statisticsService = new StatisticsService();
-    } getPool() { return this.#pool; }
+        // Statistics service for vital rates - use provided instance or create new one
+        this.statisticsService = statisticsService || new StatisticsService();
+    }getPool() { return this.#pool; }
 
     getStatisticsService() {
         return this.statisticsService;
@@ -84,8 +84,10 @@ class PopulationService {
         // Initialize rate tracking
         resetRateCounters(this);
         startRateTracking(this);
-        // Initialize statistics service with calendar
-        this.statisticsService.initialize(calendarService);
+        // Initialize statistics service with calendar (only if not already initialized)
+        if (!this.statisticsService.isTracking) {
+            this.statisticsService.initialize(calendarService);
+        }
 
         // Listen to calendar tick events for daily population updates
         if (calendarService) {
@@ -286,4 +288,4 @@ class PopulationService {
     }
 }
 
-module.exports = new PopulationService();
+module.exports = PopulationService;

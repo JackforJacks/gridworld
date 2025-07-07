@@ -1,7 +1,6 @@
 {
     "watch": [
         "server/**/*.js",
-        "src/**/*.js",
         "package.json"
     ],
     "ext": "js,json",

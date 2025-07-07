@@ -1,11 +1,11 @@
 // Population API Routes
 const express = require('express');
 const router = express.Router();
-const populationService = require('../services/populationService');
 
 // Get all population data
 router.get('/', async (req, res, next) => {
     try {
+        const populationService = req.app.locals.populationService;
         const data = await populationService.getAllPopulationData();
         res.json(data);
     } catch (error) {
@@ -16,6 +16,7 @@ router.get('/', async (req, res, next) => {
 // Update population data (growth rate or tile populations)
 router.post('/', async (req, res, next) => {
     try {
+        const populationService = req.app.locals.populationService;
         const { rate, tilePopulations } = req.body;
         let responseData;
 
@@ -44,6 +45,7 @@ router.post('/', async (req, res, next) => {
 // Initialize tile populations
 router.post('/initialize', async (req, res, next) => {
     try {
+        const populationService = req.app.locals.populationService;
         const { habitableTiles } = req.body;
 
         if (!habitableTiles || !Array.isArray(habitableTiles)) {
@@ -66,6 +68,7 @@ router.post('/initialize', async (req, res, next) => {
 // Reset all population data
 router.post('/reset', async (req, res, next) => {
     try {
+        const populationService = req.app.locals.populationService;
         const responseData = await populationService.resetPopulation();
         res.json({
             success: true,
@@ -80,6 +83,7 @@ router.post('/reset', async (req, res, next) => {
 // Save current data
 router.post('/save', async (req, res, next) => {
     try {
+        const populationService = req.app.locals.populationService;
         await populationService.saveData();
         res.json({
             success: true,
@@ -94,6 +98,7 @@ router.post('/save', async (req, res, next) => {
 // Get demographic population stats (male, female, under 18, over 65)
 router.get('/stats', async (req, res, next) => {
     try {
+        const populationService = req.app.locals.populationService;
         const stats = await populationService.getAllPopulationData();
         res.json(stats);
     } catch (error) {
@@ -104,6 +109,7 @@ router.get('/stats', async (req, res, next) => {
 // Regenerate population with new age distribution
 router.post('/regenerate', async (req, res, next) => {
     try {
+        const populationService = req.app.locals.populationService;
         const responseData = await populationService.regeneratePopulationWithNewAgeDistribution();
         res.json({
             success: true,
@@ -118,6 +124,7 @@ router.post('/regenerate', async (req, res, next) => {
 // Apply senescence (death by old age) manually
 router.post('/senescence', async (req, res, next) => {
     try {
+        const populationService = req.app.locals.populationService;
         const responseData = await populationService.applySenescenceManually();
         res.json(responseData);
     } catch (error) {
@@ -128,6 +135,7 @@ router.post('/senescence', async (req, res, next) => {
 // Create families for existing population
 router.post('/create-families', async (req, res, next) => {
     try {
+        const populationService = req.app.locals.populationService;
         const responseData = await populationService.createFamiliesForExistingPopulation();
         res.json(responseData);
     } catch (error) {

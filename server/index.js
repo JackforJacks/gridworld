@@ -14,11 +14,17 @@ const socketConfig = require('./config/socket');
 const apiRoutes = require('./routes/api');
 
 // Import services
-const populationService = require('./services/populationService');
+const PopulationService = require('./services/populationService');
 const CalendarService = require('./services/calendarService');
+const StatisticsService = require('./services/statisticsService');
 
 // Import middleware
 const errorHandler = require('./middleware/errorHandler');
+
+// Singleton service instances
+let populationServiceInstance = null;
+let calendarServiceInstance = null;
+let statisticsServiceInstance = null;
 
 class GridWorldServer {
     constructor() {
@@ -26,9 +32,6 @@ class GridWorldServer {
         this.server = http.createServer(this.app);
         this.io = socketIo(this.server, socketConfig);
         this.port = serverConfig.port;
-
-        // Initialize calendar service
-        this.calendarService = new CalendarService(this.io);
     }
 
     async initialize() {
@@ -43,17 +46,45 @@ class GridWorldServer {
         });
 
         // Error handling middleware
-        this.app.use(errorHandler);        // Initialize services
-        await populationService.initialize(this.io, this.calendarService);
+        this.app.use(errorHandler);
+
+        // Initialize singleton services if not already initialized
+        await this.initializeSingletonServices();
 
         // Make services available to routes
-        this.app.locals.calendarService = this.calendarService;
-        this.app.locals.populationService = populationService;
+        this.app.locals.calendarService = calendarServiceInstance;
+        this.app.locals.populationService = populationServiceInstance;
+        this.app.locals.statisticsService = statisticsServiceInstance;
 
         // Setup socket connections
         this.setupSocketHandlers();
 
         return this;
+    }
+
+    async initializeSingletonServices() {
+        // Initialize services only once as singletons
+        if (!calendarServiceInstance) {
+            console.log('🔧 Initializing Calendar Service singleton...');
+            calendarServiceInstance = new CalendarService(this.io);
+            console.log('📅 Calendar Service singleton initialized');
+        }
+
+        if (!statisticsServiceInstance) {
+            console.log('🔧 Initializing Statistics Service singleton...');
+            statisticsServiceInstance = new StatisticsService();
+            statisticsServiceInstance.initialize(calendarServiceInstance);
+            console.log('📈 Statistics Service singleton initialized');
+        }
+
+        if (!populationServiceInstance) {
+            console.log('🔧 Initializing Population Service singleton...');
+            populationServiceInstance = new PopulationService(this.io, calendarServiceInstance, statisticsServiceInstance);
+            await populationServiceInstance.initialize(this.io, calendarServiceInstance);
+            console.log('👥 Population Service singleton initialized');
+        } else {
+            console.log('🔄 Services already initialized, skipping initialization...');
+        }
     } setupSocketHandlers() {
         this.io.on('connection', (socket) => {
             console.log(`👤 Client connected: ${socket.id}`);
@@ -68,7 +99,7 @@ class GridWorldServer {
             });            // Handle socket events
             socket.on('getPopulation', async () => {
                 try {
-                    const data = await populationService.getAllPopulationData();
+                    const data = await populationServiceInstance.getAllPopulationData();
                     socket.emit('populationUpdate', data);
                 } catch (error) {
                     console.error('❌ Error getting population data:', error);
@@ -81,7 +112,7 @@ class GridWorldServer {
                 console.log(`📅 Client ${socket.id} subscribed to calendar updates`);
                 // Send current calendar state immediately
                 try {
-                    const calendarState = this.app.locals.calendarService.getState();
+                    const calendarState = calendarServiceInstance.getState();
                     socket.emit('calendarState', calendarState);
                 } catch (error) {
                     console.error('❌ Error getting calendar state:', error);
@@ -115,12 +146,21 @@ class GridWorldServer {
         });        // Graceful shutdown
         process.on('SIGINT', async () => {
             console.log('\n🛑 Shutting down server...');
-            await populationService.shutdown();
+            
+            if (populationServiceInstance) {
+                await populationServiceInstance.shutdown();
+            }
 
             // Stop calendar service
-            if (this.calendarService) {
-                this.calendarService.stop();
+            if (calendarServiceInstance) {
+                calendarServiceInstance.stop();
                 console.log('📅 Calendar service stopped');
+            }
+
+            // Stop statistics service
+            if (statisticsServiceInstance) {
+                statisticsServiceInstance.shutdown();
+                console.log('📈 Statistics service stopped');
             }
 
             this.server.close(() => {
