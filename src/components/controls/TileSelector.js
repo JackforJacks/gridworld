@@ -83,8 +83,6 @@ class TileSelector {
     createBorder(tile) {
         const borderGroup = new THREE.Group();
 
-        console.log('[TileSelector] Creating border for tile:', tile.id);
-
         // Create multiple border layers for glowing yellow effect
         for (let offset = 0; offset < 4; offset++) {
             const borderGeometry = new THREE.BufferGeometry();

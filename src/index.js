@@ -190,7 +190,6 @@ class GridWorldApp {
                 }, 10000);
 
                 this.socket.on('connect', () => {
-                    console.log('🔗 Connected to server');
                     clearTimeout(timeout);
                     resolve();
                 });
@@ -224,8 +223,6 @@ class GridWorldApp {
             // Initialize calendar display
             this.calendarDisplay = new CalendarDisplay(this.calendarManager);
 
-            console.log('📅 Calendar system initialized (not started yet)');
-
         } catch (error) {
             console.error('Failed to initialize calendar system:', error);
         }
@@ -243,7 +240,6 @@ class GridWorldApp {
 
             // Start the calendar after build completion
             await this.calendarManager.start();
-            console.log('📅 Calendar system started after build completion');
 
         } catch (error) {
             console.error('Failed to start calendar:', error);

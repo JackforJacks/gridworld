@@ -75,7 +75,6 @@ class SceneManager {
 
     // Build Three.js geometry from server-provided tile data
     buildTilesFromData(tileData) {
-        console.log('[SceneManager] buildTilesFromData received:', tileData);
         // tileData is expected to be an array of tile objects with all necessary properties
         if (!tileData || !Array.isArray(tileData.tiles)) {
             console.error('❌ Invalid tile data from server:', tileData);
@@ -142,10 +141,6 @@ class SceneManager {
             colorIndex += tileVertexCount;
         });
         this.createHexasphereMesh(hexasphereGeometry, vertices, colors, indices);
-        
-        // Debug: Log habitable tiles found
-        console.log(`🏘️ Found ${this.habitableTileIds.length} habitable tiles for later initialization`);
-        
         // Don't automatically initialize population here - let the caller decide when to initialize
     }
 
@@ -167,32 +162,24 @@ class SceneManager {
     } updateTilePopulations() {
         if (!this.hexasphere || !this.hexasphere.tiles) return;
         const tilePopulations = populationManager.getAllTilePopulations();
-        console.log('🔍 Updating tile populations:', tilePopulations);
         this.hexasphere.tiles.forEach(tile => {
             const oldPop = tile.population;
             tile.population = tile.Habitable === 'yes' ? (tilePopulations[tile.id] || 0) : 0;
-            if (oldPop !== tile.population && tile.population > 0) {
-                console.log(`📊 Tile ${tile.id} population: ${oldPop} → ${tile.population}`);
-            }
+            // Removed debug log
         });
     } checkPopulationThresholds() {
         if (!this.hexasphere || !this.hexasphere.tiles || !this.hexasphereMesh) return;
         const POPULATION_THRESHOLD = 0; // Changed to 0 - any tile with population > 0 will be red
         let changesDetected = false;
-        console.log('🔍 Checking population thresholds...');
         this.hexasphere.tiles.forEach(tile => {
             if (tile.Habitable === 'yes' && tile.population !== undefined) {
                 const colorInfo = this.tileColorIndices.get(tile.id);
                 if (!colorInfo) return;
                 const shouldBeRed = tile.population > POPULATION_THRESHOLD;
-                if (tile.population > 0) {
-                    console.log(`🟥 Tile ${tile.id}: population=${tile.population}, shouldBeRed=${shouldBeRed}, isHighlighted=${colorInfo.isHighlighted}`);
-                }
                 if (shouldBeRed && !colorInfo.isHighlighted) {
                     this.addTileOverlay(tile);
                     colorInfo.isHighlighted = true;
                     changesDetected = true;
-                    console.log(`🟥 Added red overlay to tile ${tile.id} (pop: ${tile.population})`);
                 } else if (!shouldBeRed && colorInfo.isHighlighted) {
                     this.removeTileOverlay(tile.id);
                     colorInfo.isHighlighted = false;
@@ -406,26 +393,15 @@ class SceneManager {
 
     // New function to get biome-based color
     getBiomeColor(tile) {
-        // Debug: log biome assignment for a few tiles
-        if (Math.random() < 0.01) { // Log 1% of tiles
-            console.log(`[DEBUG] Tile ${tile.id}: terrainType=${tile.terrainType}, biome=${tile.biome}`);
-        }
-        
         // For ocean tiles, always use ocean color
         if (tile.terrainType === 'ocean') {
             return new THREE.Color(biomeColors.ocean);
         }
-        
         // For land tiles, use biome color if available, otherwise fall back to terrain color
         if (tile.biome && biomeColors[tile.biome]) {
-            if (tile.biome === 'tundra') {
-                console.log(`[DEBUG] Found tundra tile ${tile.id}! Using white color.`);
-            }
             return new THREE.Color(biomeColors[tile.biome]);
         }
-        
         // Fallback to terrain color if no biome is set
-        console.log(`[DEBUG] No biome for tile ${tile.id}, using terrain color for ${tile.terrainType}`);
         return this.getTerrainColor(tile.terrainType);
     }addTileGeometry(tile, color, vertices, colors, indices, startVertexIndex) {
         // Validate and sanitize boundary points

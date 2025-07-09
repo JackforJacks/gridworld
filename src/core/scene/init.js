@@ -2,10 +2,8 @@
 import { updateDashboard } from '../../utils/index.js';
 
 async function initializeAndStartGame() {
-  console.log('Initializing and starting the game...');
 
   if (window.sceneInitialized) {
-    console.log("Scene already initialized.");
     return;
   }
   // Remove the redundant createScene call - SceneManager already handles this
@@ -17,7 +15,6 @@ async function initializeAndStartGame() {
   }
 
   window.sceneInitialized = true;
-  console.log('🏗️ Game initialization and build complete');
 }
 
 if (typeof window !== 'undefined') {

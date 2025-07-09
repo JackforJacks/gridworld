@@ -45,7 +45,6 @@ class PopulationManager {
     async initializeTilePopulations(habitableTileIds) {
         const hasPopulation = await this.hasExistingPopulation();
         if (hasPopulation) {
-            console.log('🌍 Using existing population data - skipping initialization');
             return {
                 success: true,
                 message: 'Using existing population data',
@@ -55,14 +54,12 @@ class PopulationManager {
         const data = await this.makeApiRequest('/initialize', 'POST', {
             habitableTiles: habitableTileIds
         });
-        console.log('✅ Tile populations initialized:', data.message);
 
         // After initializing, fetch the latest population data to ensure the client is up to date
         try {
             const populationData = await this.makeApiRequest('');
             this.updatePopulationData(populationData);
             this.notifyCallbacks('populationUpdate', populationData);
-            console.log('✅ Fetched latest population data after initialization.');
         } catch (error) {
             console.error('❌ Failed to fetch population data after initialization:', error);
         }
@@ -86,7 +83,6 @@ class PopulationManager {
             });
 
             this.socket.on('connect', () => {
-                console.log('🔗 Connected to population server');
                 this.isConnected = true;
                 this.connectionRetries = 0; // Reset retry counter
                 this.notifyCallbacks('connected', true);
@@ -96,7 +92,6 @@ class PopulationManager {
             });
 
             this.socket.on('disconnect', (reason) => {
-                console.log('❌ Disconnected from population server, reason:', reason);
                 this.isConnected = false;
                 this.notifyCallbacks('connected', false);
 
@@ -145,7 +140,6 @@ class PopulationManager {
             const delay = Math.pow(2, this.connectionRetries) * 1000; // Exponential backoff
 
             setTimeout(() => {
-                console.log(`🔄 Attempting reconnection (${this.connectionRetries}/${this.maxRetries})...`);
                 this.connect();
             }, delay);
         }
@@ -227,14 +221,12 @@ class PopulationManager {
         const data = await this.makeApiRequest('/initialize', 'POST', {
             habitableTiles: habitableTileIds
         });
-        console.log('✅ Tile populations initialized:', data.message);
 
         // After initializing, fetch the latest population data to ensure the client is up to date
         try {
             const populationData = await this.makeApiRequest(''); // GET request to /api/population
             this.updatePopulationData(populationData);
             this.notifyCallbacks('populationUpdate', populationData);
-            console.log('✅ Fetched latest population data after initialization.');
         } catch (error) {
             console.error('❌ Failed to fetch population data after initialization:', error);
         }
