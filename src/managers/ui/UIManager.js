@@ -180,7 +180,7 @@ class UIManager {
                 this.handleShowStats();
             });
         }
-    }    async handleResetData() {
+    } async handleResetData() {
         if (!this.sceneManager) {
             console.error("SceneManager not available in UIManager for reset.");
             return;
@@ -334,7 +334,7 @@ class UIManager {
             <p><strong>High Pop Tiles (≥${stats.threshold}):</strong> ${stats.highPopulationTiles}</p>
             <p><strong>Red Tiles:</strong> ${stats.redTiles}</p>            <hr class="stats-modal-separator">
             <div style="margin: 24px 0;">
-                <h4>Vital Rates (per 1000 people, last 25 years)</h4>
+                <h4>Vital Rates (per 1000 people, last 100 years)</h4>
                 <canvas id="vital-rates-chart" width="600" height="300"></canvas>
             </div>
         `;
@@ -382,7 +382,7 @@ class UIManager {
                     responsive: true,
                     plugins: {
                         legend: { position: 'top' },
-                        title: { display: true, text: 'Birth and Death Rates per 1000 People (Last 25 Years)' }
+                        title: { display: true, text: 'Birth and Death Rates per 1000 People' }
                     },
                     scales: {
                         x: { title: { display: true, text: 'Year' } },
