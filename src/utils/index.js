@@ -8,6 +8,16 @@ const terrainColors = {
     mountains: 0x8B4513   // Saddle brown (brown)
 };
 
+// Define biome colors for the new biome-based coloration system
+const biomeColors = {
+    desert: 0xF4A460,     // Sandy brown for desert
+    tundra: 0xFFFFFF,     // Pure white for tundra (maximum visibility)
+    grassland: 0x4CAF50,  // Grass green for grassland
+    plains: 0x8FBC8F,     // Dark sea green (brownish green) for plains
+    alpine: 0x8B4513,     // Dark brown for alpine (mountains)
+    ocean: 0x4A90E2      // Keep ocean blue for water tiles
+};
+
 const isLand = function (centerPoint) {
     // Simple land/ocean determination - you can make this more sophisticated
     const y = centerPoint.y;
@@ -38,4 +48,4 @@ function updateDashboard() {
     }
 }
 
-export { updateDashboard, terrainColors, isLand };
+export { updateDashboard, terrainColors, biomeColors, isLand };

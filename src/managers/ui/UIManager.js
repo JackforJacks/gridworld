@@ -332,7 +332,17 @@ class UIManager {
             <p><strong>Habitable Tiles:</strong> ${stats.habitableTiles}</p>
             <p><strong>Populated Tiles:</strong> ${stats.populatedTiles}</p>
             <p><strong>High Pop Tiles (≥${stats.threshold}):</strong> ${stats.highPopulationTiles}</p>
-            <p><strong>Red Tiles:</strong> ${stats.redTiles}</p>            <hr class="stats-modal-separator">
+            <p><strong>Red Tiles:</strong> ${stats.redTiles}</p>
+            ${stats.biomes ? `
+            <hr class="stats-modal-separator">
+            <h4>🌿 Biome Distribution</h4>
+            <p><strong>🏔️ Tundra:</strong> ${stats.biomes.tundra.tiles} tiles (${stats.biomes.tundra.population.toLocaleString()} people)</p>
+            <p><strong>🏜️ Desert:</strong> ${stats.biomes.desert.tiles} tiles (${stats.biomes.desert.population.toLocaleString()} people)</p>
+            <p><strong>🌾 Plains:</strong> ${stats.biomes.plains.tiles} tiles (${stats.biomes.plains.population.toLocaleString()} people)</p>
+            <p><strong>🌱 Grassland:</strong> ${stats.biomes.grassland.tiles} tiles (${stats.biomes.grassland.population.toLocaleString()} people)</p>
+            <p><strong>⛰️ Alpine:</strong> ${stats.biomes.alpine.tiles} tiles (${stats.biomes.alpine.population.toLocaleString()} people)</p>
+            ` : ''}
+            <hr class="stats-modal-separator">
             <div style="margin: 24px 0;">
                 <h4>Vital Rates (per 1000 people, last 100 years)</h4>
                 <canvas id="vital-rates-chart" width="600" height="300"></canvas>

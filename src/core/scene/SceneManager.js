@@ -1,6 +1,6 @@
 // Scene Manager Module
 // Handles scene creation, tile generation, and rendering
-import { terrainColors, isLand } from '../../utils/index.js';
+import { terrainColors, biomeColors, isLand } from '../../utils/index.js';
 import Hexasphere from '../hexasphere/HexaSphere.js';
 import populationManager from '../../managers/population/PopulationManager.js';
 
@@ -93,7 +93,7 @@ class SceneManager {
         this.hexasphere.tiles.forEach((tile, idx) => {
             // Use tile properties from server
             if (tile.Habitable === 'yes') this.habitableTileIds.push(tile.id);
-            const color = this.getTerrainColor(tile.terrainType);
+            const color = this.getBiomeColor(tile); // Changed to use biome-based color
             const tileColorStart = colorIndex;
             const tileVertexCount = (tile.boundary.length - 2) * 3 * 3;
             this.tileColorIndices.set(tile.id, {
@@ -400,9 +400,34 @@ class SceneManager {
         }
 
         return { terrainType, lat, lon };
-    } getTerrainColor(terrainType) {
+    }    getTerrainColor(terrainType) {
         return new THREE.Color(terrainColors[terrainType] || 0x808080); // Default to gray if unknown
-    } addTileGeometry(tile, color, vertices, colors, indices, startVertexIndex) {
+    }
+
+    // New function to get biome-based color
+    getBiomeColor(tile) {
+        // Debug: log biome assignment for a few tiles
+        if (Math.random() < 0.01) { // Log 1% of tiles
+            console.log(`[DEBUG] Tile ${tile.id}: terrainType=${tile.terrainType}, biome=${tile.biome}`);
+        }
+        
+        // For ocean tiles, always use ocean color
+        if (tile.terrainType === 'ocean') {
+            return new THREE.Color(biomeColors.ocean);
+        }
+        
+        // For land tiles, use biome color if available, otherwise fall back to terrain color
+        if (tile.biome && biomeColors[tile.biome]) {
+            if (tile.biome === 'tundra') {
+                console.log(`[DEBUG] Found tundra tile ${tile.id}! Using white color.`);
+            }
+            return new THREE.Color(biomeColors[tile.biome]);
+        }
+        
+        // Fallback to terrain color if no biome is set
+        console.log(`[DEBUG] No biome for tile ${tile.id}, using terrain color for ${tile.terrainType}`);
+        return this.getTerrainColor(tile.terrainType);
+    }addTileGeometry(tile, color, vertices, colors, indices, startVertexIndex) {
         // Validate and sanitize boundary points
         const boundaryPoints = tile.boundary.map(p => {
             const x = isNaN(p.x) ? 0 : parseFloat(p.x);
@@ -525,17 +550,44 @@ class SceneManager {
         if (!this.hexasphere || !this.hexasphere.tiles) return { error: 'No hexasphere data available' };
         const POPULATION_THRESHOLD = 10000;
         let totalTiles = 0, habitableTiles = 0, populatedTiles = 0, highPopulationTiles = 0, redTiles = 0;
+        
+        // Initialize biome statistics
+        const biomes = {
+            tundra: { tiles: 0, population: 0 },
+            desert: { tiles: 0, population: 0 },
+            plains: { tiles: 0, population: 0 },
+            grassland: { tiles: 0, population: 0 },
+            alpine: { tiles: 0, population: 0 }
+        };
+        
         this.hexasphere.tiles.forEach(tile => {
             totalTiles++;
+            const population = tile.population || 0;
+            
             if (tile.Habitable === 'yes') {
                 habitableTiles++;
-                if (tile.population > 0) populatedTiles++;
-                if (tile.population >= POPULATION_THRESHOLD) highPopulationTiles++;
+                if (population > 0) populatedTiles++;
+                if (population >= POPULATION_THRESHOLD) highPopulationTiles++;
                 const colorInfo = this.tileColorIndices.get(tile.id);
                 if (colorInfo && colorInfo.isHighlighted) redTiles++;
             }
+            
+            // Count biome statistics
+            if (tile.biome && biomes[tile.biome]) {
+                biomes[tile.biome].tiles++;
+                biomes[tile.biome].population += population;
+            }
         });
-        return { totalTiles, habitableTiles, populatedTiles, highPopulationTiles, redTiles, threshold: POPULATION_THRESHOLD };
+        
+        return { 
+            totalTiles, 
+            habitableTiles, 
+            populatedTiles, 
+            highPopulationTiles, 
+            redTiles, 
+            threshold: POPULATION_THRESHOLD,
+            biomes 
+        };
     }
     cleanup() {
         if (this.populationUnsubscribe) {

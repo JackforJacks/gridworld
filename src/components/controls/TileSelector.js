@@ -186,6 +186,17 @@ class TileSelector {
         const population = tile.population || 0;
         const populationDisplay = population > 0 ? population.toLocaleString() : 'Uninhabited';
 
+        // Get biome data
+        const biome = tile.biome || null;
+        const biomeIcons = {
+            tundra: '🏔️',
+            desert: '🏜️',
+            plains: '🌾',
+            grassland: '🌱',
+            alpine: '⛰️'
+        };
+        const biomeDisplay = biome ? `${biomeIcons[biome] || '🌍'} ${biome.charAt(0).toUpperCase() + biome.slice(1)}` : 'N/A';
+
         this.tilePopup.innerHTML = `
             <div class="tile-popup-header">
                 <strong>Tile ${tile.id}</strong>
@@ -199,6 +210,12 @@ class TileSelector {
                     <span class="label">Terrain:</span>
                     <span class="value terrain-${terrainType.toLowerCase()}">${terrainType}</span>
                 </div>
+                ${biome ? `
+                <div class="tile-popup-row">
+                    <span class="label">Biome:</span>
+                    <span class="value biome-${biome}">${biomeDisplay}</span>
+                </div>
+                ` : ''}
                 <div class="tile-popup-row">
                     <span class="label">Population:</span>
                     <span class="value population-${population > 0 ? 'inhabited' : 'uninhabited'}">${populationDisplay}</span>
