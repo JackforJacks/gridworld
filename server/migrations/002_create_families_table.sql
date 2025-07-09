@@ -1,1 +1,0 @@
--- Migration removed: The 'families' table is no longer used. This migration is now a no-op.

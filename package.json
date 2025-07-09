@@ -21,6 +21,8 @@
     "full-auto": "concurrently \"npm run dev\" \"npm run server:watch\"",
     "full-dev": "concurrently \"npm run dev\" \"npm run server:dev\"",
     "prod": "npm run build && npm run server",
+    "db:init": "node server/migrations/init_database.js",
+    "db:reset": "node server/migrations/reset_schema_for_migrations.js && npm run db:init",
     "test": "echo \"Error: no test specified\" && exit 1"
   },
   "devDependencies": {
