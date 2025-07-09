@@ -21,6 +21,9 @@ CREATE TABLE IF NOT EXISTS tiles (
 -- Add biome column if it doesn't exist
 ALTER TABLE tiles ADD COLUMN IF NOT EXISTS biome VARCHAR(50);
 
+-- Add fertility column if it doesn't exist (0-100 scale)
+ALTER TABLE tiles ADD COLUMN IF NOT EXISTS fertility INTEGER CHECK (fertility >= 0 AND fertility <= 100);
+
 -- 2. Create people table
 CREATE TABLE IF NOT EXISTS people (
     id SERIAL PRIMARY KEY,
@@ -56,8 +59,14 @@ CREATE TABLE IF NOT EXISTS calendar_state (
 );
 
 -- 5. Add family_id reference to people table (if not already added)
-ALTER TABLE people ADD CONSTRAINT fk_people_family 
-    FOREIGN KEY (family_id) REFERENCES family(id) ON DELETE SET NULL;
+DO $$ 
+BEGIN
+    IF NOT EXISTS (SELECT 1 FROM information_schema.table_constraints 
+                   WHERE table_name = 'people' AND constraint_name = 'fk_people_family') THEN
+        ALTER TABLE people ADD CONSTRAINT fk_people_family 
+            FOREIGN KEY (family_id) REFERENCES family(id) ON DELETE SET NULL;
+    END IF;
+END $$;
 
 -- 6. Create indexes for performance
 
@@ -70,6 +79,9 @@ CREATE INDEX IF NOT EXISTS idx_tiles_longitude ON tiles(longitude);
 
 -- Create biome index (biome column should exist by now)
 CREATE INDEX IF NOT EXISTS idx_tiles_biome ON tiles(biome);
+
+-- Create fertility index for performance
+CREATE INDEX IF NOT EXISTS idx_tiles_fertility ON tiles(fertility);
 
 -- People indexes
 CREATE INDEX IF NOT EXISTS idx_people_tile_id ON people(tile_id);
@@ -111,5 +123,6 @@ COMMENT ON TABLE calendar_state IS 'Stores current world time state';
 
 COMMENT ON COLUMN tiles.biome IS 'Biome type: tundra, desert, plains, grassland, alpine';
 COMMENT ON COLUMN tiles.terrain_type IS 'Terrain type: ocean, flats, hills, mountains';
+COMMENT ON COLUMN tiles.fertility IS 'Agricultural/biological productivity from 0 (barren) to 100 (highly fertile)';
 COMMENT ON COLUMN people.sex IS 'Boolean: true for male, false for female';
 COMMENT ON COLUMN people.residency IS 'Number of days living on current tile';

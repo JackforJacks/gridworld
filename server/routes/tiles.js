@@ -71,6 +71,40 @@ function calculateBiome(centerPoint, terrainType, seededRandom) {
     }
 }
 
+// Function to calculate fertility based on biome and terrain type
+function calculateFertility(biome, terrainType, seededRandom) {
+    // Zero fertility for barren biomes and terrains
+    if (terrainType === 'ocean' || terrainType === 'mountains' || 
+        biome === 'desert' || biome === 'tundra' || biome === 'alpine') {
+        return 0;
+    }
+    
+    // For fertile biomes, calculate based on biome type and some randomness
+    let baseFertility = 0;
+    
+    if (biome === 'grassland') {
+        baseFertility = 70; // High fertility for grasslands
+    } else if (biome === 'plains') {
+        baseFertility = 85; // Very high fertility for plains
+    } else {
+        // Default for other land types
+        baseFertility = 50;
+    }
+    
+    // Add terrain modifier
+    if (terrainType === 'flats') {
+        baseFertility += 10; // Flat terrain is better for agriculture
+    } else if (terrainType === 'hills') {
+        baseFertility -= 5; // Hills are slightly less fertile
+    }
+    
+    // Add random variation (-15 to +15)
+    const variation = Math.floor((seededRandom() - 0.5) * 30);
+    const fertility = Math.max(0, Math.min(100, baseFertility + variation));
+    
+    return fertility;
+}
+
 // GET /api/tiles
 router.get('/', async (req, res) => {
     // Parse params with environment variable defaults
@@ -120,9 +154,12 @@ router.get('/', async (req, res) => {
                 props.centerPoint = { x: tile.centerPoint.x, y: tile.centerPoint.y, z: tile.centerPoint.z };
                 // Calculate biome based on latitude and terrain using seeded randomization
                 props.biome = calculateBiome(tile.centerPoint, props.terrainType, seededRandom);
+                // Calculate fertility based on biome and terrain type
+                props.fertility = calculateFertility(props.biome, props.terrainType, seededRandom);
             } else {
                 props.centerPoint = undefined;
                 props.biome = null;
+                props.fertility = 0;
             }
             return props;
         });
@@ -168,12 +205,25 @@ router.get('/', async (req, res) => {
             alpine: 0
         };
 
+        let totalFertility = 0;
+        let fertileTilesCount = 0;
+        let maxFertility = 0;
+        let minFertility = 100;
+
         tiles.forEach(tile => {
             if (terrainCounts.hasOwnProperty(tile.terrainType)) {
                 terrainCounts[tile.terrainType]++;
             }
             if (tile.biome && biomeCounts.hasOwnProperty(tile.biome)) {
                 biomeCounts[tile.biome]++;
+            }
+            if (tile.fertility !== undefined && tile.fertility !== null) {
+                totalFertility += tile.fertility;
+                if (tile.fertility > 0) {
+                    fertileTilesCount++;
+                }
+                maxFertility = Math.max(maxFertility, tile.fertility);
+                minFertility = Math.min(minFertility, tile.fertility);
             }
         });const totalTiles = tiles.length;
         const waterTiles = terrainCounts.ocean;
@@ -194,6 +244,14 @@ router.get('/', async (req, res) => {
             console.log(`  🌾 Plains: ${biomeCounts.plains} (${((biomeCounts.plains / totalTiles) * 100).toFixed(1)}%)`);
             console.log(`  🌱 Grassland: ${biomeCounts.grassland} (${((biomeCounts.grassland / totalTiles) * 100).toFixed(1)}%)`);
             console.log(`  ⛰️ Alpine: ${biomeCounts.alpine} (${((biomeCounts.alpine / totalTiles) * 100).toFixed(1)}%)`);
+            
+            console.log(`[API /api/tiles] Fertility Statistics:`);
+            const avgFertility = totalTiles > 0 ? (totalFertility / totalTiles).toFixed(1) : 0;
+            const avgFertileOnly = fertileTilesCount > 0 ? (totalFertility / fertileTilesCount).toFixed(1) : 0;
+            console.log(`  🌱 Fertile tiles: ${fertileTilesCount}/${totalTiles} (${((fertileTilesCount / totalTiles) * 100).toFixed(1)}%)`);
+            console.log(`  📊 Average fertility (all): ${avgFertility}/100`);
+            console.log(`  📊 Average fertility (fertile only): ${avgFertileOnly}/100`);
+            console.log(`  📈 Fertility range: ${minFertility}-${maxFertility}`);
             
             console.log('[API /api/tiles] Generated tiles:', Array.isArray(tiles) ? tiles.length : tiles);
         }

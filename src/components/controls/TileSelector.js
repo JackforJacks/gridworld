@@ -197,6 +197,11 @@ class TileSelector {
         };
         const biomeDisplay = biome ? `${biomeIcons[biome] || '🌍'} ${biome.charAt(0).toUpperCase() + biome.slice(1)}` : 'N/A';
 
+        // Get fertility data
+        const fertility = tile.fertility !== undefined ? tile.fertility : null;
+        const fertilityDisplay = fertility !== null ? `${fertility}/100` : 'N/A';
+        const fertilityIcon = fertility !== null ? (fertility === 0 ? '🪨' : fertility < 30 ? '🌫️' : fertility < 60 ? '🌿' : fertility < 80 ? '🌾' : '🌻') : '❓';
+
         this.tilePopup.innerHTML = `
             <div class="tile-popup-header">
                 <strong>Tile ${tile.id}</strong>
@@ -214,6 +219,12 @@ class TileSelector {
                 <div class="tile-popup-row">
                     <span class="label">Biome:</span>
                     <span class="value biome-${biome}">${biomeDisplay}</span>
+                </div>
+                ` : ''}
+                ${fertility !== null ? `
+                <div class="tile-popup-row">
+                    <span class="label">Fertility:</span>
+                    <span class="value fertility-${fertility === 0 ? 'barren' : fertility < 30 ? 'poor' : fertility < 60 ? 'fair' : fertility < 80 ? 'good' : 'excellent'}">${fertilityIcon} ${fertilityDisplay}</span>
                 </div>
                 ` : ''}
                 <div class="tile-popup-row">
