@@ -139,7 +139,188 @@ kbd {
     /* Default shadow */
 }
 
-/* 3.2 Tile Popup */
+/* 3.2 Tile Information Panel */
+.tile-info-panel {
+    position: fixed;
+    bottom: 20px;
+    left: 20px;
+    width: 320px;
+    background-color: rgba(255, 255, 255, 0.95);
+    color: #333;
+    border-radius: 12px;
+    box-shadow: 0 8px 32px rgba(0, 0, 0, 0.3);
+    border: 1px solid #ddd;
+    font-size: 13px;
+    z-index: 2000;
+    transition: opacity 0.3s ease, transform 0.3s ease;
+    backdrop-filter: blur(15px);
+    max-height: calc(100vh - 120px);
+    overflow-y: auto;
+}
+
+.tile-info-panel.visible {
+    opacity: 1;
+    transform: translateY(0);
+}
+
+.tile-info-panel.hidden {
+    opacity: 0;
+    transform: translateY(20px);
+    pointer-events: none;
+}
+
+.tile-info-header {
+    background: linear-gradient(135deg, #4CAF50, #45a049);
+    color: white;
+    padding: 14px 18px;
+    border-radius: 12px 12px 0 0;
+    font-weight: bold;
+    font-size: 15px;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+}
+
+.close-info-panel {
+    background: none;
+    border: none;
+    color: white;
+    font-size: 20px;
+    font-weight: bold;
+    cursor: pointer;
+    padding: 0;
+    width: 24px;
+    height: 24px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    border-radius: 50%;
+    transition: background-color 0.2s ease;
+}
+
+.close-info-panel:hover {
+    background-color: rgba(255, 255, 255, 0.2);
+}
+
+.tile-info-content {
+    padding: 18px;
+}
+
+.tile-info-row {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 10px;
+    padding: 6px 0;
+}
+
+.tile-info-row:last-child {
+    margin-bottom: 0;
+}
+
+.tile-info-row .label {
+    font-weight: 600;
+    color: #666;
+    flex: 0 0 auto;
+    margin-right: 12px;
+    min-width: 80px;
+}
+
+.tile-info-row .value {
+    font-weight: 500;
+    text-align: right;
+    flex: 1;
+}
+
+/* Tile Info Panel - Value Type Specific Colors */
+.tile-info-content .value.terrain-ocean {
+    color: #4A90E2;
+}
+
+.tile-info-content .value.terrain-flats {
+    color: #DAA520;
+}
+
+.tile-info-content .value.terrain-hills {
+    color: #DEB887;
+}
+
+.tile-info-content .value.terrain-mountains {
+    color: #8B4513;
+}
+
+.tile-info-content .value.biome-grassland {
+    color: #4CAF50;
+}
+
+.tile-info-content .value.biome-plains {
+    color: #7BC142;
+}
+
+.tile-info-content .value.biome-tundra {
+    color: #87CEEB;
+}
+
+.tile-info-content .value.biome-desert {
+    color: #DEB887;
+}
+
+.tile-info-content .value.biome-alpine {
+    color: #8B7355;
+}
+
+.tile-info-content .value.population-inhabited {
+    color: #FF5722;
+    font-weight: bold;
+}
+
+.tile-info-content .value.population-uninhabited {
+    color: #999;
+    font-style: italic;
+}
+
+.tile-info-content .value.fertility-excellent {
+    color: #4CAF50;
+    font-weight: bold;
+}
+
+.tile-info-content .value.fertility-good {
+    color: #8BC34A;
+}
+
+.tile-info-content .value.fertility-fair {
+    color: #CDDC39;
+}
+
+.tile-info-content .value.fertility-poor {
+    color: #FF9800;
+}
+
+.tile-info-content .value.fertility-barren {
+    color: #795548;
+}
+
+.tile-info-content .value.Habitable-yes {
+    color: #4CAF50;
+}
+
+.tile-info-content .value.Habitable-no {
+    color: #f44336;
+}
+
+.tile-info-footer {
+    margin-top: 14px;
+    padding-top: 10px;
+    border-top: 1px solid #eee;
+    text-align: center;
+}
+
+.tile-info-footer small {
+    color: #999;
+    font-size: 11px;
+}
+
+/* Legacy tile popup (keeping for compatibility) */
 .tile-popup {
     position: absolute;
     background-color: rgba(255, 255, 255, 0.95);

@@ -35,12 +35,15 @@ class InputHandler {
         
         // Window events
         window.addEventListener('resize', this.onResize.bind(this), false);
-        
-        // Document click for deselection
-        document.addEventListener('click', this.onDocumentClick.bind(this));
     }
 
     onMouseDown(event) {
+        // If the click is on the info panel, do nothing.
+        const tileInfoPanel = document.getElementById('tileInfoPanel');
+        if (tileInfoPanel && tileInfoPanel.contains(event.target)) {
+            return;
+        }
+
         event.preventDefault();
         
         this.mouseState.isDragging = true;
@@ -62,9 +65,9 @@ class InputHandler {
         this.mouseState.previousPosition.x = event.clientX;
         this.mouseState.previousPosition.y = event.clientY;
         
-        // Hide tile popup during dragging
+        // Hide tile info panel during dragging
         if (this.tileSelector) {
-            this.tileSelector.hidePopup();
+            this.tileSelector.hideInfoPanel();
         }
     }
 
@@ -117,17 +120,6 @@ class InputHandler {
         
         this.renderer.setSize(width, height);
         this.cameraController.handleResize(width, height);
-    }
-
-    onDocumentClick(event) {
-        const container = document.getElementById("container");
-        
-        // Check if clicking outside the canvas
-        if (!container.contains(event.target) || event.target === container) {
-            if (this.tileSelector) {
-                this.tileSelector.deselectAll();
-            }
-        }
     }
 
     // Public method to set tile selector reference

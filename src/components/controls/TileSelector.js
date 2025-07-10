@@ -9,7 +9,8 @@ class TileSelector {
         this.raycaster = new THREE.Raycaster();
         this.selectedTile = null;
         this.borderLines = null;
-        this.tilePopup = document.getElementById('tilePopup');
+        this.tileInfoPanel = document.getElementById('tileInfoPanel');
+        this.closeInfoPanelBtn = document.getElementById('closeInfoPanel');
 
         this.borderMaterial = new THREE.LineBasicMaterial({
             color: 0xff0000,
@@ -17,9 +18,22 @@ class TileSelector {
             transparent: true,
             opacity: 1
         });
+
+        // Add close button event listener
+        if (this.closeInfoPanelBtn) {
+            this.closeInfoPanelBtn.addEventListener('click', () => {
+                this.hideInfoPanel();
+                this.deselectAll();
+            });
+        }
     }
 
     handleClick(event) {
+        // Check if the click is on the info panel - if so, ignore it
+        if (this.tileInfoPanel && this.tileInfoPanel.contains(event.target)) {
+            return;
+        }
+
         const rect = event.target.getBoundingClientRect();
         const mouseX = ((event.clientX - rect.left) / rect.width) * 2 - 1;
         const mouseY = -((event.clientY - rect.top) / rect.height) * 2 + 1;
@@ -74,8 +88,8 @@ class TileSelector {
         // Create new border
         this.createBorder(tile);
 
-        // Show popup
-        this.showPopup(tile, event);
+        // Show info panel
+        this.showInfoPanel(tile);
 
         this.selectedTile = tile;
     }
@@ -140,8 +154,8 @@ class TileSelector {
         }
     }
 
-    showPopup(tile, event) {
-        if (!this.tilePopup) return;
+    showInfoPanel(tile) {
+        if (!this.tileInfoPanel) return;
 
         let lat = 0, lon = 0;
         let Habitable = 'unknown';
@@ -211,66 +225,61 @@ class TileSelector {
             clearedCount = tile.lands.filter(l => l.land_type === 'cleared').length;
         }
 
-        this.tilePopup.innerHTML = `
-            <div class="tile-popup-header">
-                <strong>Tile ${tile.id}</strong>
-            </div>
-            <div class="tile-popup-content">
-                <div class="tile-popup-row">
-                    <span class="label">Location:</span>
-                    <span class="value">${lat.toFixed(2)}°, ${lon.toFixed(2)}°</span>
-                </div>
-                <div class="tile-popup-row">
+        const contentDiv = this.tileInfoPanel.querySelector('.tile-info-content');
+        const titleElement = this.tileInfoPanel.querySelector('#tileInfoTitle');
+
+        // Update the title with the tile ID
+        if (titleElement) {
+            titleElement.textContent = `Tile ${tile.id}`;
+        }
+
+        if (contentDiv) {
+            contentDiv.innerHTML = `
+                <div class="tile-info-row">
                     <span class="label">Terrain:</span>
                     <span class="value terrain-${terrainType.toLowerCase()}">${terrainType}</span>
                 </div>
                 ${biome ? `
-                <div class="tile-popup-row">
+                <div class="tile-info-row">
                     <span class="label">Biome:</span>
                     <span class="value biome-${biome}">${biomeDisplay}</span>
                 </div>
                 ` : ''}
                 ${tile.lands && tile.lands.length > 0 ? `
-                <div class="tile-popup-row">
-                    <span class="label">Land Types:</span>
-                    <span class="value">${forestedCount} 🌲 ${wasteCount} 🏜️ ${clearedCount} 🌾</span>
+                <div class="tile-info-row">
+                    <span class="label">Land:</span>
+                    <span class="value">🌲 ${forestedCount} | 🏜️ ${wasteCount} | 🌱 ${clearedCount}</span>
                 </div>
                 ` : ''}
                 ${fertility !== null ? `
-                <div class="tile-popup-row">
+                <div class="tile-info-row">
                     <span class="label">Fertility:</span>
                     <span class="value fertility-${fertility === 0 ? 'barren' : fertility < 30 ? 'poor' : fertility < 60 ? 'fair' : fertility < 80 ? 'good' : 'excellent'}">${fertilityIcon} ${fertilityDisplay}</span>
                 </div>
                 ` : ''}
-                <div class="tile-popup-row">
+                <div class="tile-info-row">
                     <span class="label">Population:</span>
                     <span class="value population-${population > 0 ? 'inhabited' : 'uninhabited'}">${populationDisplay}</span>
                 </div>
-                <div class="tile-popup-row">
+                <div class="tile-info-row">
                     <span class="label">Habitable:</span>
                     <span class="value Habitable-${Habitable}">${Habitable}</span>
                 </div>
-                <div class="tile-popup-footer">
-                    <small>Boundary points: ${tile.boundary.length}</small>
-                </div>
-            </div>
-        `;
-        this.tilePopup.className = 'tile-popup visible';
-        // this.tilePopup.style.left = (event.clientX + 10) + 'px';
-        // this.tilePopup.style.top = (event.clientY + 10) + 'px';
-        this.tilePopup.style.setProperty('--popup-left', (event.clientX + 10) + 'px');
-        this.tilePopup.style.setProperty('--popup-top', (event.clientY + 10) + 'px');
+            `;
+        }
+
+        this.tileInfoPanel.className = 'tile-info-panel visible';
     }
 
-    hidePopup() {
-        if (this.tilePopup) {
-            this.tilePopup.className = 'tile-popup hidden';
+    hideInfoPanel() {
+        if (this.tileInfoPanel) {
+            this.tileInfoPanel.className = 'tile-info-panel hidden';
         }
     }
 
     deselectAll() {
         this.removeBorder();
-        this.hidePopup();
+        this.hideInfoPanel();
         this.selectedTile = null;
     }
 
