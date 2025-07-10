@@ -8,9 +8,9 @@ class PopulationManager {
         this.populationData = {
             globalData: {
                 lastUpdated: 0,
-                growth: { 
-                    rate: 1, 
-                    interval: 1000 
+                growth: {
+                    rate: 1,
+                    interval: 1000
                 }
             },
             tilePopulations: {},

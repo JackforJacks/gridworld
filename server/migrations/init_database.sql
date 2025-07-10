@@ -24,6 +24,17 @@ ALTER TABLE tiles ADD COLUMN IF NOT EXISTS biome VARCHAR(50);
 -- Add fertility column if it doesn't exist (0-100 scale)
 ALTER TABLE tiles ADD COLUMN IF NOT EXISTS fertility INTEGER CHECK (fertility >= 0 AND fertility <= 100);
 
+-- 1a. Create tiles_lands table (each tile has 100 land chunks)
+CREATE TABLE IF NOT EXISTS tiles_lands (
+    id SERIAL PRIMARY KEY,
+    tile_id INTEGER NOT NULL REFERENCES tiles(id) ON DELETE CASCADE,
+    chunk_index INTEGER NOT NULL CHECK (chunk_index >= 0 AND chunk_index < 100),
+    land_type TEXT NOT NULL CHECK (land_type IN ('wasteland', 'forest', 'cleared')),
+    cleared BOOLEAN DEFAULT FALSE,
+    owner_id INT,
+    UNIQUE(tile_id, chunk_index)
+);
+
 -- 2. Create people table
 CREATE TABLE IF NOT EXISTS people (
     id SERIAL PRIMARY KEY,

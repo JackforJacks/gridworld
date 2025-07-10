@@ -292,7 +292,7 @@ class SceneManager {
     async regenerateTiles() {
         try {
             console.log('🌍 Regenerating tiles with new terrain...');
-            
+
             // First, restart the world to get a new seed
             const restartResponse = await fetch('/api/tiles/restart', { method: 'POST' });
             if (!restartResponse.ok) {
@@ -300,12 +300,12 @@ class SceneManager {
             }
             const restartData = await restartResponse.json();
             console.log(`🎲 World restarted with new seed: ${restartData.newSeed}`);
-            
+
             // Get current hexasphere parameters from server config
             let radius = this.sphereRadius || 30;
             let subdivisions = 3; // Fallback
             let tileWidthRatio = 1; // Fallback
-            
+
             try {
                 const configResponse = await fetch('/api/config');
                 if (configResponse.ok) {
@@ -318,7 +318,7 @@ class SceneManager {
             } catch (error) {
                 console.warn('Failed to fetch config, using fallback values:', error);
             }
-            
+
             // Clear existing mesh before regenerating
             if (this.hexasphereMesh) {
                 this.scene.remove(this.hexasphereMesh);
@@ -326,18 +326,18 @@ class SceneManager {
                 this.hexasphereMesh.material.dispose();
                 this.hexasphereMesh = null;
             }
-            
+
             // Clear existing overlays
             this.clearTileOverlays();
-            
+
             // Fetch new tile data from server with regenerate flag
             const response = await fetch(`/api/tiles?radius=${radius}&subdivisions=${subdivisions}&tileWidthRatio=${tileWidthRatio}&regenerate=true`);
             if (!response.ok) throw new Error(`Failed to fetch tiles: ${response.status}`);
             const tileData = await response.json();
-            
+
             // Rebuild the geometry with new data
             this.buildTilesFromData(tileData);
-            
+
             console.log('🗺️ Tiles regenerated successfully with new terrain distribution');
         } catch (error) {
             console.error('❌ Failed to regenerate tiles:', error);
@@ -387,7 +387,7 @@ class SceneManager {
         }
 
         return { terrainType, lat, lon };
-    }    getTerrainColor(terrainType) {
+    } getTerrainColor(terrainType) {
         return new THREE.Color(terrainColors[terrainType] || 0x808080); // Default to gray if unknown
     }
 
@@ -403,7 +403,7 @@ class SceneManager {
         }
         // Fallback to terrain color if no biome is set
         return this.getTerrainColor(tile.terrainType);
-    }addTileGeometry(tile, color, vertices, colors, indices, startVertexIndex) {
+    } addTileGeometry(tile, color, vertices, colors, indices, startVertexIndex) {
         // Validate and sanitize boundary points
         const boundaryPoints = tile.boundary.map(p => {
             const x = isNaN(p.x) ? 0 : parseFloat(p.x);
@@ -526,7 +526,7 @@ class SceneManager {
         if (!this.hexasphere || !this.hexasphere.tiles) return { error: 'No hexasphere data available' };
         const POPULATION_THRESHOLD = 10000;
         let totalTiles = 0, habitableTiles = 0, populatedTiles = 0, highPopulationTiles = 0, redTiles = 0;
-        
+
         // Initialize biome statistics
         const biomes = {
             tundra: { tiles: 0, population: 0 },
@@ -535,11 +535,11 @@ class SceneManager {
             grassland: { tiles: 0, population: 0 },
             alpine: { tiles: 0, population: 0 }
         };
-        
+
         this.hexasphere.tiles.forEach(tile => {
             totalTiles++;
             const population = tile.population || 0;
-            
+
             if (tile.Habitable === 'yes') {
                 habitableTiles++;
                 if (population > 0) populatedTiles++;
@@ -547,22 +547,22 @@ class SceneManager {
                 const colorInfo = this.tileColorIndices.get(tile.id);
                 if (colorInfo && colorInfo.isHighlighted) redTiles++;
             }
-            
+
             // Count biome statistics
             if (tile.biome && biomes[tile.biome]) {
                 biomes[tile.biome].tiles++;
                 biomes[tile.biome].population += population;
             }
         });
-        
-        return { 
-            totalTiles, 
-            habitableTiles, 
-            populatedTiles, 
-            highPopulationTiles, 
-            redTiles, 
+
+        return {
+            totalTiles,
+            habitableTiles,
+            populatedTiles,
+            highPopulationTiles,
+            redTiles,
             threshold: POPULATION_THRESHOLD,
-            biomes 
+            biomes
         };
     }
     cleanup() {

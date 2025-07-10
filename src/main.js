@@ -59,7 +59,18 @@ class GridWorldApp {
             if (!container) return false;
 
             // Create camera
-            this.camera = new THREE.PerspectiveCamera(45, width / height, 1, 200);
+            // --- ORTHOGRAPHIC CAMERA SETUP ---
+            const aspect = width / height;
+            const orthoFrustumHeight = 60; // Controls zoom (smaller = more zoomed in)
+            const orthoFrustumWidth = orthoFrustumHeight * aspect;
+            this.camera = new THREE.OrthographicCamera(
+                -orthoFrustumWidth / 2, orthoFrustumWidth / 2, // left, right
+                orthoFrustumHeight / 2, -orthoFrustumHeight / 2, // top, bottom
+                1, 200 // near, far
+            );
+            this.camera.position.set(0, 0, 80); // Place camera back from globe
+            this.camera.lookAt(0, 0, 0);
+            // --- END ORTHOGRAPHIC CAMERA SETUP ---
 
             // Initialize camera controller
             this.cameraController = new CameraController(this.camera);

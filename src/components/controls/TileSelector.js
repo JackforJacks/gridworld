@@ -200,6 +200,17 @@ class TileSelector {
         const fertilityDisplay = fertility !== null ? `${fertility}/100` : 'N/A';
         const fertilityIcon = fertility !== null ? (fertility === 0 ? '🪨' : fertility < 30 ? '🌫️' : fertility < 60 ? '🌿' : fertility < 80 ? '🌾' : '🌻') : '❓';
 
+        // Get forested land count from tile.lands
+        let forestedCount = 0;
+        let wasteCount = 0;
+        let clearedCount = 0;
+
+        if (Array.isArray(tile.lands)) {
+            forestedCount = tile.lands.filter(l => l.land_type === 'forest').length;
+            wasteCount = tile.lands.filter(l => l.land_type === 'wasteland').length;
+            clearedCount = tile.lands.filter(l => l.land_type === 'cleared').length;
+        }
+
         this.tilePopup.innerHTML = `
             <div class="tile-popup-header">
                 <strong>Tile ${tile.id}</strong>
@@ -217,6 +228,12 @@ class TileSelector {
                 <div class="tile-popup-row">
                     <span class="label">Biome:</span>
                     <span class="value biome-${biome}">${biomeDisplay}</span>
+                </div>
+                ` : ''}
+                ${tile.lands && tile.lands.length > 0 ? `
+                <div class="tile-popup-row">
+                    <span class="label">Land Types:</span>
+                    <span class="value">${forestedCount} 🌲 ${wasteCount} 🏜️ ${clearedCount} 🌾</span>
                 </div>
                 ` : ''}
                 ${fertility !== null ? `
