@@ -42,21 +42,16 @@ function calculateBiome(centerPoint, terrainType, seededRandom) {
     const latitude = Math.asin(centerPoint.y / r) * (180 / Math.PI); // Convert to degrees
     const absLatitude = Math.abs(latitude);
 
-    // Debug logging for high latitude tiles
-    if (absLatitude > 55) {
-        console.log(`[DEBUG] High latitude tile: lat=${latitude.toFixed(2)}°, absLat=${absLatitude.toFixed(2)}°, terrain=${terrainType}, y=${centerPoint.y.toFixed(3)}, r=${r.toFixed(3)}`);
-    }
-
-    // Force all land above a certain latitude to be tundra
+    // Biome priorities: 1. Polar, 2. Alpine, 3. Latitude-based for other land
     if (absLatitude > 60) {
-        console.log(`[DEBUG] Assigning TUNDRA: lat=${latitude.toFixed(2)}°, terrain=${terrainType}`);
         return 'tundra';
     }
-
-    // Otherwise, assign by terrain and latitude
     if (terrainType === 'mountains') {
         return 'alpine';
-    } else if (absLatitude > 30) {
+    }
+
+    // Latitude-based biomes for non-mountain, non-polar land
+    if (absLatitude > 30) {
         // Temperate zones - mostly grassland, some plains
         return seededRandom() < 0.7 ? 'grassland' : 'plains';
     } else if (absLatitude > 15) {
@@ -64,11 +59,7 @@ function calculateBiome(centerPoint, terrainType, seededRandom) {
         return seededRandom() < 0.5 ? 'plains' : 'grassland';
     } else {
         // Tropical zones - grassland savannas and some desert
-        if (seededRandom() < 0.6) {
-            return 'grassland'; // Tropical grasslands/savannas
-        } else {
-            return 'desert'; // Tropical deserts
-        }
+        return seededRandom() < 0.6 ? 'grassland' : 'desert';
     }
 }
 
@@ -147,24 +138,24 @@ router.get('/', async (req, res) => {
             console.log(`[API /api/tiles] Generating tiles with seed: ${seed}`);
         }
         const hexasphere = new Hexasphere(radius, subdivisions, tileWidthRatio);
-        
+
         // Check if tiles exist in database, if not, persist them
         const { rows: existingTiles } = await pool.query('SELECT COUNT(*) as count FROM tiles');
         const tilesExist = existingTiles[0].count > 0;
-        
+
         if (!tilesExist && isRegenerating) {
             console.log('[API /api/tiles] No tiles in database, persisting generated tiles...');
-            
+
             // Clear and populate tiles table
             await pool.query('TRUNCATE TABLE tiles RESTART IDENTITY CASCADE');
             await pool.query('TRUNCATE TABLE tiles_lands RESTART IDENTITY CASCADE');
-            
+
             for (const tile of hexasphere.tiles) {
                 const props = tile.getProperties ? tile.getProperties() : tile;
                 const centerPoint = tile.centerPoint ? { x: tile.centerPoint.x, y: tile.centerPoint.y, z: tile.centerPoint.z } : null;
                 const biome = centerPoint ? calculateBiome(tile.centerPoint, props.terrainType, seededRandom) : null;
                 const fertility = calculateFertility(biome, props.terrainType, seededRandom);
-                
+
                 await pool.query(`
                     INSERT INTO tiles (id, center_x, center_y, center_z, latitude, longitude, terrain_type, is_land, is_habitable, boundary_points, neighbor_ids, biome, fertility)
                     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)
@@ -185,7 +176,7 @@ router.get('/', async (req, res) => {
                 `, [
                     props.id,
                     centerPoint?.x || 0,
-                    centerPoint?.y || 0, 
+                    centerPoint?.y || 0,
                     centerPoint?.z || 0,
                     props.latitude || 0,
                     props.longitude || 0,
@@ -198,16 +189,16 @@ router.get('/', async (req, res) => {
                     fertility
                 ]);
             }
-            
+
             console.log(`[API /api/tiles] Persisted ${hexasphere.tiles.length} tiles to database`);
-            
+
             // Now initialize tiles_lands for eligible tiles
             const eligibleTiles = await pool.query(`
                 SELECT id, biome, terrain_type FROM tiles
                 WHERE terrain_type NOT IN ('ocean', 'mountains')
                   AND (biome IS NULL OR biome NOT IN ('desert', 'tundra'))
             `);
-            
+
             function getLandTypeDistribution(rng) {
                 const wastelandPercent = Math.floor(rng() * 31);
                 const forestPercent = Math.floor(rng() * 71);
@@ -218,7 +209,7 @@ router.get('/', async (req, res) => {
                 }
                 return { wasteland: wastelandPercent, forest: forestPercent, cleared: clearedPercent };
             }
-            
+
             function mulberry32(seed) {
                 return function () {
                     let t = seed += 0x6D2B79F5;
@@ -227,7 +218,7 @@ router.get('/', async (req, res) => {
                     return ((t ^ t >>> 14) >>> 0) / 4294967296;
                 }
             }
-            
+
             for (const tile of eligibleTiles.rows) {
                 const rng = mulberry32(tile.id);
                 const dist = getLandTypeDistribution(rng);
@@ -235,12 +226,12 @@ router.get('/', async (req, res) => {
                 landTypes = landTypes.concat(Array(dist.wasteland).fill('wasteland'));
                 landTypes = landTypes.concat(Array(dist.forest).fill('forest'));
                 landTypes = landTypes.concat(Array(100 - landTypes.length).fill('cleared'));
-                
+
                 for (let i = landTypes.length - 1; i > 0; i--) {
                     const j = Math.floor(rng() * (i + 1));
                     [landTypes[i], landTypes[j]] = [landTypes[j], landTypes[i]];
                 }
-                
+
                 for (let chunk_index = 0; chunk_index < 100; chunk_index++) {
                     await pool.query(
                         `INSERT INTO tiles_lands (tile_id, chunk_index, land_type, cleared) VALUES ($1, $2, $3, $4) ON CONFLICT DO NOTHING`,
@@ -248,10 +239,10 @@ router.get('/', async (req, res) => {
                     );
                 }
             }
-            
+
             console.log(`[API /api/tiles] Initialized tiles_lands for ${eligibleTiles.rows.length} eligible tiles`);
         }
-        
+
         const tiles = await Promise.all(hexasphere.tiles.map(async tile => {
             const props = tile.getProperties ? tile.getProperties() : tile;
             // Add boundary as array of {x, y, z}
@@ -262,7 +253,7 @@ router.get('/', async (req, res) => {
             } else {
                 props.centerPoint = undefined;
             }
-            
+
             // --- Fetch persisted tile data from database ---
             try {
                 const { rows: dbTiles } = await pool.query(
@@ -284,7 +275,7 @@ router.get('/', async (req, res) => {
                 props.biome = calculateBiome(tile.centerPoint, props.terrainType, seededRandom);
                 props.fertility = calculateFertility(props.biome, props.terrainType, seededRandom);
             }
-            
+
             // --- Fetch tiles_lands for this tile ---
             try {
                 const { rows: lands } = await pool.query(

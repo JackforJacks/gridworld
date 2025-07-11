@@ -6,33 +6,33 @@ class InputHandler {
         this.renderer = renderer;
         this.cameraController = cameraController;
         this.tileSelector = tileSelector;
-        
+
         this.mouseState = {
             isDragging: false,
             previousPosition: { x: 0, y: 0 },
             initialPosition: { x: 0, y: 0 },
             clickStartTime: 0
         };
-        
+
         this.clickTolerance = 5;
         this.setupEventListeners();
     }
 
     setupEventListeners() {
         const canvas = this.renderer.domElement;
-        
+
         // Mouse events
         canvas.addEventListener('mousedown', this.onMouseDown.bind(this), { passive: false });
         canvas.addEventListener('mousemove', this.onMouseMove.bind(this), { passive: true });
         canvas.addEventListener('mouseup', this.onMouseUp.bind(this), { passive: false });
         canvas.addEventListener('mouseleave', this.onMouseLeave.bind(this));
-        
+
         // Wheel events
         window.addEventListener('wheel', this.onWheel.bind(this), { passive: false });
-        
+
         // Keyboard events
         window.addEventListener('keydown', this.onKeyDown.bind(this), { passive: false });
-        
+
         // Window events
         window.addEventListener('resize', this.onResize.bind(this), false);
     }
@@ -45,7 +45,7 @@ class InputHandler {
         }
 
         event.preventDefault();
-        
+
         this.mouseState.isDragging = true;
         this.mouseState.previousPosition.x = event.clientX;
         this.mouseState.previousPosition.y = event.clientY;
@@ -56,15 +56,15 @@ class InputHandler {
 
     onMouseMove(event) {
         if (!this.mouseState.isDragging) return;
-        
+
         const deltaX = event.clientX - this.mouseState.previousPosition.x;
         const deltaY = event.clientY - this.mouseState.previousPosition.y;
-        
+
         this.cameraController.handleMouseDrag(deltaX, deltaY);
-        
+
         this.mouseState.previousPosition.x = event.clientX;
         this.mouseState.previousPosition.y = event.clientY;
-        
+
         // Hide tile info panel during dragging
         if (this.tileSelector) {
             this.tileSelector.hideInfoPanel();
@@ -73,22 +73,22 @@ class InputHandler {
 
     onMouseUp(event) {
         if (!this.mouseState.isDragging) return;
-        
+
         event.preventDefault();
-        
+
         const clickDuration = Date.now() - this.mouseState.clickStartTime;
         const clickDistance = Math.sqrt(
-            Math.pow(event.clientX - this.mouseState.initialPosition.x, 2) + 
+            Math.pow(event.clientX - this.mouseState.initialPosition.x, 2) +
             Math.pow(event.clientY - this.mouseState.initialPosition.y, 2)
         );
-        
+
         // If it was a quick click with minimal movement, treat it as tile selection
         if (clickDuration < 200 && clickDistance < this.clickTolerance) {
             if (this.tileSelector) {
                 this.tileSelector.handleClick(event);
             }
         }
-        
+
         this.mouseState.isDragging = false;
     }
 
@@ -109,7 +109,7 @@ class InputHandler {
         if (event.target.tagName === 'INPUT' || event.target.tagName === 'TEXTAREA') {
             return;
         }
-        
+
         event.preventDefault();
         this.cameraController.handleKeyboard(event.key);
     }
@@ -117,7 +117,7 @@ class InputHandler {
     onResize() {
         const width = window.innerWidth;
         const height = window.innerHeight - 10;
-        
+
         this.renderer.setSize(width, height);
         this.cameraController.handleResize(width, height);
     }
