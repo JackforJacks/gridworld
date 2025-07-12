@@ -278,10 +278,14 @@ router.get('/', async (req, res) => {
 
             // --- Fetch tiles_lands for this tile ---
             try {
-                const { rows: lands } = await pool.query(
-                    'SELECT chunk_index, land_type, cleared, owner_id FROM tiles_lands WHERE tile_id = $1 ORDER BY chunk_index',
-                    [props.id]
-                );
+                const { rows: lands } = await pool.query(`
+                    SELECT tl.chunk_index, tl.land_type, tl.cleared, tl.owner_id,
+                           v.id AS village_id, v.name AS village_name, v.housing_slots
+                    FROM tiles_lands tl
+                    LEFT JOIN villages v ON v.tile_id = tl.tile_id AND v.land_chunk_index = tl.chunk_index
+                    WHERE tl.tile_id = $1
+                    ORDER BY tl.chunk_index
+                `, [props.id]);
                 props.lands = lands;
             } catch (e) {
                 console.error(`[ERROR] Failed to fetch lands for tile ${props.id}:`, e.message);

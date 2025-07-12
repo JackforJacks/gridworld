@@ -44,6 +44,21 @@ async function runMigration() {
 
         console.log('📋 Database tables:', allTables.rows.map(row => row.table_name).join(', '));
 
+        // Create villages table if it does not exist
+        await pool.query(`
+            CREATE TABLE IF NOT EXISTS villages (
+                id SERIAL PRIMARY KEY,
+                tile_id INTEGER NOT NULL REFERENCES tiles(id) ON DELETE CASCADE,
+                land_chunk_index INTEGER NOT NULL CHECK (land_chunk_index >= 0 AND land_chunk_index < 100),
+                name VARCHAR(100),
+                housing_slots JSONB DEFAULT '[]',
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                UNIQUE(tile_id, land_chunk_index)
+            )
+        `);
+        console.log('✅ villages table confirmed created or already exists');
+
     } catch (error) {
         console.error('❌ Migration failed:', error.message);
         console.error('Full error:', error);

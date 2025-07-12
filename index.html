@@ -67,6 +67,90 @@
             display: none;
         }
 
+        .info-panel-btn {
+            width: 48px;
+            flex: 1 1 0;
+            min-height: 0;
+            max-height: 64px;
+            font-size: 2rem;
+            border-radius: 12px;
+            border: none;
+            background: #fff;
+            color: #000000;
+            margin: 0;
+            box-shadow: 0 2px 8px rgba(0, 0, 0, 0.2);
+            transition: background 0.2s, transform 0.2s;
+            cursor: pointer;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+
+        .info-panel-btn:last-child {
+            margin-bottom: 0;
+        }
+
+        .info-panel-btn:hover {
+            background: #444;
+            transform: scale(1.08);
+        }
+
+        .info-panel-buttons {
+            height: calc(100% - 60px);
+            /* Adjust if your header/footer is a different height */
+            display: flex;
+            flex-direction: column;
+            justify-content: space-between;
+            align-items: center;
+        }
+
+        .info-panel-page {
+            padding: 10px;
+            line-height: 1.6;
+        }
+
+        .info-panel-page h3 {
+            margin: 0 0 10px 0;
+            color: #fff;
+            font-size: 1.2em;
+        }
+
+        .info-panel-page p {
+            margin: 0 0 15px 0;
+            color: #ccc;
+            font-size: 0.9em;
+        }
+
+        .info-panel-page div {
+            margin: 5px 0;
+            color: #fff;
+        }
+
+        .info-panel-page button {
+            background: #007acc;
+            color: #fff;
+            border: none;
+            padding: 8px 16px;
+            border-radius: 4px;
+            cursor: pointer;
+            margin: 5px 0;
+        }
+
+        .info-panel-page button:hover {
+            background: #005a9e;
+        }
+
+        .info-panel-page label {
+            color: #fff;
+            display: block;
+            margin: 8px 0;
+            cursor: pointer;
+        }
+
+        .info-panel-page input[type="checkbox"] {
+            margin-right: 8px;
+        }
+
         /* End Critical FOUC Prevention CSS */
     </style>
 
@@ -87,17 +171,127 @@
     </div>
     <div id="container">
     </div>
-    <div id="tileInfoPanel" class="tile-info-panel hidden">
+    <div id="tileInfoPanel" class="tile-info-panel hidden" style="position:fixed; overflow:visible;">
         <div class="tile-info-header">
             <strong id="tileInfoTitle">Tile Information</strong>
             <button id="closeInfoPanel" class="close-info-panel">×</button>
         </div>
         <div class="tile-info-content">
-            <!-- Content will be populated by JavaScript -->
+            <div class="info-panel-page" id="info-panel-page-1">
+                <h3>👤 Population</h3>
+                <p>View population statistics, demographics, and family information for this tile.</p>
+                <div>Current Population: <strong>0</strong></div>
+                <div>Families: <strong>0</strong></div>
+                <div>Birth Rate: <strong>0%</strong></div>
+            </div>
+            <div class="info-panel-page" id="info-panel-page-2" style="display:none;">
+                <h3>🏛️ Villages</h3>
+                <p>Manage villages and buildings on this tile.</p>
+                <div>Villages: <strong>0</strong></div>
+                <div>Housing Slots: <strong>0</strong></div>
+                <button>Build New Village</button>
+            </div>
+            <div class="info-panel-page" id="info-panel-page-3" style="display:none;">
+                <h3>🌾 Resources</h3>
+                <p>View and manage tile resources and production.</p>
+                <div>Food Production: <strong>0</strong></div>
+                <div>Available Resources: <strong>None</strong></div>
+            </div>
+            <div class="info-panel-page" id="info-panel-page-4" style="display:none;">
+                <h3>⚔️ Military</h3>
+                <p>Military units and defense information.</p>
+                <div>Defense Rating: <strong>0</strong></div>
+                <div>Military Units: <strong>0</strong></div>
+            </div>
+            <div class="info-panel-page" id="info-panel-page-5" style="display:none;">
+                <h3>💰 Economy</h3>
+                <p>Economic information and trade data.</p>
+                <div>Wealth Level: <strong>Poor</strong></div>
+                <div>Trade Routes: <strong>0</strong></div>
+            </div>
+            <div class="info-panel-page" id="info-panel-page-6" style="display:none;">
+                <h3>⚙️ Settings</h3>
+                <p>Tile-specific settings and configuration.</p>
+                <label><input type="checkbox" id="auto-manage-population" name="auto-manage-population"> Auto-manage population</label><br>
+                <label><input type="checkbox" id="enable-trade" name="enable-trade"> Enable trade</label><br>
+                <button>Reset Tile</button>
+            </div>
+        </div>
+        <div class="info-panel-buttons" style="position:absolute; top:50px; right:-55px; height:calc(100% - 50px);">
+            <button class="info-panel-btn" id="info-btn-1">👤</button>
+            <button class="info-panel-btn" id="info-btn-2">🏛️</button>
+            <button class="info-panel-btn" id="info-btn-3">🌾</button>
+            <button class="info-panel-btn" id="info-btn-4">⚔️</button>
+            <button class="info-panel-btn" id="info-btn-5">💰</button>
+            <button class="info-panel-btn" id="info-btn-6">⚙️</button>
         </div>
     </div>
     <!-- Chart.js for statistics charts -->
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <script>
+        // Info panel tab/page switching logic
+        window.addEventListener('load', function() {
+            console.log('Window loaded, setting up button listeners');
+            const pageIds = [
+                'info-panel-page-1',
+                'info-panel-page-2',
+                'info-panel-page-3',
+                'info-panel-page-4',
+                'info-panel-page-5',
+                'info-panel-page-6'
+            ];
+            
+            // Test if elements exist
+            console.log('Info panel:', document.getElementById('tileInfoPanel'));
+            console.log('Page 1:', document.getElementById('info-panel-page-1'));
+            console.log('Button 1:', document.getElementById('info-btn-1'));
+            
+            for (let i = 1; i <= 6; i++) {
+                const btn = document.getElementById('info-btn-' + i);
+                console.log('Button', i, btn ? 'found' : 'not found');
+                if (!btn) continue;
+                
+                btn.addEventListener('click', function(e) {
+                    e.preventDefault();
+                    e.stopPropagation();
+                    console.log('Button', i, 'clicked');
+                    
+                    // Remove hidden class from info panel to make it visible
+                    const infoPanel = document.getElementById('tileInfoPanel');
+                    if (infoPanel) {
+                        infoPanel.classList.remove('hidden');
+                        // Force visibility in case hidden class has strong CSS rules
+                        infoPanel.style.opacity = '1';
+                        infoPanel.style.transform = 'translateY(0)';
+                        infoPanel.style.pointerEvents = 'auto';
+                        infoPanel.style.display = 'block';
+                        console.log('Info panel made visible');
+                    }
+                    
+                    // Switch pages
+                    pageIds.forEach((pid, idx) => {
+                        const page = document.getElementById(pid);
+                        if (page) {
+                            const shouldShow = (idx === i - 1);
+                            page.style.display = shouldShow ? 'block' : 'none';
+                            console.log('Page', pid, 'set to', shouldShow ? 'visible' : 'hidden');
+                        } else {
+                            console.log('Page', pid, 'not found');
+                        }
+                    });
+                    
+                    // Add visual feedback to show which button is active
+                    document.querySelectorAll('.info-panel-btn').forEach(b => {
+                        b.style.backgroundColor = '#fff';
+                        b.style.color = '#000000';
+                    });
+                    btn.style.backgroundColor = '#007acc';
+                    btn.style.color = '#ffffff';
+                    console.log('Button', i, 'highlighted');
+                });
+            }
+        });
+    </script>
     <!-- ref:include analytics -->
     <!-- endref -->
 

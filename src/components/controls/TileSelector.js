@@ -225,7 +225,7 @@ class TileSelector {
             clearedCount = tile.lands.filter(l => l.land_type === 'cleared').length;
         }
 
-        const contentDiv = this.tileInfoPanel.querySelector('.tile-info-content');
+        const contentDiv = this.tileInfoPanel.querySelector('#info-panel-page-1'); // Target the first page specifically
         const titleElement = this.tileInfoPanel.querySelector('#tileInfoTitle');
 
         // Update the title with the tile ID
@@ -269,6 +269,15 @@ class TileSelector {
         }
 
         this.tileInfoPanel.className = 'tile-info-panel visible';
+
+        // Reset to the first page whenever a new tile is selected
+        document.querySelectorAll('.info-panel-page').forEach((page, index) => {
+            page.style.display = index === 0 ? 'block' : 'none';
+        });
+        document.querySelectorAll('.info-panel-btn').forEach((btn, index) => {
+            btn.style.backgroundColor = index === 0 ? '#007acc' : '#fff';
+            btn.style.color = index === 0 ? '#ffffff' : '#000000';
+        });
     }
 
     hideInfoPanel() {

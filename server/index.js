@@ -12,6 +12,7 @@ const socketConfig = require('./config/socket');
 
 // Import routes
 const apiRoutes = require('./routes/api');
+const villagesRouter = require('./routes/villages');
 
 // Import services
 const PopulationService = require('./services/populationService');
@@ -40,7 +41,8 @@ class GridWorldServer {
         this.app.use(express.static(path.join(__dirname, '../dist')));
 
         // Setup routes
-        this.app.use('/api', apiRoutes);        // Serve frontend for all non-API routes (SPA behavior)
+        this.app.use('/api', apiRoutes);
+        this.app.use('/api/villages', villagesRouter);        // Serve frontend for all non-API routes (SPA behavior)
         this.app.get('/', (req, res) => {
             res.sendFile(path.join(__dirname, '../dist', 'index.html'));
         });
@@ -146,7 +148,7 @@ class GridWorldServer {
         });        // Graceful shutdown
         process.on('SIGINT', async () => {
             console.log('\n🛑 Shutting down server...');
-            
+
             if (populationServiceInstance) {
                 await populationServiceInstance.shutdown();
             }
