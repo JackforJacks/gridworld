@@ -58,47 +58,50 @@ async function createFamily(pool, husbandId, wifeId, tileId) {
  * @returns {Object} Updated family record
  */
 async function startPregnancy(pool, calendarService, familyId) {
+    const client = await pool.connect();
     try {
+        await client.query('BEGIN');
+
         // Get current calendar date
         let currentDate = { year: 1, month: 1, day: 1 };
         if (calendarService && typeof calendarService.getCurrentDate === 'function') {
             currentDate = calendarService.getCurrentDate();
         }
 
-        // Check wife's age before allowing pregnancy
-        const familyResult = await pool.query(`
-            SELECT f.id, f.wife_id, p.date_of_birth as wife_birth_date
+        // Lock the family row to prevent concurrent pregnancy starts
+        const familyResult = await client.query(`
+            SELECT f.id, f.wife_id, f.pregnancy, p.date_of_birth as wife_birth_date
             FROM family f
             JOIN people p ON f.wife_id = p.id
-            WHERE f.id = $1 AND f.pregnancy = FALSE
+            WHERE f.id = $1
+            FOR UPDATE
         `, [familyId]);
 
         if (familyResult.rows.length === 0) {
-            throw new Error('Family not found or already pregnant');
+            throw new Error(`Family ${familyId} not found`);
         }
 
         const family = familyResult.rows[0];
+        if (family.pregnancy) {
+            throw new Error(`Family ${familyId} is already pregnant`);
+        }
+
         const wifeBirthDate = family.wife_birth_date;
 
         // Calculate wife's age - handle both string and Date object formats
         let birthYear, birthMonth, birthDay;
-
         if (typeof wifeBirthDate === 'string') {
-            // Handle string format "YYYY-MM-DD"
             [birthYear, birthMonth, birthDay] = wifeBirthDate.split('-').map(Number);
         } else if (wifeBirthDate instanceof Date) {
-            // Handle Date object format
             birthYear = wifeBirthDate.getFullYear();
-            birthMonth = wifeBirthDate.getMonth() + 1; // JS months are 0-indexed
+            birthMonth = wifeBirthDate.getMonth() + 1;
             birthDay = wifeBirthDate.getDate();
         } else {
-            // Fallback - treat as string and attempt conversion
             const dateStr = String(wifeBirthDate);
             [birthYear, birthMonth, birthDay] = dateStr.split('-').map(Number);
         }
 
         const { year: currentYear, month: currentMonth, day: currentDay } = currentDate;
-
         let wifeAge = currentYear - birthYear;
         if (currentMonth < birthMonth || (currentMonth === birthMonth && currentDay < birthDay)) {
             wifeAge--;
@@ -106,41 +109,42 @@ async function startPregnancy(pool, calendarService, familyId) {
 
         // Check if wife is too old for pregnancy (limit: 33 years old)
         if (wifeAge > 33) {
-            console.log(`❌ Pregnancy denied for family ${familyId}: wife is ${wifeAge} years old (limit: 33)`);
-            throw new Error(`Wife is too old for pregnancy (${wifeAge} years old, limit: 33)`);
+            throw new Error(`Wife too old for pregnancy: age ${wifeAge} (limit 33)`);
         }
 
-        // Calculate delivery date (approximately 9 months later)
+        // Calculate delivery date (approx 9 months later)
         const deliveryYear = currentDate.year;
         const deliveryMonth = currentDate.month + 9;
         const deliveryDay = currentDate.day;
-
-        // Adjust for month overflow
         let finalMonth = deliveryMonth;
         let finalYear = deliveryYear;
         if (deliveryMonth > 12) {
             finalMonth = deliveryMonth - 12;
             finalYear = deliveryYear + 1;
         }
-
         const deliveryDate = `${finalYear}-${String(finalMonth).padStart(2, '0')}-${String(deliveryDay).padStart(2, '0')}`;
 
-        const result = await pool.query(`
-            UPDATE family 
+        const updateResult = await client.query(`
+            UPDATE family
             SET pregnancy = TRUE, delivery_date = $1, updated_at = CURRENT_TIMESTAMP
             WHERE id = $2 AND pregnancy = FALSE
             RETURNING *
         `, [deliveryDate, familyId]);
 
-        if (result.rows.length === 0) {
-            throw new Error('Family not found or already pregnant');
+        if (updateResult.rows.length === 0) {
+            throw new Error(`Failed to mark family ${familyId} pregnant (concurrent update?)`);
         }
 
+        await client.query('COMMIT');
+
         console.log(`🤰 Pregnancy started for family ${familyId}, wife age: ${wifeAge}, delivery expected: ${deliveryDate}`);
-        return result.rows[0];
+        return updateResult.rows[0];
     } catch (error) {
-        console.error('Error starting pregnancy:', error);
+        try { await client.query('ROLLBACK'); } catch (e) { /* ignore rollback errors */ }
+        console.error(`Error starting pregnancy for family ${familyId}:`, error.message || error);
         throw error;
+    } finally {
+        client.release();
     }
 }
 

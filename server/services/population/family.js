@@ -126,7 +126,11 @@ async function createRandomFamilies(pool, tileId, calendarService = null) {
                         [males[i].id, females[i].id]
                     );
                     if (familyResult.rows.length > 0) {
-                        await startPregnancy(pool, null, familyResult.rows[0].id);
+                        try {
+                            await startPregnancy(pool, null, familyResult.rows[0].id);
+                        } catch (err) {
+                            console.warn(`[family.createRandomFamilies] startPregnancy failed for family ${familyResult.rows[0].id}: ${err.message || err}`);
+                        }
                     }
                 }
             } catch (error) {

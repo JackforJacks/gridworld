@@ -206,7 +206,8 @@ async function processDailyFamilyEvents(pool, calendarService, serviceInstance) 
                     await startPregnancy(pool, calendarService, family.id);
                     newPregnancies++;
                 } catch (error) {
-                    // Silent fail for pregnancy attempts
+                    // Log a concise warning and continue processing other families
+                    console.warn(`[lifecycle.processDailyFamilyEvents] Could not start pregnancy for family ${family.id}: ${error.message || error}`);
                 }
             }
         }
