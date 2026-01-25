@@ -20,6 +20,8 @@ class PopulationManager {
         this.reconnectAttempts = 0;
         this.maxReconnectAttempts = 5;
         this.reconnectDelay = 1000;
+        this.connectionRetries = 0;
+        this.maxRetries = 5;
         this.apiBaseUrl = '/api/population';
     }
 
@@ -68,14 +70,14 @@ class PopulationManager {
     }
 
     // Initialize connection to the server with retry logic
-    async connect() {
+    async connect(forceNew = false) {
         try {
             // Connect to the socket.io server through the webpack dev server proxy
             this.socket = io('http://localhost:8080', {
                 timeout: 30000,
                 transports: ['polling'], // Use only polling to bypass WebSocket proxy issues
                 upgrade: false, // Disable upgrading to WebSocket
-                forceNew: false,
+                forceNew: !!forceNew, // ensure a fresh sid when forced
                 reconnection: true,
                 reconnectionDelay: 1000,
                 reconnectionDelayMax: 5000,
@@ -143,6 +145,13 @@ class PopulationManager {
                 this.connect();
             }, delay);
         }
+    }
+
+    // Force a clean reconnect (used after server-side reset)
+    async forceReconnect() {
+        this.disconnect();
+        this.connectionRetries = 0;
+        await this.connect(true); // force a new SID after server reset
     }
 
     // OPTIMIZED: Centralized data update logic

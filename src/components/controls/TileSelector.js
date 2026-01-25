@@ -11,6 +11,32 @@ class TileSelector {
         this.borderLines = null;
         this.tileInfoPanel = document.getElementById('tileInfoPanel');
         this.closeInfoPanelBtn = document.getElementById('closeInfoPanel');
+        // Expose current instance globally so event handlers always call the active TileSelector
+        window.tileSelector = this;
+
+        // Watch the panel for DOM changes (pages may replace content and remove attached handlers)
+        try {
+            if (this.tileInfoPanel && typeof MutationObserver !== 'undefined') {
+                this._infoPanelMutationObserver = new MutationObserver((mutations) => {
+                    if (window.__tileSelectorDebug) console.debug('TileSelector: tileInfoPanel mutated', mutations);
+                    try { this.ensureCloseButtonAttached(); } catch (_) { }
+                });
+                this._infoPanelMutationObserver.observe(this.tileInfoPanel, { childList: true, subtree: true, attributes: true, characterData: true });
+            }
+        } catch (e) {
+            // ignore if MutationObserver not available in environment
+        }
+
+        // Add listeners to page buttons so that switching pages re-attaches close handlers
+        try {
+            const pageButtons = document.querySelectorAll('.info-panel-btn');
+            pageButtons.forEach(btn => {
+                btn.addEventListener('click', (e) => {
+                    if (window.__tileSelectorDebug) console.debug('TileSelector: page button clicked', btn.id);
+                    try { this.ensureCloseButtonAttached(); } catch (_) { }
+                }, true);
+            });
+        } catch (_) { }
 
         this.borderMaterial = new THREE.LineBasicMaterial({
             color: 0xff0000,
@@ -21,16 +47,69 @@ class TileSelector {
         this.infoRefreshInterval = null;
         this.infoRefreshTileId = null;
 
-        // Add close button event listener
-        if (this.closeInfoPanelBtn) {
-            this.closeInfoPanelBtn.addEventListener('click', () => {
-                this.hideInfoPanel();
-                this.deselectAll();
+        // Use event delegation on the panel itself to handle close button clicks
+        // This works even if the button is replaced/recreated. Attach only once.
+        if (this.tileInfoPanel && !this.tileInfoPanel.dataset.closeDelegateAttached) {
+            this.tileInfoPanel.addEventListener('click', (e) => {
+                const closeBtn = e.target.closest('#closeInfoPanel, .close-info-panel');
+                if (closeBtn) {
+                    e.preventDefault();
+                    e.stopPropagation();
+                    try { if (window.tileSelector && typeof window.tileSelector.hideInfoPanel === 'function') window.tileSelector.hideInfoPanel(); } catch (_) { }
+                    try { if (window.tileSelector && typeof window.tileSelector.deselectAll === 'function') window.tileSelector.deselectAll(); } catch (_) { }
+                }
             });
+            this.tileInfoPanel.dataset.closeDelegateAttached = '1';
+        }
+
+        // Fallback: global listener to ensure close works even if panel/button is replaced
+        if (!window.__tileSelectorCloseHandlerAttached) {
+            const docHandler = (e) => {
+                const closeBtn = e.target && e.target.closest && e.target.closest('#closeInfoPanel, .close-info-panel');
+                if (closeBtn) {
+                    if (window.__tileSelectorDebug) console.debug('TileSelector: docHandler caught close click (debug)', e.target);
+                    e.preventDefault();
+                    e.stopPropagation();
+                    try { if (window.tileSelector && typeof window.tileSelector.hideInfoPanel === 'function') window.tileSelector.hideInfoPanel(); } catch (_) { }
+                    try { if (window.tileSelector && typeof window.tileSelector.deselectAll === 'function') window.tileSelector.deselectAll(); } catch (_) { }
+                    // As a fallback, directly hide the DOM panel in case the instance method fails
+                    try {
+                        const panel = document.getElementById('tileInfoPanel');
+                        if (panel) {
+                            panel.classList.add('hidden');
+                            panel.style.display = 'none';
+                            panel.style.pointerEvents = 'none';
+                            try { window.__tileSelectorJustClosed = Date.now(); } catch (_) { }
+                        }
+                    } catch (_) { }
+                    // Try removing visual selection if instance exists
+                    try { if (window.tileSelector && typeof window.tileSelector.removeBorder === 'function') window.tileSelector.removeBorder(); } catch (_) { }
+                    try { if (window.tileSelector) window.tileSelector.selectedTile = null; } catch (_) { }
+                }
+            };
+            // capture click/pointer events early to catch interactions even if propagation is stopped elsewhere
+            document.addEventListener('pointerdown', docHandler, true);
+            document.addEventListener('click', docHandler, true);
+            document.addEventListener('pointerup', docHandler, true);
+
+            // allow Escape key to close the panel as an extra fallback
+            const keyHandler = (ev) => {
+                if (ev.key === 'Escape' || ev.key === 'Esc') {
+                    try { if (window.tileSelector && typeof window.tileSelector.hideInfoPanel === 'function') window.tileSelector.hideInfoPanel(); } catch (_) { }
+                    try { if (window.tileSelector && typeof window.tileSelector.deselectAll === 'function') window.tileSelector.deselectAll(); } catch (_) { }
+                }
+            };
+            document.addEventListener('keydown', keyHandler, true);
+
+            // mark as attached to avoid duplicates
+            window.__tileSelectorCloseHandlerAttached = true;
         }
     }
 
     handleClick(event) {
+        // Debug trace: log when clicks reach the TileSelector
+        // debug: clicks reach TileSelector (guarded by __tileSelectorDebug if needed)
+        if (window.__tileSelectorDebug) try { console.debug('TileSelector.handleClick', event.clientX, event.clientY, 'target=', event.target && event.target.tagName); } catch (_) { }
         // Check if the click is on the info panel - if so, ignore it
         if (this.tileInfoPanel && this.tileInfoPanel.contains(event.target)) {
             return;
@@ -157,6 +236,8 @@ class TileSelector {
 
     showInfoPanel(tile) {
         if (!this.tileInfoPanel) return;
+        // Clear recent-close guard so user clicks always reopen panel
+        try { delete window.__tileSelectorJustClosed; } catch (_) { }
         // Clear any existing interval
         if (this.infoRefreshInterval) {
             clearInterval(this.infoRefreshInterval);
@@ -169,11 +250,49 @@ class TileSelector {
 
         // Ensure panel is visible and page1 is active
         if (this.tileInfoPanel) {
+            // Make sure panel is visible even if it was forcibly hidden
+            try { this.tileInfoPanel.style.display = 'block'; } catch (_) { }
+            try { this.tileInfoPanel.style.pointerEvents = 'auto'; } catch (_) { }
             this.tileInfoPanel.classList.remove('hidden');
+            // Ensure panel sits above the canvas and can receive pointer events
+            try {
+                this.tileInfoPanel.style.zIndex = '99999';
+                this.tileInfoPanel.style.position = 'fixed';
+                this.tileInfoPanel.style.pointerEvents = 'auto';
+                // Move panel to document.body to avoid stacking-context issues from transformed parents
+                try {
+                    if (this.tileInfoPanel.parentElement !== document.body) {
+                        document.body.appendChild(this.tileInfoPanel);
+                        if (window.__tileSelectorDebug) console.debug('TileSelector: moved tileInfoPanel to document.body');
+                    }
+                } catch (e) { }
+            } catch (_) { }
             const page1 = this.tileInfoPanel.querySelector('#info-panel-page-1');
             const page2 = this.tileInfoPanel.querySelector('#info-panel-page-2');
             if (page1) page1.style.display = '';
             if (page2) page2.style.display = 'none';
+
+            // Attach direct handlers to the close button to avoid delegation issues when pages change
+            const closeBtn = this.tileInfoPanel.querySelector('#closeInfoPanel');
+            if (closeBtn && !closeBtn.dataset.listenerAttached) {
+                // make sure the button can receive pointer events and sits above the canvas
+                try { closeBtn.style.pointerEvents = 'auto'; } catch (_) { }
+                try { closeBtn.style.zIndex = '100000'; } catch (_) { }
+                try { closeBtn.style.position = 'absolute'; } catch (_) { }
+                try { closeBtn.style.top = '10px'; } catch (_) { }
+                try { closeBtn.style.right = '10px'; } catch (_) { }
+                const handler = (ev) => {
+                    ev.preventDefault();
+                    ev.stopPropagation();
+                    try { closeBtn.style.pointerEvents = 'auto'; } catch (_) { }
+                    if (window.__tileSelectorDebug) console.debug('closeInfoPanel direct handler fired (debug)', ev.target);
+                    try { if (window.tileSelector && typeof window.tileSelector.hideInfoPanel === 'function') window.tileSelector.hideInfoPanel(); } catch (_) { }
+                    try { if (window.tileSelector && typeof window.tileSelector.deselectAll === 'function') window.tileSelector.deselectAll(); } catch (_) { }
+                };
+                closeBtn.addEventListener('click', handler, true);
+                closeBtn.addEventListener('pointerup', handler, true);
+                closeBtn.dataset.listenerAttached = '1';
+            }
         }
 
         // Start periodic refresh for this tile while panel visible
@@ -295,7 +414,6 @@ class TileSelector {
             if (Array.isArray(tile.lands)) villageEntries = tile.lands.filter(l => l.village_id !== null && l.village_id !== undefined);
             const villagesCount = villageEntries.length;
             const clearedCountDebug = Array.isArray(tile.lands) ? tile.lands.filter(l => l.cleared).length : 0;
-            console.debug(`[TileSelector] tile ${tile.id} terrain=${tile.terrainType} Habitable=${tile.Habitable} lands=${Array.isArray(tile.lands) ? tile.lands.length : 0} cleared=${clearedCountDebug} villages=${villagesCount}`);
             const occupiedSlotsTotal = villageEntries.reduce((sum, v) => {
                 const occ = Array.isArray(v.housing_slots) ? v.housing_slots.length : (v.occupied_slots || 0);
                 return sum + occ;
@@ -333,9 +451,31 @@ class TileSelector {
 
     }
 
+    ensureCloseButtonAttached() {
+        // Ensure close button has direct handlers and is attached to the current instance
+        if (!this.tileInfoPanel) return;
+        const closeBtn = this.tileInfoPanel.querySelector('#closeInfoPanel');
+        if (!closeBtn) return;
+        // If already attached and not debugging, skip reattaching
+        if (closeBtn.dataset.listenerAttached && !window.__tileSelectorDebug) return;
+
+        const handler = (ev) => {
+            try { ev.preventDefault(); ev.stopPropagation(); } catch (_) { }
+            if (window.__tileSelectorDebug) console.debug('closeInfoPanel direct handler fired (ensure)', ev ? ev.target : null);
+            try { if (window.tileSelector && typeof window.tileSelector.hideInfoPanel === 'function') window.tileSelector.hideInfoPanel(); } catch (_) { }
+            try { if (window.tileSelector && typeof window.tileSelector.deselectAll === 'function') window.tileSelector.deselectAll(); } catch (_) { }
+        };
+        // remove any previous handlers bound with same signature to avoid duplicates
+        try { closeBtn.removeEventListener('click', handler, true); } catch (_) { }
+        try { closeBtn.removeEventListener('pointerup', handler, true); } catch (_) { }
+        closeBtn.addEventListener('click', handler, true);
+        closeBtn.addEventListener('pointerup', handler, true);
+        closeBtn.dataset.listenerAttached = '1';
+    }
+
     hideInfoPanel() {
         if (this.tileInfoPanel) {
-            this.tileInfoPanel.className = 'tile-info-panel hidden';
+            this.tileInfoPanel.classList.add('hidden');
             if (this.infoRefreshInterval) {
                 clearInterval(this.infoRefreshInterval);
                 this.infoRefreshInterval = null;

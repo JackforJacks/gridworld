@@ -187,71 +187,38 @@ class UIManager {
         }
         try {
             console.log("🔄 Resetting all data...");
-
-            // 0. Ensure DB schema exists (run migrations)
-            try {
-                console.log('🔧 Initializing database schema...');
-                const resp = await fetch('/api/db/init', { method: 'POST' });
-                if (!resp.ok) throw new Error(`DB init failed: ${resp.status}`);
-                console.log('🗂️ Database initialized.');
-            } catch (err) {
-                console.error('Failed to initialize DB schema:', err);
-                this.showMessage('DB initialization failed', 'error');
-                return;
-            }
-
-            // 1. Reset population data on the server
-            await populationManager.resetPopulation();
-            console.log("🏘️ Population data reset on server.");
-
-            // 2. Regenerate tiles (new terrain and habitability)
-            console.log("🌍 Regenerating tiles...");
-            await this.sceneManager.regenerateTiles();
-            console.log("🗺️ Tiles regenerated with new terrain.");
-
-            // 3. Reset tile colors on the client
-            this.sceneManager.resetTileColors();
-            console.log("🎨 Tile colors reset on client.");
-
-            // 4. Re-initialize population on newly generated habitable tiles
-            await this.sceneManager.reinitializePopulation();
-            console.log("🌱 Population re-initialized on habitable tiles.");
-
-            // 4b. Seed villages on tiles that now have population
-            try {
-                console.log('🏘️ Seeding villages on populated tiles...');
-                const seedResp = await fetch('/api/villages/seed-random', { method: 'POST' });
-                if (!seedResp.ok) {
-                    console.warn('Village seeding request failed:', seedResp.status);
-                } else {
-                    const seedResult = await seedResp.json();
-                    console.log('Village seeding result:', seedResult);
-                }
-            } catch (err) {
-                console.error('Failed to seed villages after population init:', err);
-            }
-
-            // Refresh tiles from server so `tile.lands` includes village data
-            try {
-                console.log('🔁 Refreshing tiles to include newly-seeded villages...');
-                await this.sceneManager.createHexasphere();
-                console.log('🔁 Tiles refreshed.');
-            } catch (err) {
-                console.warn('Failed to refresh tiles after seeding:', err);
-            }
-
-            // 5. Refresh the stats modal to show the new population, only if it's open
-            const statsModal = document.getElementById('stats-modal-overlay');
-            if (statsModal) {
-                await this.handleShowStats();
-            }
-
-            // Population display will update via events if modal is open or for connection status
-            console.log("✅ All data reset successfully!");
-
+            // Single fast-reset endpoint handles: regenerate tiles/lands, reset & reinit population, seed villages
+            const fastResult = await this.fetchWithFallback([
+                'http://localhost:3000/api/reset/fast', // hit backend directly first to avoid proxy empty responses
+                '/api/reset/fast'
+            ], { method: 'POST' });
+            console.log('⚡ Fast reset result:', fastResult);
         } catch (error) {
             console.error("❌ Error during data reset:", error);
+            // Still reload even on error so state is consistent
         }
+        // Always reload page after reset attempt to guarantee fresh client state
+        console.log('🔁 Reloading page to re-run full client initialization...');
+        window.location.reload();
+    }
+
+    // Try multiple URLs until one succeeds; throws if all fail
+    async fetchWithFallback(urls, options = {}) {
+        let lastErr = null;
+        for (const url of urls) {
+            try {
+                const controller = new AbortController();
+                const timeoutId = setTimeout(() => controller.abort('timeout'), 90000); // 90s timeout per attempt
+                const resp = await fetch(url, { ...options, signal: controller.signal });
+                clearTimeout(timeoutId);
+                if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
+                return await resp.json();
+            } catch (err) {
+                lastErr = err;
+                console.warn(`Fetch attempt failed for ${url}:`, err?.message || err);
+            }
+        }
+        throw lastErr || new Error('All fetch attempts failed');
     }
 
     async handleShowStats() {

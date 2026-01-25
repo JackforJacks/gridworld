@@ -51,6 +51,11 @@ CREATE TABLE IF NOT EXISTS villages (
     UNIQUE(tile_id, land_chunk_index)
 );
 
+-- 1c. Ensure tiles_lands has a village reference for residency tracking
+ALTER TABLE tiles_lands
+    ADD COLUMN IF NOT EXISTS village_id INTEGER REFERENCES villages(id) ON DELETE SET NULL;
+CREATE INDEX IF NOT EXISTS idx_tiles_lands_village_id ON tiles_lands(village_id);
+
 -- 2. Create people table
 CREATE TABLE IF NOT EXISTS people (
     id SERIAL PRIMARY KEY,

@@ -33,7 +33,7 @@ class SceneManager {
             }
         });
         return { scene: this.scene, renderer: this.renderer };
-    } async createHexasphere(radius = null, subdivisions = null, tileWidthRatio = null) {
+    } async createHexasphere(radius = null, subdivisions = null, tileWidthRatio = null, forceRegenerate = false) {
         this.clearTiles();
 
         // If no parameters provided, fetch defaults from server config
@@ -56,15 +56,16 @@ class SceneManager {
         }
 
         // Instead of generating tiles locally, fetch from server
-        await this.fetchAndBuildTiles(radius, subdivisions, tileWidthRatio);
+        await this.fetchAndBuildTiles(radius, subdivisions, tileWidthRatio, forceRegenerate);
     }    // Fetch tile data from the server and build geometry
-    async fetchAndBuildTiles(radius, subdivisions, tileWidthRatio) {
+    async fetchAndBuildTiles(radius, subdivisions, tileWidthRatio, forceRegenerate = false) {
         try {
             // Store the radius for use in border calculations
             this.sphereRadius = radius;
 
             // Fetch tile data from the server
-            const response = await fetch(`/api/tiles?radius=${radius}&subdivisions=${subdivisions}&tileWidthRatio=${tileWidthRatio}`);
+            const regenQuery = forceRegenerate ? '&regenerate=true' : '';
+            const response = await fetch(`/api/tiles?radius=${radius}&subdivisions=${subdivisions}&tileWidthRatio=${tileWidthRatio}${regenQuery}`);
             if (!response.ok) throw new Error(`Failed to fetch tiles: ${response.status}`);
             const tileData = await response.json();
             this.buildTilesFromData(tileData);

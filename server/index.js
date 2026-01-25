@@ -5,6 +5,7 @@ const express = require('express');
 const http = require('http');
 const path = require('path');
 const socketIo = require('socket.io');
+const cors = require('cors');
 
 // Import configurations
 const serverConfig = require('./config/server');
@@ -39,6 +40,7 @@ class GridWorldServer {
 
     async initialize() {
         // Configure middleware
+        this.app.use(cors({ origin: true, credentials: true })); // Allow cross-origin from dev server
         this.app.use(express.json());
         this.app.use(express.static(path.join(__dirname, '../dist')));
 

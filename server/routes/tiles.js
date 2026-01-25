@@ -247,6 +247,13 @@ router.get('/', async (req, res) => {
             // Village seeding is now performed after population initialization (client-driven)
         }
 
+        // If only regeneration side-effects are needed (no payload), exit early to keep response small
+        const silentRegenerate = req.query.silent === '1' || req.query.silent === 'true';
+        if (silentRegenerate) {
+            Math.random = originalRandom;
+            return res.json({ success: true, regenerated: true, seed });
+        }
+
         const tiles = await Promise.all(hexasphere.tiles.map(async tile => {
             const props = tile.getProperties ? tile.getProperties() : tile;
             // Add boundary as array of {x, y, z}
@@ -465,9 +472,17 @@ router.post('/restart', async (req, res) => {
             reqGet.end();
         });
 
+        // After tiles/lands regeneration completes, attempt to seed villages based on current population
+        try {
+            const seeded = await villageSeeder.seedRandomVillages();
+            console.log(`[API /api/tiles/restart] Village seeding completed: ${seeded?.created || 0} villages created`);
+        } catch (seedErr) {
+            console.warn('[API /api/tiles/restart] Village seeding failed after regeneration:', seedErr.message);
+        }
+
         res.json({
             success: true,
-            message: 'World restarted and regenerated successfully (tiles, lands, and villages initialized).',
+            message: 'World restarted and regenerated successfully (tiles, lands, villages attempted).',
             oldSeed: oldSeed,
             newSeed: worldSeed
         });

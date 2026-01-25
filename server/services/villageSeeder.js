@@ -1,6 +1,24 @@
 const pool = require('../config/database');
 
+// Ensure tiles_lands has village_id column (older DBs may miss this column)
+let ensureVillageIdColumnPromise = null;
+async function ensureVillageIdColumn() {
+    if (!ensureVillageIdColumnPromise) {
+        ensureVillageIdColumnPromise = (async () => {
+            try {
+                await pool.query(`ALTER TABLE tiles_lands ADD COLUMN IF NOT EXISTS village_id INTEGER REFERENCES villages(id) ON DELETE SET NULL`);
+                await pool.query(`CREATE INDEX IF NOT EXISTS idx_tiles_lands_village_id ON tiles_lands(village_id)`);
+                console.log('[villageSeeder] Ensured tiles_lands.village_id column exists');
+            } catch (e) {
+                console.warn('[villageSeeder] Failed to ensure tiles_lands.village_id column:', e.message);
+            }
+        })();
+    }
+    return ensureVillageIdColumnPromise;
+}
+
 async function seedRandomVillages(count = null) {
+    await ensureVillageIdColumn();
     const min = 3;
     const max = 30;
     const requested = Number.isInteger(count) ? count : null;
@@ -99,6 +117,7 @@ async function seedIfNoVillages() {
 module.exports = { seedRandomVillages, seedIfNoVillages };
 
 async function seedVillagesForTile(tileId) {
+    await ensureVillageIdColumn();
     const perTileMin = 1;
     const perTileMax = 30;
     const housingCapacity = 1000;

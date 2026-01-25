@@ -253,6 +253,12 @@
                     // Remove hidden class from info panel to make it visible
                     const infoPanel = document.getElementById('tileInfoPanel');
                     if (infoPanel) {
+                        // If the panel was just closed, ignore immediate re-open (avoid race with close handler)
+                        try {
+                            if (window.__tileSelectorJustClosed && (Date.now() - window.__tileSelectorJustClosed) < 300) {
+                                return;
+                            }
+                        } catch (e) { }
                         infoPanel.classList.remove('hidden');
                         // Force visibility in case hidden class has strong CSS rules
                         infoPanel.style.opacity = '1';
