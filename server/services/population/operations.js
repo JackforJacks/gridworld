@@ -69,9 +69,18 @@ async function initializeTilePopulations(pool, calendarService, serviceInstance,
         }
         console.log('[PopulationOperations] No existing population found. Proceeding with initialization...');
 
-        // Select only 10 random tiles for initialization
-        const selectedTiles = tileIds.sort(() => 0.5 - Math.random()).slice(0, 10);
-        console.log(`[PopulationOperations] Selected ${selectedTiles.length} random tiles for initialization:`, selectedTiles);
+        // Fetch habitable tiles from the database to ensure we only initialize on tiles marked habitable
+        const habitableResult = await pool.query(`SELECT id FROM tiles WHERE is_habitable = TRUE`);
+        const habitableFromDb = habitableResult.rows.map(r => r.id);
+        // Intersect with provided tileIds if provided, otherwise use DB list
+        const candidateTiles = Array.isArray(tileIds) && tileIds.length > 0
+            ? tileIds.filter(id => habitableFromDb.includes(id))
+            : habitableFromDb;
+
+        // Select only up to 10 random tiles for initialization
+        const shuffled = candidateTiles.sort(() => 0.5 - Math.random());
+        const selectedTiles = shuffled.slice(0, 10);
+        console.log(`[PopulationOperations] Selected ${selectedTiles.length} random tiles for initialization (from DB habitable list):`, selectedTiles);
 
         if (selectedTiles.length === 0) {
             console.warn('[PopulationOperations] initializeTilePopulations: No tiles selected.');

@@ -13,6 +13,8 @@ const socketConfig = require('./config/socket');
 // Import routes
 const apiRoutes = require('./routes/api');
 const villagesRouter = require('./routes/villages');
+const pool = require('./config/database');
+const villageSeeder = require('./services/villageSeeder');
 
 // Import services
 const PopulationService = require('./services/populationService');
@@ -57,6 +59,16 @@ class GridWorldServer {
         this.app.locals.calendarService = calendarServiceInstance;
         this.app.locals.populationService = populationServiceInstance;
         this.app.locals.statisticsService = statisticsServiceInstance;
+
+        // Attempt to seed villages if none exist yet
+        try {
+            const seeded = await villageSeeder.seedIfNoVillages();
+            if (seeded && seeded.created && seeded.created > 0) {
+                console.log(`🌱 Seeded ${seeded.created} villages at startup`);
+            }
+        } catch (err) {
+            console.error('Error seeding villages at startup:', err);
+        }
 
         // Setup socket connections
         this.setupSocketHandlers();

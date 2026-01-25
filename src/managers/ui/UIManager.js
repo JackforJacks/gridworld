@@ -188,6 +188,18 @@ class UIManager {
         try {
             console.log("🔄 Resetting all data...");
 
+            // 0. Ensure DB schema exists (run migrations)
+            try {
+                console.log('🔧 Initializing database schema...');
+                const resp = await fetch('/api/db/init', { method: 'POST' });
+                if (!resp.ok) throw new Error(`DB init failed: ${resp.status}`);
+                console.log('🗂️ Database initialized.');
+            } catch (err) {
+                console.error('Failed to initialize DB schema:', err);
+                this.showMessage('DB initialization failed', 'error');
+                return;
+            }
+
             // 1. Reset population data on the server
             await populationManager.resetPopulation();
             console.log("🏘️ Population data reset on server.");
@@ -204,6 +216,29 @@ class UIManager {
             // 4. Re-initialize population on newly generated habitable tiles
             await this.sceneManager.reinitializePopulation();
             console.log("🌱 Population re-initialized on habitable tiles.");
+
+            // 4b. Seed villages on tiles that now have population
+            try {
+                console.log('🏘️ Seeding villages on populated tiles...');
+                const seedResp = await fetch('/api/villages/seed-random', { method: 'POST' });
+                if (!seedResp.ok) {
+                    console.warn('Village seeding request failed:', seedResp.status);
+                } else {
+                    const seedResult = await seedResp.json();
+                    console.log('Village seeding result:', seedResult);
+                }
+            } catch (err) {
+                console.error('Failed to seed villages after population init:', err);
+            }
+
+            // Refresh tiles from server so `tile.lands` includes village data
+            try {
+                console.log('🔁 Refreshing tiles to include newly-seeded villages...');
+                await this.sceneManager.createHexasphere();
+                console.log('🔁 Tiles refreshed.');
+            } catch (err) {
+                console.warn('Failed to refresh tiles after seeding:', err);
+            }
 
             // 5. Refresh the stats modal to show the new population, only if it's open
             const statsModal = document.getElementById('stats-modal-overlay');
@@ -250,6 +285,7 @@ class UIManager {
                 if (typeof popData.familiesWithChildren !== 'undefined') stats.familiesWithChildren = Number(popData.familiesWithChildren);
                 if (typeof popData.avgChildrenPerFamily !== 'undefined') stats.avgChildrenPerFamily = Number(popData.avgChildrenPerFamily);
                 if (typeof popData.totalPopulation !== 'undefined') stats.totalPopulation = Number(popData.totalPopulation);
+                if (typeof popData.villagesCount !== 'undefined') stats.villagesCount = Number(popData.villagesCount);
             }
             this.currentTotalPopulation = stats.totalPopulation;
             const growthStats = populationManager.getGrowthStats();
@@ -329,6 +365,7 @@ class UIManager {
             <p><strong>Total Deaths:</strong> <span id="stats-modal-death-count">${stats.deathCount?.toLocaleString() ?? '0'}</span></p>
             <hr class="stats-modal-separator">
             <p><strong>Total Tiles:</strong> ${stats.totalTiles}</p>
+            <p><strong>Total Villages:</strong> <span id="stats-modal-total-villages">${stats.villagesCount?.toLocaleString() ?? '0'}</span></p>
             <p><strong>Habitable Tiles:</strong> ${stats.habitableTiles}</p>
             <p><strong>Populated Tiles:</strong> ${stats.populatedTiles}</p>
             <p><strong>High Pop Tiles (≥${stats.threshold}):</strong> ${stats.highPopulationTiles}</p>

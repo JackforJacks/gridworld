@@ -52,6 +52,7 @@ async function runMigration() {
                 land_chunk_index INTEGER NOT NULL CHECK (land_chunk_index >= 0 AND land_chunk_index < 100),
                 name VARCHAR(100),
                 housing_slots JSONB DEFAULT '[]',
+                housing_capacity INTEGER DEFAULT 100,
                 created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
                 updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
                 UNIQUE(tile_id, land_chunk_index)

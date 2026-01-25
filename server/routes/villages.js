@@ -1,6 +1,7 @@
 const express = require('express');
 const router = express.Router();
 const pool = require('../config/database');
+const villageSeeder = require('../services/villageSeeder');
 
 // GET /api/villages - Get all villages
 router.get('/', async (req, res) => {
@@ -11,7 +12,7 @@ router.get('/', async (req, res) => {
                    jsonb_array_length(v.housing_slots) as occupied_slots
             FROM villages v
             JOIN tiles t ON v.tile_id = t.id
-            JOIN tiles_lands tl ON v.tile_id = tl.tile_id AND v.land_chunk_index = tl.chunk_index
+                LEFT JOIN tiles_lands tl ON v.tile_id = tl.tile_id AND v.land_chunk_index = tl.chunk_index
             ORDER BY v.id
         `);
         res.json({ villages: rows });
@@ -29,7 +30,7 @@ router.get('/tile/:tileId', async (req, res) => {
             SELECT v.*, tl.land_type, tl.cleared,
                    jsonb_array_length(v.housing_slots) as occupied_slots
             FROM villages v
-            JOIN tiles_lands tl ON v.tile_id = tl.tile_id AND v.land_chunk_index = tl.chunk_index
+                LEFT JOIN tiles_lands tl ON v.tile_id = tl.tile_id AND v.land_chunk_index = tl.chunk_index
             WHERE v.tile_id = $1
             ORDER BY v.land_chunk_index
         `, [tileId]);
@@ -60,17 +61,50 @@ router.post('/', async (req, res) => {
         if (existingVillage.length > 0) {
             return res.status(400).json({ error: 'A village already exists at this location' });
         }
-        // Create the village
+        // Create the village with fixed capacity 1000
+        const housingSlots = JSON.stringify([]);
+        const housingCapacity = 1000;
         const { rows } = await pool.query(`
-            INSERT INTO villages (tile_id, land_chunk_index, name, housing_slots)
-            VALUES ($1, $2, $3, $4)
+            INSERT INTO villages (tile_id, land_chunk_index, name, housing_slots, housing_capacity)
+            VALUES ($1, $2, $3, $4, $5)
             RETURNING *
-        `, [tile_id, land_chunk_index, name || 'Village', '[]']);
+        `, [tile_id, land_chunk_index, name || 'Village', housingSlots, housingCapacity]);
         const village = rows[0];
         res.json({ village });
     } catch (err) {
         console.error('Error creating village:', err);
         res.status(500).json({ error: 'Failed to create village' });
+    }
+});
+
+// POST /api/villages/seed-random - Seed a random number of villages (3..30)
+router.post('/seed-random', async (req, res) => {
+    const requestedCount = req.body && req.body.count ? parseInt(req.body.count, 10) : null;
+    try {
+        const result = await villageSeeder.seedRandomVillages(requestedCount);
+        if (!result || result.created === 0) {
+            return res.status(400).json({ error: 'No available cleared land chunks to create villages' });
+        }
+        res.json(result);
+    } catch (err) {
+        console.error('Error seeding random villages:', err);
+        res.status(500).json({ error: 'Failed to seed villages' });
+    }
+});
+
+// POST /api/villages/seed-tile/:tileId - Seed villages for a single tile using population + random buffer
+router.post('/seed-tile/:tileId', async (req, res) => {
+    const tileId = parseInt(req.params.tileId, 10);
+    if (isNaN(tileId)) return res.status(400).json({ error: 'Invalid tileId' });
+    try {
+        const result = await villageSeeder.seedVillagesForTile(tileId);
+        if (!result || result.created === 0) {
+            return res.status(400).json({ error: 'No available cleared land chunks to create villages on this tile' });
+        }
+        res.json(result);
+    } catch (err) {
+        console.error(`Error seeding villages for tile ${tileId}:`, err);
+        res.status(500).json({ error: 'Failed to seed villages for tile' });
     }
 });
 
@@ -89,8 +123,9 @@ router.put('/:id/assign-family', async (req, res) => {
         }
         const village = villageRows[0];
         const currentSlots = village.housing_slots || [];
-        // Check if village is full
-        if (currentSlots.length >= 50) {
+        // Check if village is full using the capacity column
+        const capacity = village.housing_capacity || 100;
+        if (currentSlots.length >= capacity) {
             return res.status(400).json({ error: 'Village is at full capacity' });
         }
         // Check if family is already assigned

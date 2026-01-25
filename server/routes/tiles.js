@@ -6,6 +6,8 @@ const router = express.Router();
 const path = require('path');
 const { pathToFileURL } = require('url');
 const pool = require('../config/database');
+const villageSeeder = require('../services/villageSeeder');
+const http = require('http');
 
 // Helper: parse float with fallback
 function parseParam(val, fallback) {
@@ -139,11 +141,8 @@ router.get('/', async (req, res) => {
         }
         const hexasphere = new Hexasphere(radius, subdivisions, tileWidthRatio);
 
-        // Check if tiles exist in database, if not, persist them
-        const { rows: existingTiles } = await pool.query('SELECT COUNT(*) as count FROM tiles');
-        const tilesExist = existingTiles[0].count > 0;
-
-        if (!tilesExist && isRegenerating) {
+        // If regenerating, always persist tiles and reinitialize lands
+        if (isRegenerating) {
             console.log('[API /api/tiles] No tiles in database, persisting generated tiles...');
 
             // Clear and populate tiles table
@@ -153,9 +152,12 @@ router.get('/', async (req, res) => {
             for (const tile of hexasphere.tiles) {
                 const props = tile.getProperties ? tile.getProperties() : tile;
                 const centerPoint = tile.centerPoint ? { x: tile.centerPoint.x, y: tile.centerPoint.y, z: tile.centerPoint.z } : null;
-                const biome = centerPoint ? calculateBiome(tile.centerPoint, props.terrainType, seededRandom) : null;
+                // Only calculate a land biome when the tile is actually land
+                const biome = (centerPoint && props.isLand) ? calculateBiome(tile.centerPoint, props.terrainType, seededRandom) : null;
                 const fertility = calculateFertility(biome, props.terrainType, seededRandom);
 
+                // Determine explicit habitable flag: tiles on tundra, desert, or alpine should not be habitable
+                const isHabitableFlag = (props.Habitable === 'yes' && biome !== 'tundra' && biome !== 'desert' && biome !== 'alpine');
                 await pool.query(`
                     INSERT INTO tiles (id, center_x, center_y, center_z, latitude, longitude, terrain_type, is_land, is_habitable, boundary_points, neighbor_ids, biome, fertility)
                     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)
@@ -182,7 +184,7 @@ router.get('/', async (req, res) => {
                     props.longitude || 0,
                     props.terrainType,
                     props.isLand,
-                    props.Habitable === 'yes',
+                    isHabitableFlag,
                     JSON.stringify(tile.boundary ? tile.boundary.map(p => ({ x: p.x, y: p.y, z: p.z })) : []),
                     JSON.stringify(props.neighborIds || []),
                     biome,
@@ -241,6 +243,8 @@ router.get('/', async (req, res) => {
             }
 
             console.log(`[API /api/tiles] Initialized tiles_lands for ${eligibleTiles.rows.length} eligible tiles`);
+
+            // Village seeding is now performed after population initialization (client-driven)
         }
 
         const tiles = await Promise.all(hexasphere.tiles.map(async tile => {
@@ -269,6 +273,13 @@ router.get('/', async (req, res) => {
                     props.biome = calculateBiome(tile.centerPoint, props.terrainType, seededRandom);
                     props.fertility = calculateFertility(props.biome, props.terrainType, seededRandom);
                 }
+
+                // Recompute Habitable: tundra, desert, and alpine should not be considered habitable even if terrain type suggests so
+                try {
+                    props.Habitable = ((props.terrainType === 'flats' || props.terrainType === 'hills') && props.biome !== 'tundra' && props.biome !== 'desert' && props.biome !== 'alpine') ? 'yes' : 'no';
+                } catch (e) {
+                    props.Habitable = (props.terrainType === 'flats' || props.terrainType === 'hills') ? 'yes' : 'no';
+                }
             } catch (e) {
                 console.error(`[ERROR] Failed to fetch tile data for tile ${props.id}:`, e.message);
                 // Fallback to calculated values
@@ -280,7 +291,7 @@ router.get('/', async (req, res) => {
             try {
                 const { rows: lands } = await pool.query(`
                     SELECT tl.chunk_index, tl.land_type, tl.cleared, tl.owner_id,
-                           v.id AS village_id, v.name AS village_name, v.housing_slots
+                           v.id AS village_id, v.name AS village_name, v.housing_slots, v.housing_capacity
                     FROM tiles_lands tl
                     LEFT JOIN villages v ON v.tile_id = tl.tile_id AND v.land_chunk_index = tl.chunk_index
                     WHERE tl.tile_id = $1
@@ -416,12 +427,61 @@ router.post('/restart', async (req, res) => {
         return res.status(500).json({ success: false, message: 'Failed to clear existing data', error: e.message });
     }
 
-    res.json({
-        success: true,
-        message: 'World restarted successfully. Call /api/tiles?regenerate=true to generate new tiles.',
-        oldSeed: oldSeed,
-        newSeed: worldSeed
-    });
+    // Trigger regeneration internally so tiles, lands and villages are initialized immediately
+    const port = process.env.PORT || 3000;
+    const regenPath = `/api/tiles?regenerate=true`;
+
+    try {
+        await new Promise((resolve, reject) => {
+            const options = {
+                hostname: 'localhost',
+                port: port,
+                path: regenPath,
+                method: 'GET',
+                timeout: 300000
+            };
+
+            const reqGet = http.request(options, (resp) => {
+                let data = '';
+                resp.on('data', (chunk) => { data += chunk; });
+                resp.on('end', () => {
+                    try {
+                        const parsed = JSON.parse(data || '{}');
+                        if (resp.statusCode >= 200 && resp.statusCode < 300) {
+                            resolve(parsed);
+                        } else {
+                            reject(new Error(`Regeneration failed: ${resp.statusCode}`));
+                        }
+                    } catch (err) {
+                        // Non-JSON response, treat as success if 2xx
+                        if (resp.statusCode >= 200 && resp.statusCode < 300) resolve({});
+                        else reject(err);
+                    }
+                });
+            });
+
+            reqGet.on('error', (err) => reject(err));
+            reqGet.on('timeout', () => { reqGet.destroy(new Error('Regeneration request timed out')); });
+            reqGet.end();
+        });
+
+        res.json({
+            success: true,
+            message: 'World restarted and regenerated successfully (tiles, lands, and villages initialized).',
+            oldSeed: oldSeed,
+            newSeed: worldSeed
+        });
+    } catch (err) {
+        console.error('[API /api/tiles/restart] Regeneration request failed:', err && err.message ? err.message : err);
+        // Still return success for restart but inform client regeneration failed
+        res.json({
+            success: true,
+            message: 'World restarted, but automatic regeneration failed. Call /api/tiles?regenerate=true manually.',
+            oldSeed: oldSeed,
+            newSeed: worldSeed,
+            regenError: err && err.message ? err.message : String(err)
+        });
+    }
 });
 
 // GET /api/tiles/seed - Get current world seed

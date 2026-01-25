@@ -80,6 +80,16 @@ async function getPopulationStats(pool, calendarService, populationServiceInstan
             inGameRatesYear = calculateRatesInGame(populationServiceInstance, populationServiceInstance.calendarService, 'year');
             inGameRates12m = calculateRatesInGame(populationServiceInstance, populationServiceInstance.calendarService, '12months');
         }
+        // Add villages count
+        let villagesCount = 0;
+        try {
+            const vres = await pool.query('SELECT COUNT(*)::int AS cnt FROM villages');
+            villagesCount = vres.rows && vres.rows[0] ? vres.rows[0].cnt : 0;
+        } catch (e) {
+            console.warn('[getPopulationStats] Failed to query villages count:', e && e.message ? e.message : e);
+            villagesCount = 0;
+        }
+
         return {
             totalPopulation: parseInt(stats.total_population, 10) || 0,
             male: parseInt(stats.male, 10) || 0,
@@ -88,6 +98,7 @@ async function getPopulationStats(pool, calendarService, populationServiceInstan
             working_age: parseInt(stats.working_age, 10) || 0,
             elderly: parseInt(stats.elderly, 10) || 0,
             bachelors: parseInt(stats.bachelors, 10) || 0,
+            villagesCount: villagesCount,
             ...rates,
             ...inGameRatesYear,
             ...inGameRates12m
@@ -97,6 +108,7 @@ async function getPopulationStats(pool, calendarService, populationServiceInstan
         const rates = calculateRates(populationServiceInstance);
         return {
             totalPopulation: 0, male: 0, female: 0, minors: 0, working_age: 0, elderly: 0, bachelors: 0,
+            villagesCount: 0,
             ...rates
         };
     }

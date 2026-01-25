@@ -177,13 +177,29 @@ async function deliverBaby(pool, calendarService, populationServiceInstance, fam
         const { getRandomSex } = require('./calculator.js');
         const babySex = getRandomSex();
 
+        // Get father's residency to assign to baby
+        let babyResidency = 0;
+        if (family.husband_id) {
+            const fatherResult = await pool.query(`SELECT residency FROM people WHERE id = $1`, [family.husband_id]);
+            if (fatherResult.rows.length > 0) {
+                babyResidency = fatherResult.rows[0].residency || 0;
+            }
+        }
+
         const babyResult = await pool.query(`
             INSERT INTO people (tile_id, sex, date_of_birth, residency, family_id)
-            VALUES ($1, $2, $3, 0, $4)
+            VALUES ($1, $2, $3, $4, $5)
             RETURNING id
-        `, [family.tile_id, babySex, birthDate, familyId]);
+        `, [family.tile_id, babySex, birthDate, babyResidency, familyId]);
 
         const babyId = babyResult.rows[0].id;
+
+        // If baby has residency, add to village housing_slots
+        if (babyResidency !== 0) {
+            await pool.query(`
+                UPDATE villages SET housing_slots = housing_slots || $1::jsonb WHERE id = $2
+            `, [JSON.stringify([babyId]), babyResidency]);
+        }
 
         // Update family record with new baby
         const updatedChildrenIds = [...family.children_ids, babyId];

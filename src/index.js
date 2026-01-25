@@ -185,20 +185,29 @@ class GridWorldApp {
             });
 
             return new Promise((resolve, reject) => {
+                let timedOut = false;
                 const timeout = setTimeout(() => {
-                    reject(new Error('Socket connection timeout'));
+                    timedOut = true;
+                    console.warn('Socket connection timeout — continuing without socket');
+                    resolve();
                 }, 10000);
 
                 this.socket.on('connect', () => {
-                    clearTimeout(timeout);
-                    resolve();
+                    if (!timedOut) {
+                        clearTimeout(timeout);
+                        resolve();
+                    } else {
+                        console.info('Socket connected after timeout; continuing with existing state');
+                    }
                 });
 
                 this.socket.on('connect_error', (error) => {
                     console.error('🔌 Socket connection error:', error.message);
-                    clearTimeout(timeout);
-                    // Don't reject - continue without socket
-                    resolve();
+                    if (!timedOut) {
+                        clearTimeout(timeout);
+                        // Don't reject - continue without socket
+                        resolve();
+                    }
                 });
             });
         } catch (error) {

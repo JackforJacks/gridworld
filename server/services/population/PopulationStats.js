@@ -39,11 +39,21 @@ async function fetchPopulationStats(pool, calendarService, populationServiceInst
 
         const rates = calculateRates(populationServiceInstance); // Pass the instance for context
         const stats = { ...(result.rows[0] || {}), ...rates }; // Ensure result.rows[0] is not undefined
+
+        // Add total villages count to population stats (useful for UI)
+        try {
+            const vres = await pool.query(`SELECT COUNT(*)::int AS cnt FROM villages`);
+            stats.villagesCount = vres.rows && vres.rows[0] ? vres.rows[0].cnt : 0;
+        } catch (e) {
+            console.warn('[fetchPopulationStats] Failed to query villages count:', e.message || e);
+            stats.villagesCount = 0;
+        }
+
         return stats;
     } catch (error) {
         console.error('Error getting population stats in fetchPopulationStats:', error);
         const rates = calculateRates(populationServiceInstance); // Still provide rates in case of error
-        return { male: '0', female: '0', minors: '0', working_age: '0', elderly: '0', ...rates };
+        return { male: '0', female: '0', minors: '0', working_age: '0', elderly: '0', villagesCount: 0, ...rates };
     }
 }
 

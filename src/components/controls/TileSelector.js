@@ -18,6 +18,8 @@ class TileSelector {
             transparent: true,
             opacity: 1
         });
+        this.infoRefreshInterval = null;
+        this.infoRefreshTileId = null;
 
         // Add close button event listener
         if (this.closeInfoPanelBtn) {
@@ -88,10 +90,9 @@ class TileSelector {
         // Create new border
         this.createBorder(tile);
 
-        // Show info panel
-        this.showInfoPanel(tile);
-
+        // Set selected tile then show info panel
         this.selectedTile = tile;
+        this.showInfoPanel(tile);
     }
 
     createBorder(tile) {
@@ -156,23 +157,61 @@ class TileSelector {
 
     showInfoPanel(tile) {
         if (!this.tileInfoPanel) return;
+        // Clear any existing interval
+        if (this.infoRefreshInterval) {
+            clearInterval(this.infoRefreshInterval);
+            this.infoRefreshInterval = null;
+            this.infoRefreshTileId = null;
+        }
+
+        // Delegate rendering to updateInfoPanel (also used by the refresh interval)
+        this.updateInfoPanel(tile);
+
+        // Ensure panel is visible and page1 is active
+        if (this.tileInfoPanel) {
+            this.tileInfoPanel.classList.remove('hidden');
+            const page1 = this.tileInfoPanel.querySelector('#info-panel-page-1');
+            const page2 = this.tileInfoPanel.querySelector('#info-panel-page-2');
+            if (page1) page1.style.display = '';
+            if (page2) page2.style.display = 'none';
+        }
+
+        // Start periodic refresh for this tile while panel visible
+        this.infoRefreshTileId = tile.id;
+        this.infoRefreshInterval = setInterval(() => {
+            if (!this.tileInfoPanel || this.tileInfoPanel.classList.contains('hidden') || this.infoRefreshTileId !== this.selectedTile?.id) {
+                if (this.infoRefreshInterval) {
+                    clearInterval(this.infoRefreshInterval);
+                    this.infoRefreshInterval = null;
+                    this.infoRefreshTileId = null;
+                }
+                return;
+            }
+            try {
+                // Refresh using the currently selected tile (may have updated properties)
+                this.updateInfoPanel(this.selectedTile);
+            } catch (e) {
+                console.warn('Error refreshing info panel:', e);
+            }
+        }, 1000);
+    }
+
+    updateInfoPanel(tile) {
+        if (!this.tileInfoPanel || !tile) return;
 
         let lat = 0, lon = 0;
         let Habitable = 'unknown';
         let terrainType = 'unknown';
 
-        // Get coordinates directly from tile properties (preferred) or calculate as fallback
         try {
             if (tile.latitude !== null && tile.longitude !== null) {
-                // Use pre-calculated coordinates stored on the tile
                 lat = tile.latitude;
                 lon = tile.longitude;
             } else if (tile.centerPoint && typeof tile.centerPoint.getLatLon === 'function') {
                 const latLon = tile.centerPoint.getLatLon(1);
                 lat = latLon.lat;
                 lon = latLon.lon;
-            } else {
-                // Fallback calculation
+            } else if (tile.centerPoint) {
                 const r = Math.sqrt(
                     tile.centerPoint.x * tile.centerPoint.x +
                     tile.centerPoint.y * tile.centerPoint.y +
@@ -185,53 +224,34 @@ class TileSelector {
             console.warn("Could not get lat/lon for tile:", tile.id, e);
         }
 
-        // Get terrain and Habitable data directly from the tile object
         try {
-            // All data is now stored directly on the tile - single source of truth!
             Habitable = tile.Habitable || 'unknown';
             terrainType = tile.terrainType || 'unknown';
         } catch (e) {
             console.warn("Could not get tile data for tile:", tile.id, e);
         }
 
-        // Get population data
         const population = tile.population || 0;
         const populationDisplay = population > 0 ? population.toLocaleString() : 'Uninhabited';
 
-        // Get biome data
         const biome = tile.biome || null;
-        const biomeIcons = {
-            tundra: '🏔️',
-            desert: '🏜️',
-            plains: '🌾',
-            grassland: '🌱',
-            alpine: '⛰️'
-        };
+        const biomeIcons = { tundra: '🏔️', desert: '🏜️', plains: '🌾', grassland: '🌱', alpine: '⛰️' };
         const biomeDisplay = biome ? `${biomeIcons[biome] || '🌍'} ${biome.charAt(0).toUpperCase() + biome.slice(1)}` : 'N/A';
 
-        // Get fertility data
         const fertility = tile.fertility !== undefined ? tile.fertility : null;
         const fertilityDisplay = fertility !== null ? `${fertility}/100` : 'N/A';
         const fertilityIcon = fertility !== null ? (fertility === 0 ? '🪨' : fertility < 30 ? '🌫️' : fertility < 60 ? '🌿' : fertility < 80 ? '🌾' : '🌻') : '❓';
 
-        // Get forested land count from tile.lands
-        let forestedCount = 0;
-        let wasteCount = 0;
-        let clearedCount = 0;
-
+        let forestedCount = 0, wasteCount = 0, clearedCount = 0;
         if (Array.isArray(tile.lands)) {
             forestedCount = tile.lands.filter(l => l.land_type === 'forest').length;
             wasteCount = tile.lands.filter(l => l.land_type === 'wasteland').length;
             clearedCount = tile.lands.filter(l => l.land_type === 'cleared').length;
         }
 
-        const contentDiv = this.tileInfoPanel.querySelector('#info-panel-page-1'); // Target the first page specifically
+        const contentDiv = this.tileInfoPanel.querySelector('#info-panel-page-1');
         const titleElement = this.tileInfoPanel.querySelector('#tileInfoTitle');
-
-        // Update the title with the tile ID
-        if (titleElement) {
-            titleElement.textContent = `Tile ${tile.id}`;
-        }
+        if (titleElement) titleElement.textContent = `Tile ${tile.id}`;
 
         if (contentDiv) {
             contentDiv.innerHTML = `
@@ -268,21 +288,59 @@ class TileSelector {
             `;
         }
 
-        this.tileInfoPanel.className = 'tile-info-panel visible';
+        // Update Villages page
+        const villagesPage = this.tileInfoPanel.querySelector('#info-panel-page-2');
+        if (villagesPage) {
+            let villageEntries = [];
+            if (Array.isArray(tile.lands)) villageEntries = tile.lands.filter(l => l.village_id !== null && l.village_id !== undefined);
+            const villagesCount = villageEntries.length;
+            const clearedCountDebug = Array.isArray(tile.lands) ? tile.lands.filter(l => l.cleared).length : 0;
+            console.debug(`[TileSelector] tile ${tile.id} terrain=${tile.terrainType} Habitable=${tile.Habitable} lands=${Array.isArray(tile.lands) ? tile.lands.length : 0} cleared=${clearedCountDebug} villages=${villagesCount}`);
+            const occupiedSlotsTotal = villageEntries.reduce((sum, v) => {
+                const occ = Array.isArray(v.housing_slots) ? v.housing_slots.length : (v.occupied_slots || 0);
+                return sum + occ;
+            }, 0);
+            const capacityTotal = villageEntries.reduce((sum, v) => {
+                const cap = v.housing_capacity || 100;
+                return sum + cap;
+            }, 0);
+            const availableSlots = Math.max(0, capacityTotal - occupiedSlotsTotal);
+            const villageListHtml = villagesCount > 0 ? (`<ul class="village-list">` + villageEntries.map(v => {
+                const occ = Array.isArray(v.housing_slots) ? v.housing_slots.length : (v.occupied_slots || 0);
+                const cap = v.housing_capacity || 100;
+                return `\n                        <li>${v.village_name || ('Village ' + (v.village_id || ''))} — ${occ}/${cap} slots</li>`;
+            }).join('') + `\n                    </ul>`) : '<div>No villages on this tile.</div>';
 
-        // Reset to the first page whenever a new tile is selected
-        document.querySelectorAll('.info-panel-page').forEach((page, index) => {
-            page.style.display = index === 0 ? 'block' : 'none';
-        });
-        document.querySelectorAll('.info-panel-btn').forEach((btn, index) => {
-            btn.style.backgroundColor = index === 0 ? '#007acc' : '#fff';
-            btn.style.color = index === 0 ? '#ffffff' : '#000000';
-        });
+            villagesPage.innerHTML = `
+                <h3>🏛️ Villages</h3>
+                <p>Manage villages and buildings on this tile.</p>
+                <div>Villages: <strong>${villagesCount}</strong></div>
+                <div>Available Housing Slots: <strong>${availableSlots}</strong></div>
+                ${villageListHtml}
+                <button id="build-village-btn">Build New Village</button>
+            `;
+
+            const buildBtn = villagesPage.querySelector('#build-village-btn');
+            if (buildBtn && !buildBtn.dataset.listenerAttached) {
+                buildBtn.addEventListener('click', (e) => {
+                    e.preventDefault();
+                    const evt = new CustomEvent('tile:buildVillage', { detail: { tileId: tile.id } });
+                    window.dispatchEvent(evt);
+                });
+                buildBtn.dataset.listenerAttached = '1';
+            }
+        }
+
     }
 
     hideInfoPanel() {
         if (this.tileInfoPanel) {
             this.tileInfoPanel.className = 'tile-info-panel hidden';
+            if (this.infoRefreshInterval) {
+                clearInterval(this.infoRefreshInterval);
+                this.infoRefreshInterval = null;
+                this.infoRefreshTileId = null;
+            }
         }
     }
 

@@ -6,6 +6,7 @@ const router = express.Router();
 const populationRoutes = require('./population');
 const tilesRoutes = require('./tiles');
 const calendarRoutes = require('./calendar');
+const dbRoutes = require('./db');
 const DatabaseService = require('../services/databaseService');
 const dbService = new DatabaseService();
 
@@ -13,6 +14,7 @@ const dbService = new DatabaseService();
 router.use('/population', populationRoutes);
 router.use('/tiles', tilesRoutes);
 router.use('/calendar', calendarRoutes);
+router.use('/db', dbRoutes);
 
 // Config endpoint to expose environment variables
 router.get('/config', (req, res) => {
