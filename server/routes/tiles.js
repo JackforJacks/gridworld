@@ -44,12 +44,12 @@ function calculateBiome(centerPoint, terrainType, seededRandom) {
     const latitude = Math.asin(centerPoint.y / r) * (180 / Math.PI); // Convert to degrees
     const absLatitude = Math.abs(latitude);
 
-    // Biome priorities: 1. Polar, 2. Alpine, 3. Latitude-based for other land
-    if (absLatitude > 60) {
-        return 'tundra';
-    }
+    // Biome priorities: 1. Alpine (mountains), 2. Polar, 3. Latitude-based for other land
     if (terrainType === 'mountains') {
         return 'alpine';
+    }
+    if (absLatitude > 60) {
+        return 'tundra';
     }
 
     // Latitude-based biomes for non-mountain, non-polar land
