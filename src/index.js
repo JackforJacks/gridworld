@@ -211,6 +211,42 @@ class GridWorldApp {
                         resolve();
                     }
                 });
+
+                // Apply incoming village updates to client-side tiles so UI totals refresh in real time
+                const applyVillageUpdate = (village) => {
+                    try {
+                        if (!window.sceneManager || !window.sceneManager.hexasphere) return;
+                        const tiles = window.sceneManager.hexasphere.tiles || [];
+                        const tile = tiles.find(t => t.id === village.tile_id);
+                        if (!tile || !Array.isArray(tile.lands)) return;
+                        const land = tile.lands.find(l => l.chunk_index === village.land_chunk_index);
+                        if (land) {
+                            land.village_id = village.id;
+                            land.village_name = village.name || land.village_name;
+                            land.food_stores = village.food_stores;
+                            land.food_capacity = village.food_capacity;
+                            land.food_production_rate = village.food_production_rate;
+                            land.housing_capacity = village.housing_capacity;
+                        }
+
+                        // If the info panel for this tile is open, refresh it immediately
+                        if (window.tileSelector && window.tileSelector.infoRefreshTileId === tile.id) {
+                            window.tileSelector.updateInfoPanel(tile);
+                        }
+                    } catch (e) {
+                        console.warn('Error applying village update:', e);
+                    }
+                };
+
+                this.socket.on('villageUpdated', applyVillageUpdate);
+                this.socket.on('villagesUpdated', (villages) => {
+                    try {
+                        if (!Array.isArray(villages)) return;
+                        villages.forEach(applyVillageUpdate);
+                    } catch (e) {
+                        console.warn('Error handling villagesUpdated:', e);
+                    }
+                });
             });
         } catch (error) {
             console.error('Failed to initialize socket:', error);

@@ -26,6 +26,8 @@ ALTER TABLE tiles ADD COLUMN IF NOT EXISTS fertility INTEGER CHECK (fertility >=
 
 -- Add housing_capacity to villages if missing
 ALTER TABLE villages ADD COLUMN IF NOT EXISTS housing_capacity INTEGER DEFAULT 100;
+-- Add food_capacity to villages if missing
+ALTER TABLE villages ADD COLUMN IF NOT EXISTS food_capacity INTEGER DEFAULT 1000;
 
 -- 1a. Create tiles_lands table (each tile has 100 land chunks)
 CREATE TABLE IF NOT EXISTS tiles_lands (
@@ -46,6 +48,10 @@ CREATE TABLE IF NOT EXISTS villages (
     name TEXT DEFAULT 'Village',
     housing_slots JSONB DEFAULT '[]',
     housing_capacity INTEGER DEFAULT 100,
+    food_stores INTEGER DEFAULT 0,
+    food_capacity INTEGER DEFAULT 1000,
+    food_production_rate REAL DEFAULT 0,
+    last_food_update TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     UNIQUE(tile_id, land_chunk_index)

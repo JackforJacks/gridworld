@@ -7,6 +7,7 @@ const path = require('path');
 const { pathToFileURL } = require('url');
 const pool = require('../config/database');
 const villageSeeder = require('../services/villageSeeder');
+const villageService = require('../services/villageService');
 const http = require('http');
 
 // Helper: parse float with fallback
@@ -298,13 +299,29 @@ router.get('/', async (req, res) => {
             try {
                 const { rows: lands } = await pool.query(`
                     SELECT tl.chunk_index, tl.land_type, tl.cleared, tl.owner_id,
-                           v.id AS village_id, v.name AS village_name, v.housing_slots, v.housing_capacity
+                           v.id AS village_id, v.name AS village_name, v.housing_slots, v.housing_capacity,
+                           v.food_stores, v.food_capacity, v.food_production_rate, v.last_food_update
                     FROM tiles_lands tl
                     LEFT JOIN villages v ON v.tile_id = tl.tile_id AND v.land_chunk_index = tl.chunk_index
                     WHERE tl.tile_id = $1
                     ORDER BY tl.chunk_index
                 `, [props.id]);
                 props.lands = lands;
+
+                // Update food production for villages on this tile
+                const villageIds = lands
+                    .filter(land => land.village_id)
+                    .map(land => land.village_id)
+                    .filter((id, index, arr) => arr.indexOf(id) === index); // Remove duplicates
+
+                for (const villageId of villageIds) {
+                    try {
+                        await villageService.updateVillageFoodProduction(villageId);
+                        await villageService.updateVillageFoodStores(villageId);
+                    } catch (error) {
+                        console.error(`[ERROR] Failed to update food for village ${villageId}:`, error.message);
+                    }
+                }
             } catch (e) {
                 console.error(`[ERROR] Failed to fetch lands for tile ${props.id}:`, e.message);
                 props.lands = [];

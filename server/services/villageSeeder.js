@@ -114,7 +114,7 @@ async function seedIfNoVillages() {
     return { created: 0, villages: [] };
 }
 
-module.exports = { seedRandomVillages, seedIfNoVillages };
+module.exports = { seedRandomVillages, seedIfNoVillages, assignResidencyForTile };
 
 async function seedVillagesForTile(tileId) {
     await ensureVillageIdColumn();
@@ -192,7 +192,7 @@ async function assignResidencyForTile(tileId) {
     try {
         // Get villages for this tile
         const { rows: villages } = await pool.query(`
-            SELECT id, housing_capacity, housing_slots
+            SELECT id, land_chunk_index, housing_capacity, housing_slots
             FROM villages
             WHERE tile_id = $1
             ORDER BY id
@@ -219,7 +219,7 @@ async function assignResidencyForTile(tileId) {
             // Update people residency
             await pool.query(`
                 UPDATE people SET residency = $1 WHERE id = ANY($2)
-            `, [village.id, assignedPeopleIds]);
+            `, [village.land_chunk_index, assignedPeopleIds]);
 
             // Update village housing_slots
             const updatedSlots = [...village.housing_slots, ...assignedPeopleIds];
@@ -236,3 +236,109 @@ async function assignResidencyForTile(tileId) {
         throw err;
     }
 }
+
+/**
+ * Seed villages if none exist in the database
+ * @returns {Promise<Object>} Result with created count and villages
+ */
+async function seedIfNoVillages() {
+    try {
+        // Check if any villages exist
+        const { rows: existingVillages } = await pool.query('SELECT COUNT(*) as count FROM villages');
+        const villageCount = parseInt(existingVillages[0].count);
+
+        if (villageCount > 0) {
+            console.log(`[villageSeeder] ${villageCount} villages already exist, skipping seeding`);
+            return { created: 0, villages: [] };
+        }
+
+        console.log('[villageSeeder] No villages found, seeding initial villages...');
+
+        // Check if there are any populated tiles
+        const { rows: populatedTiles } = await pool.query(`
+            SELECT DISTINCT tile_id FROM people WHERE tile_id IS NOT NULL
+        `);
+
+        if (!populatedTiles || populatedTiles.length === 0) {
+            console.log('[villageSeeder] No populated tiles found, creating initial population and villages...');
+
+            // Check if there are any tiles at all
+            const { rows: allTiles } = await pool.query('SELECT COUNT(*) as count FROM tiles');
+            const tileCount = parseInt(allTiles[0].count);
+
+            if (tileCount === 0) {
+                console.log('[villageSeeder] No tiles found, creating initial habitable tiles...');
+                
+                // Create some initial habitable tiles
+                const initialTiles = [
+                    { id: 1, center_x: 0, center_y: 0, center_z: 1, latitude: 90, longitude: 0, terrain_type: 'plains', is_land: true, is_habitable: true, fertility: 75 },
+                    { id: 2, center_x: 1, center_y: 0, center_z: 0, latitude: 0, longitude: 90, terrain_type: 'plains', is_land: true, is_habitable: true, fertility: 70 },
+                    { id: 3, center_x: 0, center_y: 1, center_z: 0, latitude: 0, longitude: 0, terrain_type: 'plains', is_land: true, is_habitable: true, fertility: 80 },
+                    { id: 4, center_x: -1, center_y: 0, center_z: 0, latitude: 0, longitude: 180, terrain_type: 'plains', is_land: true, is_habitable: true, fertility: 65 },
+                    { id: 5, center_x: 0, center_y: -1, center_z: 0, latitude: 0, longitude: 270, terrain_type: 'plains', is_land: true, is_habitable: true, fertility: 72 }
+                ];
+
+                for (const tile of initialTiles) {
+                    await pool.query(`
+                        INSERT INTO tiles (id, center_x, center_y, center_z, latitude, longitude, terrain_type, is_land, is_habitable, fertility, biome, boundary_points, neighbor_ids)
+                        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)
+                        ON CONFLICT (id) DO NOTHING
+                    `, [tile.id, tile.center_x, tile.center_y, tile.center_z, tile.latitude, tile.longitude, tile.terrain_type, tile.is_land, tile.is_habitable, tile.fertility, 'temperate_grassland', '[]', '[]']);
+                    
+                    // Create tiles_lands for this tile (100 chunks, mostly forest, some cleared for villages)
+                    for (let chunkIndex = 0; chunkIndex < 100; chunkIndex++) {
+                        // Clear the first few chunks for villages
+                        const landType = chunkIndex < 5 ? 'cleared' : (Math.random() > 0.3 ? 'forest' : 'wasteland');
+                        await pool.query(`
+                            INSERT INTO tiles_lands (tile_id, chunk_index, land_type, cleared)
+                            VALUES ($1, $2, $3, $4)
+                            ON CONFLICT (tile_id, chunk_index) DO NOTHING
+                        `, [tile.id, chunkIndex, landType, landType === 'cleared']);
+                    }
+                }
+
+                console.log(`[villageSeeder] Created ${initialTiles.length} initial habitable tiles with land chunks`);
+            }
+
+            // Create initial population on a random habitable tile
+            const { rows: habitableTiles } = await pool.query(`
+                SELECT id FROM tiles
+                WHERE biome NOT IN ('desert', 'tundra', 'alpine')
+                AND terrain_type NOT IN ('ocean', 'mountains')
+                ORDER BY RANDOM()
+                LIMIT 1
+            `);
+
+            if (habitableTiles.length > 0) {
+                const tileId = habitableTiles[0].id;
+                console.log(`[villageSeeder] Creating initial population on tile ${tileId}`);
+
+                // Create some initial people
+                const initialPopulation = 50;
+                for (let i = 0; i < initialPopulation; i++) {
+                    await pool.query(`
+                        INSERT INTO people (tile_id, sex, date_of_birth)
+                        VALUES ($1, $2, $3)
+                    `, [tileId, Math.random() > 0.5, '4000-01-01']);
+                }
+
+                console.log(`[villageSeeder] Created ${initialPopulation} initial people on tile ${tileId}`);
+            }
+        }
+
+        // Now seed villages
+        const result = await seedRandomVillages(5); // Seed 5 villages per populated tile
+
+        console.log(`[villageSeeder] Seeded ${result.created} initial villages`);
+        return result;
+
+    } catch (error) {
+        console.error('[villageSeeder] Error seeding villages if none exist:', error);
+        throw error;
+    }
+}
+
+module.exports = {
+    seedRandomVillages,
+    seedIfNoVillages
+};

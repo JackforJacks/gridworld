@@ -423,10 +423,21 @@ class TileSelector {
                 return sum + cap;
             }, 0);
             const availableSlots = Math.max(0, capacityTotal - occupiedSlotsTotal);
+            const totalFoodProduction = villageEntries.reduce((sum, v) => sum + (v.food_production_rate || 0), 0).toFixed(1);
+            // Sum fractional food stores (don't floor) and show with two decimals
+            const totalFoodStockpile = villageEntries.reduce((sum, v) => sum + Number(v.food_stores || 0), 0).toFixed(2);
+            const totalFoodCapacity = villageEntries.reduce((sum, v) => sum + (v.food_capacity || 1000), 0);
             const villageListHtml = villagesCount > 0 ? (`<ul class="village-list">` + villageEntries.map(v => {
                 const occ = Array.isArray(v.housing_slots) ? v.housing_slots.length : (v.occupied_slots || 0);
                 const cap = v.housing_capacity || 100;
-                return `\n                        <li>${v.village_name || ('Village ' + (v.village_id || ''))} — ${occ}/${cap} slots</li>`;
+                // Show fractional food stores with two decimals
+                const foodStores = Number(v.food_stores || 0).toFixed(2);
+                const foodCapacity = v.food_capacity || 1000;
+                const foodProduction = (v.food_production_rate || 0).toFixed(1);
+                return `\n                        <li>
+                            <div class="village-name">${v.village_name || ('Village ' + (v.village_id || ''))}</div>
+                            <div class="village-details">Housing: ${occ}/${cap} | Food: ${foodStores}/${foodCapacity} 🍖 (${foodProduction}/sec)</div>
+                        </li>`;
             }).join('') + `\n                    </ul>`) : '<div>No villages on this tile.</div>';
 
             villagesPage.innerHTML = `
@@ -434,6 +445,8 @@ class TileSelector {
                 <p>Manage buildings on this tile.</p>
                 <div>Villages: <strong>${villagesCount}/${clearedCount}</strong></div>
                 <div>Available Housing Slots: <strong>${availableSlots}</strong></div>
+                <div>Total Food Stockpile: <strong>${totalFoodStockpile}/${totalFoodCapacity} 🍖</strong></div>
+                <div>Total Food Production: <strong>${totalFoodProduction}/sec</strong></div>
                 ${villageListHtml}
                 <button id="build-village-btn">Build New Village</button>
             `;

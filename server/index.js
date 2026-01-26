@@ -101,6 +101,12 @@ class GridWorldServer {
         } else {
             console.log('🔄 Services already initialized, skipping initialization...');
         }
+
+        // Start automatic food updates
+        const VillageService = require('./services/villageService');
+        // Provide socket instance to VillageService so it can emit real-time village updates
+        VillageService.setIo(this.io);
+        VillageService.startFoodUpdateTimer(1000); // Update every 1 second
     } setupSocketHandlers() {
         this.io.on('connection', (socket) => {
             console.log(`👤 Client connected: ${socket.id}`);
@@ -162,6 +168,10 @@ class GridWorldServer {
         });        // Graceful shutdown
         process.on('SIGINT', async () => {
             console.log('\n🛑 Shutting down server...');
+
+            // Stop food update timer
+            const VillageService = require('./services/villageService');
+            VillageService.stopFoodUpdateTimer();
 
             if (populationServiceInstance) {
                 await populationServiceInstance.shutdown();
