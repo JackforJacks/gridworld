@@ -243,19 +243,39 @@ class VillageService {
     }
 
     /**
-     * Update food production rates for all villages
+     * Update food production rates for all villages in a single batch query
      * @returns {Promise<Array>} Array of updated villages
      */
     static async updateAllVillageFoodProduction() {
         try {
-            // Get all village IDs
-            const { rows: villageIds } = await pool.query('SELECT id FROM villages');
-
-            const updatedVillages = [];
-            for (const { id } of villageIds) {
-                const updated = await this.updateVillageFoodProduction(id);
-                updatedVillages.push(updated);
-            }
+            // Single batch query using CTE to calculate production rates
+            const { rows: updatedVillages } = await pool.query(`
+                WITH village_stats AS (
+                    SELECT 
+                        v.id as village_id,
+                        COALESCE(t.fertility, 0) as fertility,
+                        (SELECT COUNT(*) FROM tiles_lands tl 
+                         WHERE tl.tile_id = v.tile_id 
+                         AND tl.chunk_index = v.land_chunk_index 
+                         AND tl.cleared = true) as cleared_cnt,
+                        (SELECT COUNT(*) FROM people p 
+                         WHERE p.tile_id = v.tile_id 
+                         AND p.residency = v.land_chunk_index) as pop_cnt
+                    FROM villages v
+                    LEFT JOIN tiles t ON v.tile_id = t.id
+                )
+                UPDATE villages v
+                SET 
+                    food_production_rate = GREATEST(0, 
+                        (vs.fertility / 100.0) * 
+                        vs.cleared_cnt * 
+                        SQRT(vs.pop_cnt + 1) * 0.1
+                    ),
+                    updated_at = CURRENT_TIMESTAMP
+                FROM village_stats vs
+                WHERE v.id = vs.village_id
+                RETURNING v.*
+            `);
 
             return updatedVillages;
         } catch (error) {
@@ -265,19 +285,19 @@ class VillageService {
     }
 
     /**
-     * Update food capacity for all villages
+     * Update food capacity for all villages in a single batch query
      * @returns {Promise<Array>} Array of updated villages
      */
     static async updateAllVillageFoodCapacity() {
         try {
-            // Get all village IDs
-            const { rows: villageIds } = await pool.query('SELECT id FROM villages');
-
-            const updatedVillages = [];
-            for (const { id } of villageIds) {
-                const updated = await this.updateVillageFoodCapacity(id);
-                updatedVillages.push(updated);
-            }
+            // Single batch query: update all food capacities at once
+            const { rows: updatedVillages } = await pool.query(`
+                UPDATE villages
+                SET 
+                    food_capacity = LEAST(1000, COALESCE(housing_capacity, 1000)),
+                    updated_at = CURRENT_TIMESTAMP
+                RETURNING *
+            `);
 
             return updatedVillages;
         } catch (error) {
@@ -287,31 +307,38 @@ class VillageService {
     }
 
     /**
-     * Update food stores for all villages based on time elapsed
+     * Update food stores for all villages in a single batch query
+     * Uses time elapsed since last update to calculate food produced
      * @returns {Promise<Array>} Array of updated villages
      */
     static async updateAllVillageFoodStores() {
         try {
-            console.log('🍖 Updating food stores for all villages...');
-            // Get all village IDs
-            const { rows: villageIds } = await pool.query('SELECT id FROM villages');
+            // First, batch update all production rates (1 query)
+            await this.updateAllVillageFoodProduction();
 
-            const updatedVillages = [];
-            for (const { id } of villageIds) {
-                const updated = await this.updateVillageFoodStores(id);
-                updatedVillages.push(updated);
-            }
+            // Then batch update all food stores based on elapsed time (1 query)
+            const { rows: updatedVillages } = await pool.query(`
+                UPDATE villages
+                SET 
+                    food_stores = LEAST(
+                        COALESCE(food_capacity, 1000),
+                        GREATEST(0, 
+                            COALESCE(food_stores, 0) + 
+                            COALESCE(food_production_rate, 0) * 
+                            EXTRACT(EPOCH FROM (NOW() - COALESCE(last_food_update, NOW())))
+                        )
+                    ),
+                    last_food_update = CURRENT_TIMESTAMP,
+                    updated_at = CURRENT_TIMESTAMP
+                RETURNING *
+            `);
 
-            console.log(`🍖 Updated food stores for ${updatedVillages.length} villages`);
+            console.log(`🍖 Batch updated food stores for ${updatedVillages.length} villages`);
 
             // Emit updates to connected clients so the UI can update in real time
             if (this.io && updatedVillages.length > 0) {
                 try {
-                    // Emit the full batch and individual updates
                     this.io.emit('villagesUpdated', updatedVillages);
-                    for (const v of updatedVillages) {
-                        this.io.emit('villageUpdated', v);
-                    }
                 } catch (e) {
                     console.warn('[villageService] Failed to emit village updates via socket:', e.message);
                 }
