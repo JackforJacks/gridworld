@@ -138,8 +138,8 @@ async function initializePopulationService(serviceInstance, io, calendarService)
                         const { formNewFamilies } = require('./familyManager.js');
                         const newFamilies = await formNewFamilies(pool, serviceInstance.calendarService);
                         if (newFamilies > 0) {
-                                // Quiet: new families formed (log suppressed)
-                            }
+                            // Quiet: new families formed (log suppressed)
+                        }
                     }
 
                     // 2. Process daily family events (births and pregnancies)

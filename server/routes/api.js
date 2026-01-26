@@ -162,7 +162,7 @@ router.post('/reset/fast', async (req, res) => {
                 }
                 // Persist to DB
                 if (typeof calendarService.saveStateToDB === 'function') {
-                    try { await calendarService.saveStateToDB(); } catch (_) {}
+                    try { await calendarService.saveStateToDB(); } catch (_) { }
                 }
                 calendarState = calendarService.getState();
                 // Broadcast to connected clients

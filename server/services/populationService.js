@@ -57,7 +57,7 @@ const { validateTileIds } = require('./population/validation.js');
 const StatisticsService = require('./statisticsService');
 
 class PopulationService {
-    #pool;    constructor(io, calendarService = null, statisticsService = null) {
+    #pool; constructor(io, calendarService = null, statisticsService = null) {
         this.io = io;
         this.calendarService = calendarService;
         this.#pool = pool;
@@ -74,7 +74,7 @@ class PopulationService {
         this.eventLog = [];
         // Statistics service for vital rates - use provided instance or create new one
         this.statisticsService = statisticsService || new StatisticsService();
-    }getPool() { return this.#pool; }
+    } getPool() { return this.#pool; }
 
     getStatisticsService() {
         return this.statisticsService;
