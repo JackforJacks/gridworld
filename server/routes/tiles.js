@@ -440,8 +440,9 @@ router.post('/restart', async (req, res) => {
 
     try {
         await new Promise((resolve, reject) => {
+            // Use explicit loopback IP to avoid hitting any dev-server proxy (webpack-dev-server)
             const options = {
-                hostname: 'localhost',
+                hostname: '127.0.0.1',
                 port: port,
                 path: regenPath,
                 method: 'GET',
@@ -467,7 +468,11 @@ router.post('/restart', async (req, res) => {
                 });
             });
 
-            reqGet.on('error', (err) => reject(err));
+            reqGet.on('error', (err) => {
+                // Log and reject; ECONNRESET sometimes happens when a proxy closes the socket
+                console.warn('[tiles/restart] regen request error:', err && err.message ? err.message : err);
+                reject(err);
+            });
             reqGet.on('timeout', () => { reqGet.destroy(new Error('Regeneration request timed out')); });
             reqGet.end();
         });
@@ -480,21 +485,112 @@ router.post('/restart', async (req, res) => {
             console.warn('[API /api/tiles/restart] Village seeding failed after regeneration:', seedErr.message);
         }
 
+        // If a CalendarService is available on the app, set the calendar to Year 4000 (1-1-4000)
+        try {
+            const calendarService = req && req.app && req.app.locals && req.app.locals.calendarService;
+            if (calendarService && typeof calendarService.setDate === 'function') {
+                // Capture previous year for explicit year-change event
+                const prevState = calendarService.getState();
+                const prevYear = prevState && prevState.currentDate ? prevState.currentDate.year : (calendarService.currentDate ? calendarService.currentDate.year : null);
+
+                // Use day=1, month=1, year=4000
+                calendarService.setDate(1, 1, 4000);
+
+                // Also reset internal counters/timers to ensure the calendar shows the exact date
+                try {
+                    if (typeof calendarService.calculateTotalDays === 'function') {
+                        calendarService.state.totalDays = calendarService.calculateTotalDays(4000, 1, 1);
+                    } else {
+                        calendarService.state.totalDays = 0;
+                    }
+                    calendarService.state.totalTicks = 0;
+                    calendarService.state.startTime = Date.now();
+                    calendarService.state.lastTickTime = Date.now();
+                    console.log('[API /api/tiles/restart] Calendar internal counters reset after setDate');
+                } catch (e) {
+                    console.warn('[API /api/tiles/restart] Failed to reset calendar internal counters:', e && e.message ? e.message : e);
+                }
+
+                // Persist and broadcast new state so connected clients update immediately
+                if (typeof calendarService.saveStateToDB === 'function') {
+                    try { await calendarService.saveStateToDB(); } catch (saveErr) { console.warn('[tiles/restart] calendarService.saveStateToDB failed:', saveErr && saveErr.message ? saveErr.message : saveErr); }
+                }
+
+                const newState = calendarService.getState();
+
+                // Log the effective calendar state for debugging
+                console.log('[tiles/restart] calendarService state after setDate:', JSON.stringify(newState));
+
+                // Broadcast via multiple io APIs to maximize compatibility with socket.io versions
+                try {
+                    if (calendarService.io && typeof calendarService.io.emit === 'function') {
+                        calendarService.io.emit('calendarState', newState);
+                        calendarService.io.emit('calendarDateSet', newState);
+                    }
+                } catch (emitErr) {
+                    console.warn('[tiles/restart] io.emit failed:', emitErr && emitErr.message ? emitErr.message : emitErr);
+                }
+
+                try {
+                    if (calendarService.io && calendarService.io.sockets && typeof calendarService.io.sockets.emit === 'function') {
+                        calendarService.io.sockets.emit('calendarState', newState);
+                    }
+                } catch (emitErr2) {
+                    console.warn('[tiles/restart] io.sockets.emit failed:', emitErr2 && emitErr2.message ? emitErr2.message : emitErr2);
+                }
+
+                // Emit explicit year change if applicable
+                try {
+                    const newYear = newState && newState.currentDate ? newState.currentDate.year : null;
+                    if (newYear !== null && prevYear !== null && newYear !== prevYear) {
+                        if (calendarService.io && typeof calendarService.io.emit === 'function') {
+                            calendarService.io.emit('calendarYearChanged', { newYear, oldYear: prevYear });
+                        }
+                    }
+                } catch (yrErr) {
+                    console.warn('[tiles/restart] Failed emitting year change:', yrErr && yrErr.message ? yrErr.message : yrErr);
+                }
+
+                console.log('[API /api/tiles/restart] Calendar reset to Year 4000 (01-01-4000) and broadcasted');
+            }
+        } catch (calErr) {
+            console.warn('[API /api/tiles/restart] Failed to reset/calendar-broadcast to Year 4000:', calErr && calErr.message ? calErr.message : calErr);
+        }
+
+        // Include calendar state in response so clients can update inline if they initiated the restart
+        let calendarStateForResponse = null;
+        try {
+            const calendarService = req && req.app && req.app.locals && req.app.locals.calendarService;
+            if (calendarService && typeof calendarService.getState === 'function') {
+                calendarStateForResponse = calendarService.getState();
+            }
+        } catch (_) { /* ignore */ }
+
         res.json({
             success: true,
             message: 'World restarted and regenerated successfully (tiles, lands, villages attempted).',
             oldSeed: oldSeed,
-            newSeed: worldSeed
+            newSeed: worldSeed,
+            calendarState: calendarStateForResponse
         });
     } catch (err) {
         console.error('[API /api/tiles/restart] Regeneration request failed:', err && err.message ? err.message : err);
         // Still return success for restart but inform client regeneration failed
+        let calendarStateForResponse = null;
+        try {
+            const calendarService = req && req.app && req.app.locals && req.app.locals.calendarService;
+            if (calendarService && typeof calendarService.getState === 'function') {
+                calendarStateForResponse = calendarService.getState();
+            }
+        } catch (_) { /* ignore */ }
+
         res.json({
             success: true,
             message: 'World restarted, but automatic regeneration failed. Call /api/tiles?regenerate=true manually.',
             oldSeed: oldSeed,
             newSeed: worldSeed,
-            regenError: err && err.message ? err.message : String(err)
+            regenError: err && err.message ? err.message : String(err),
+            calendarState: calendarStateForResponse
         });
     }
 });

@@ -173,15 +173,17 @@ class GridWorldApp {
      */
     async initializeSocket() {
         try {
-            this.socket = io({
+            // Connect directly to backend to avoid webpack-dev-server proxy issues
+            this.socket = io('http://localhost:3000', {
                 timeout: 30000,
-                transports: ['polling'], // Use only polling to bypass WebSocket proxy issues
+                transports: ['polling'], // Use polling only (server disables upgrades)
                 upgrade: false, // Disable upgrading to WebSocket
                 forceNew: false,
                 reconnection: true,
                 reconnectionDelay: 1000,
                 reconnectionDelayMax: 5000,
-                maxReconnectionAttempts: 5
+                maxReconnectionAttempts: 5,
+                path: '/socket.io'
             });
 
             return new Promise((resolve, reject) => {

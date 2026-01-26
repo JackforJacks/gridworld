@@ -113,7 +113,7 @@ async function initializePopulationService(serviceInstance, io, calendarService)
 
     if (serviceInstance.calendarService) {
         serviceInstance.calendarService.on('monthChanged', async (newMonth, oldMonth) => {
-            console.log(`📅 Month changed from ${oldMonth} to ${newMonth}, applying senescence...`);
+            // Quiet: monthChanged triggered; applying senescence (log suppressed)
             try {
                 const pool = serviceInstance.getPool ? serviceInstance.getPool() : serviceInstance._pool || serviceInstance['#pool'];
                 if (!pool) {
@@ -122,7 +122,7 @@ async function initializePopulationService(serviceInstance, io, calendarService)
                 }
                 const deaths = await applySenescence(pool, serviceInstance.calendarService, serviceInstance);
                 if (deaths > 0) {
-                    console.log(`💀 Monthly senescence: ${deaths} people died`);
+                    // Quiet: monthly senescence occurred (log suppressed)
                     await serviceInstance.broadcastUpdate('monthlySenescence');
                 }
             } catch (error) {
@@ -138,8 +138,8 @@ async function initializePopulationService(serviceInstance, io, calendarService)
                         const { formNewFamilies } = require('./familyManager.js');
                         const newFamilies = await formNewFamilies(pool, serviceInstance.calendarService);
                         if (newFamilies > 0) {
-                            console.log(`[DAILY] Formed ${newFamilies} new families.`);
-                        }
+                                // Quiet: new families formed (log suppressed)
+                            }
                     }
 
                     // 2. Process daily family events (births and pregnancies)

@@ -14,7 +14,7 @@ function startGrowth(serviceInstance) {
             console.error('❌ Error updating populations:', error);
         }
     }, config.populationGrowthInterval);
-    console.log('Population growth started.');
+    // Population growth started. (log suppressed)
 }
 
 /**
@@ -157,7 +157,7 @@ async function applySenescence(pool, calendarService, populationServiceInstance)
             if (populationServiceInstance && typeof populationServiceInstance.trackDeaths === 'function') {
                 populationServiceInstance.trackDeaths(deaths.length);
             }
-            console.log(`💀 Senescence: ${deaths.length} people died of old age`);
+            // Quiet: senescence occurred (log suppressed)
             return deaths.length;
         }
         return 0;
@@ -225,11 +225,11 @@ async function processDailyFamilyEvents(pool, calendarService, serviceInstance) 
               AND EXTRACT(YEAR FROM AGE(date_of_birth)) >= 16
         `);
         if (releaseAdultsResult.rowCount > 0) {
-            console.log(`👦👧 Released ${releaseAdultsResult.rowCount} new adults from their families.`);
+            // Quiet: released new adults (log suppressed)
         }
 
         if (deliveries > 0 || newPregnancies > 0) {
-            console.log(`👪 Daily family events: ${deliveries} births, ${newPregnancies} new pregnancies`);
+            // Quiet: daily family events occurred (log suppressed)
         }
 
         return {

@@ -498,7 +498,7 @@ class PopulationService {
      * Tick method for daily updates
      */
     async tick() {
-        console.log('[TICK] Running daily population update...');
+        // Quiet: daily population tick started (log suppressed)
 
         try {
             // 1. Apply senescence
@@ -509,7 +509,7 @@ class PopulationService {
             const { formNewFamilies } = require('./population/familyManager.js');
             const newFamilies = await formNewFamilies(this.#pool, this.calendarService);
             if (newFamilies > 0) {
-                console.log(`[TICK] Formed ${newFamilies} new families.`);
+                // Quiet: formed new families on tick (log suppressed)
             }
 
             // 3. Process births and new pregnancies

@@ -26,7 +26,9 @@ async function createFamily(pool, husbandId, wifeId, tileId) {
 
         if (!husband || !wife) {
             throw new Error('Husband must be male and wife must be female');
-        }        // Create family record
+        }
+
+        // Create family record
         const result = await pool.query(`
             INSERT INTO family (husband_id, wife_id, tile_id, pregnancy, children_ids)
             VALUES ($1, $2, $3, FALSE, '{}')
@@ -42,7 +44,7 @@ async function createFamily(pool, husbandId, wifeId, tileId) {
             WHERE id IN ($2, $3)
         `, [familyId, husbandId, wifeId]);
 
-        console.log(`👨‍👩‍👦 New family created: ID ${familyId} on tile ${tileId}`);
+        // console.log(`👨‍👩‍👦 New family created: ID ${familyId} on tile ${tileId}`);
         return result.rows[0];
     } catch (error) {
         console.error('Error creating family:', error);
@@ -137,7 +139,7 @@ async function startPregnancy(pool, calendarService, familyId) {
 
         await client.query('COMMIT');
 
-        console.log(`🤰 Pregnancy started for family ${familyId}, wife age: ${wifeAge}, delivery expected: ${deliveryDate}`);
+        // console.log(`🤰 Pregnancy started for family ${familyId}, wife age: ${wifeAge}, delivery expected: ${deliveryDate}`);
         return updateResult.rows[0];
     } catch (error) {
         try { await client.query('ROLLBACK'); } catch (e) { /* ignore rollback errors */ }
@@ -216,7 +218,7 @@ async function deliverBaby(pool, calendarService, populationServiceInstance, fam
             populationServiceInstance.trackBirths(1);
         }
 
-        console.log(`👶 Baby born! Family ${familyId}, Baby ID: ${babyId}, Sex: ${babySex ? 'Male' : 'Female'}`);
+        // console.log(`👶 Baby born! Family ${familyId}, Baby ID: ${babyId}, Sex: ${babySex ? 'Male' : 'Female'}`);
 
         return {
             baby: { id: babyId, sex: babySex, birthDate },
@@ -291,7 +293,7 @@ async function processDeliveries(pool, calendarService, populationServiceInstanc
         }
 
         if (babiesDelivered > 0) {
-            console.log(`👶 ${babiesDelivered} babies delivered today!`);
+            // Quiet: babies delivered today (log suppressed)
         }
 
         return babiesDelivered;
@@ -360,9 +362,7 @@ async function formNewFamilies(pool, calendarService) {
         const femaleMinBirthDate = `${femaleMinBirthYear}-${String(month).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
         const femaleMaxBirthDate = `${femaleMaxBirthYear}-${String(month).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
 
-        console.log(`🔍 Looking for eligible bachelors... Current year: ${year}`);
-        console.log(`   Males: birth years ${maleMinBirthYear} to ${maleMaxBirthYear}`);
-        console.log(`   Females: birth years ${femaleMinBirthYear} to ${femaleMaxBirthYear}`);
+        // Quiet: searching for eligible bachelors (log suppressed)
 
         // Get eligible male bachelors (age 16-45, not in a family)
         const malesResult = await pool.query(`
@@ -389,12 +389,13 @@ async function formNewFamilies(pool, calendarService) {
         const eligibleMales = malesResult.rows;
         const eligibleFemales = femalesResult.rows;
 
-        console.log(`   Found ${eligibleMales.length} eligible males and ${eligibleFemales.length} eligible females`);
+        // Quiet: found eligible candidates (log suppressed)
 
         if (eligibleMales.length === 0 || eligibleFemales.length === 0) {
-            console.log(`   ❌ No eligible bachelors to form families`);
+            // Quiet: no eligible bachelors to form families (log suppressed)
             return 0;
-        }        // Group people by tile to only allow same-tile marriages
+        }
+        // Group people by tile to only allow same-tile marriages
         const malesByTile = {};
         const femalesByTile = {};
 

@@ -143,7 +143,40 @@ router.post('/reset/fast', async (req, res) => {
             console.warn('[API /api/reset/fast] Village seeding failed:', seedErr.message || seedErr);
         }
 
-        return res.json({ success: true, ...status });
+        // 4) Reset calendar to Year 4000
+        let calendarState = null;
+        try {
+            const calendarService = req.app.locals.calendarService;
+            if (calendarService && typeof calendarService.setDate === 'function') {
+                calendarService.setDate(1, 1, 4000);
+                // Reset internal counters
+                if (calendarService.state) {
+                    if (typeof calendarService.calculateTotalDays === 'function') {
+                        calendarService.state.totalDays = calendarService.calculateTotalDays(4000, 1, 1);
+                    } else {
+                        calendarService.state.totalDays = 0;
+                    }
+                    calendarService.state.totalTicks = 0;
+                    calendarService.state.startTime = Date.now();
+                    calendarService.state.lastTickTime = Date.now();
+                }
+                // Persist to DB
+                if (typeof calendarService.saveStateToDB === 'function') {
+                    try { await calendarService.saveStateToDB(); } catch (_) {}
+                }
+                calendarState = calendarService.getState();
+                // Broadcast to connected clients
+                if (calendarService.io && typeof calendarService.io.emit === 'function') {
+                    calendarService.io.emit('calendarState', calendarState);
+                    calendarService.io.emit('calendarDateSet', calendarState);
+                }
+                console.log('[API /api/reset/fast] Calendar reset to Year 4000');
+            }
+        } catch (calErr) {
+            console.warn('[API /api/reset/fast] Calendar reset failed:', calErr.message || calErr);
+        }
+
+        return res.json({ success: true, ...status, calendarState });
     } catch (error) {
         console.error('[API /api/reset/fast] Failed:', error.message || error);
         return res.status(500).json({ success: false, message: 'Fast reset failed', error: error.message || String(error), ...status });

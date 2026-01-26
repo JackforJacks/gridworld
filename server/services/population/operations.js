@@ -211,7 +211,7 @@ async function initializeTilePopulations(pool, calendarService, serviceInstance,
                 // Update people.family_id for both husband and wife
                 await pool.query('UPDATE people SET family_id = $1 WHERE id = $2', [famId, bachelorMales[i].id]);
                 await pool.query('UPDATE people SET family_id = $1 WHERE id = $2', [famId, bachelorFemales[i].id]);
-                console.log(`[Tile ${tile_id}] 🎉 New family created after initialization: id=${famId}, male=${bachelorMales[i].id}, female=${bachelorFemales[i].id}`);
+                // console.log(`[Tile ${tile_id}] 🎉 New family created after initialization: id=${famId}, male=${bachelorMales[i].id}, female=${bachelorFemales[i].id}`);
             }
             // 2. Assign all minors to these new families (distribute evenly)
             const minorsResult = await pool.query(`

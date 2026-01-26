@@ -302,6 +302,47 @@ class SceneManager {
             const restartData = await restartResponse.json();
             console.log(`🎲 World restarted with new seed: ${restartData.newSeed}`);
 
+            // Attempt to apply server calendar state to client. If restart response lacks it, fetch /api/calendar/state
+            try {
+                let calendarState = restartData && restartData.calendarState;
+                if (!calendarState) {
+                    try {
+                        const csResp = await fetch('/api/calendar/state');
+                        if (csResp.ok) {
+                            const csJson = await csResp.json();
+                            if (csJson && csJson.success) calendarState = csJson.data;
+                        }
+                    } catch (e) {
+                        console.warn('Failed to fetch /api/calendar/state after restart:', e);
+                    }
+                }
+
+                if (calendarState) {
+                    console.log('[restart] Received calendarState:', JSON.stringify(calendarState));
+                    // Force-update year label directly
+                    const yearEl = document.getElementById('calendar-year-inline');
+                    if (yearEl && calendarState.currentDate) {
+                        yearEl.textContent = `Year: ${calendarState.currentDate.year}`;
+                        console.log('[restart] Directly updated year label to:', calendarState.currentDate.year);
+                    }
+                    if (window.GridWorldApp && window.GridWorldApp.calendarManager) {
+                        try {
+                            window.GridWorldApp.calendarManager.updateState(calendarState);
+                            if (window.GridWorldApp.calendarDisplay && typeof window.GridWorldApp.calendarDisplay.updateDateDisplay === 'function') {
+                                window.GridWorldApp.calendarDisplay.updateDateDisplay(calendarState);
+                            }
+                            console.log('📅 Applied server calendarState to client after restart');
+                        } catch (e) {
+                            console.warn('Failed to apply calendarState on client:', e);
+                        }
+                    }
+                } else {
+                    console.warn('[restart] No calendarState received from server');
+                }
+            } catch (e) {
+                /* ignore */
+            }
+
             // Get current hexasphere parameters from server config
             let radius = this.sphereRadius || 30;
             let subdivisions = 3; // Fallback
