@@ -167,7 +167,7 @@ class VillageService {
         try {
             // First update the production rate to ensure it's current
             await this.updateVillageFoodProduction(villageId);
-            
+
             // Get current village data
             const { rows: villageRows } = await pool.query(
                 'SELECT * FROM villages WHERE id = $1',
@@ -189,9 +189,9 @@ class VillageService {
             // Update food stores and timestamp (capped at food capacity)
             const foodCapacity = village.food_capacity || 1000;
             const newFoodStores = Math.min(foodCapacity, Math.max(0, village.food_stores + foodProduced));
-            
+
             console.log(`Village ${villageId}: rate=${village.food_production_rate}, elapsed=${secondsElapsed}s, produced=${foodProduced}, old=${village.food_stores}, new=${newFoodStores}`);
-            
+
             const updateQuery = `
                 UPDATE villages
                 SET food_stores = $1, last_food_update = CURRENT_TIMESTAMP, updated_at = CURRENT_TIMESTAMP

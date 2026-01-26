@@ -268,7 +268,7 @@ async function seedIfNoVillages() {
 
             if (tileCount === 0) {
                 console.log('[villageSeeder] No tiles found, creating initial habitable tiles...');
-                
+
                 // Create some initial habitable tiles
                 const initialTiles = [
                     { id: 1, center_x: 0, center_y: 0, center_z: 1, latitude: 90, longitude: 0, terrain_type: 'plains', is_land: true, is_habitable: true, fertility: 75 },
@@ -284,7 +284,7 @@ async function seedIfNoVillages() {
                         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)
                         ON CONFLICT (id) DO NOTHING
                     `, [tile.id, tile.center_x, tile.center_y, tile.center_z, tile.latitude, tile.longitude, tile.terrain_type, tile.is_land, tile.is_habitable, tile.fertility, 'temperate_grassland', '[]', '[]']);
-                    
+
                     // Create tiles_lands for this tile (100 chunks, mostly forest, some cleared for villages)
                     for (let chunkIndex = 0; chunkIndex < 100; chunkIndex++) {
                         // Clear the first few chunks for villages
