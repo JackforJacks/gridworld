@@ -430,9 +430,9 @@ class TileSelector {
             }).join('') + `\n                    </ul>`) : '<div>No villages on this tile.</div>';
 
             villagesPage.innerHTML = `
-                <h3>🏛️ Villages</h3>
-                <p>Manage villages and buildings on this tile.</p>
-                <div>Villages: <strong>${villagesCount}</strong></div>
+                <h3>🏛️ Buildings</h3>
+                <p>Manage buildings on this tile.</p>
+                <div>Villages: <strong>${villagesCount}/${clearedCount}</strong></div>
                 <div>Available Housing Slots: <strong>${availableSlots}</strong></div>
                 ${villageListHtml}
                 <button id="build-village-btn">Build New Village</button>
