@@ -496,6 +496,34 @@ kbd {
     background: #F57C00;
 }
 
+.save-button {
+    background: #4CAF50;
+}
+
+.save-button:hover {
+    background: #388E3C;
+}
+
+.save-button:disabled {
+    background: #9E9E9E;
+    cursor: not-allowed;
+    transform: none;
+}
+
+.save-button.saving {
+    background: #FFC107;
+    animation: pulse 0.5s infinite alternate;
+}
+
+.save-button.saved {
+    background: #4CAF50;
+}
+
+@keyframes pulse {
+    from { opacity: 1; }
+    to { opacity: 0.7; }
+}
+
 .dashboard-toggle-help {
     background: #4CAF50;
     color: white;

@@ -315,11 +315,25 @@ async function seedIfNoVillages() {
 
                 // Create some initial people
                 const initialPopulation = 50;
+                // Batch insert and RETURNING to sync to Redis
+                const values = [];
+                const params = [];
                 for (let i = 0; i < initialPopulation; i++) {
-                    await pool.query(`
-                        INSERT INTO people (tile_id, sex, date_of_birth)
-                        VALUES ($1, $2, $3)
-                    `, [tileId, Math.random() > 0.5, '4000-01-01']);
+                    const pIndex = i * 3;
+                    values.push(`($${pIndex + 1}, $${pIndex + 2}, $${pIndex + 3})`);
+                    params.push(tileId, Math.random() > 0.5, '4000-01-01');
+                }
+                if (values.length > 0) {
+                    const res = await pool.query(`INSERT INTO people (tile_id, sex, date_of_birth) VALUES ${values.join(',')} RETURNING id, tile_id, residency, sex, date_of_birth`, params);
+                    try {
+                        const PopulationState = require('./populationState');
+                        for (const row of res.rows) {
+                            const personObj = { id: row.id, tile_id: row.tile_id, residency: row.residency, sex: row.sex, health: 100 };
+                            await PopulationState.addPerson(personObj);
+                        }
+                    } catch (err) {
+                        console.warn('⚠️ Could not sync seeded people to Redis (PopulationState):', err.message);
+                    }
                 }
 
                 console.log(`[villageSeeder] Created ${initialPopulation} initial people on tile ${tileId}`);

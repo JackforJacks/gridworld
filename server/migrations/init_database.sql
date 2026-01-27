@@ -70,8 +70,12 @@ CREATE TABLE IF NOT EXISTS people (
     date_of_birth DATE,
     residency INTEGER,
     family_id INTEGER,
+    health INTEGER DEFAULT 100 CHECK (health >= 0 AND health <= 100),
     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
+
+-- Add health column if it doesn't exist (for existing databases)
+ALTER TABLE people ADD COLUMN IF NOT EXISTS health INTEGER DEFAULT 100;
 
 -- 3. Create family table
 CREATE TABLE IF NOT EXISTS family (

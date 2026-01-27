@@ -21,6 +21,7 @@ const villageSeeder = require('./services/villageSeeder');
 const PopulationService = require('./services/populationService');
 const CalendarService = require('./services/calendarService');
 const StatisticsService = require('./services/statisticsService');
+const StateManager = require('./services/stateManager');
 
 // Import middleware
 const errorHandler = require('./middleware/errorHandler');
@@ -102,12 +103,39 @@ class GridWorldServer {
             console.log('🔄 Services already initialized, skipping initialization...');
         }
 
-        // Start automatic food updates
+        // Load state from PostgreSQL to Redis
+        console.log('🔧 Initializing State Manager (Redis)...');
+        try {
+            await StateManager.loadFromDatabase();
+            StateManager.setIo(this.io);
+            StateManager.setCalendarService(calendarServiceInstance);
+            console.log('🔴 State Manager initialized (Redis mode)');
+
+            // If Redis reconnects later, re-sync automatically
+            try {
+                const redis = require('./config/redis');
+                redis.on && redis.on('ready', async () => {
+                    try {
+                        console.log('🔁 Redis reconnected, reloading state to Redis from Postgres...');
+                        await StateManager.loadFromDatabase();
+                    } catch (e) {
+                        console.warn('⚠️ Failed to reload state after Redis reconnect:', e.message);
+                    }
+                });
+            } catch (e) {
+                console.warn('⚠️ Could not attach Redis reconnect handler:', e.message);
+            }
+        } catch (err) {
+            console.error('❌ Failed to initialize Redis state, falling back to PostgreSQL:', err.message);
+        }
+
+        // Setup food production on calendar ticks (instead of interval timer)
         const VillageService = require('./services/villageService');
-        // Provide socket instance to VillageService so it can emit real-time village updates
         VillageService.setIo(this.io);
-        VillageService.startFoodUpdateTimer(1000); // Update every 1 second
-    } setupSocketHandlers() {
+        VillageService.setupTickBasedFoodUpdates(calendarServiceInstance);
+    }
+
+    setupSocketHandlers() {
         this.io.on('connection', (socket) => {
             console.log(`👤 Client connected: ${socket.id}`);
 

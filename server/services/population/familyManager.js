@@ -2,8 +2,8 @@
 const { calculateAge } = require('./calculator.js');
 
 /**
- * Creates a new family unit
- * @param {Pool} pool - Database pool instance
+ * Creates a new family unit - Redis-only, batched to Postgres on Save
+ * @param {Pool} pool - Database pool instance (unused, kept for API compatibility)
  * @param {number} husbandId - ID of the husband
  * @param {number} wifeId - ID of the wife
  * @param {number} tileId - Tile ID where the family resides
@@ -11,41 +11,40 @@ const { calculateAge } = require('./calculator.js');
  */
 async function createFamily(pool, husbandId, wifeId, tileId) {
     try {
-        // Verify both people exist and are of appropriate age/sex
-        const peopleResult = await pool.query(
-            'SELECT id, sex, date_of_birth FROM people WHERE id IN ($1, $2)',
-            [husbandId, wifeId]
-        );
+        const PopulationState = require('../populationState');
+        
+        // Verify both people exist in Redis
+        const husband = await PopulationState.getPerson(husbandId);
+        const wife = await PopulationState.getPerson(wifeId);
 
-        if (peopleResult.rows.length !== 2) {
+        if (!husband || !wife) {
             throw new Error('Both husband and wife must exist');
         }
 
-        const husband = peopleResult.rows.find(p => p.sex === true);
-        const wife = peopleResult.rows.find(p => p.sex === false);
-
-        if (!husband || !wife) {
+        if (husband.sex !== true || wife.sex !== false) {
             throw new Error('Husband must be male and wife must be female');
         }
 
-        // Create family record
-        const result = await pool.query(`
-            INSERT INTO family (husband_id, wife_id, tile_id, pregnancy, children_ids)
-            VALUES ($1, $2, $3, FALSE, '{}')
-            RETURNING *
-        `, [husbandId, wifeId, tileId]);
+        // Get a temporary family ID (negative to distinguish from Postgres IDs)
+        const familyId = await PopulationState.getNextFamilyTempId();
 
-        const familyId = result.rows[0].id;
+        // Create family record in Redis (will be batched to Postgres on Save)
+        const family = {
+            id: familyId,
+            husband_id: husbandId,
+            wife_id: wifeId,
+            tile_id: tileId,
+            pregnancy: false,
+            delivery_date: null,
+            children_ids: []
+        };
+        await PopulationState.addFamily(family, true); // isNew = true
 
-        // Update both people to link them to their new family
-        await pool.query(`
-            UPDATE people 
-            SET family_id = $1, updated_at = CURRENT_TIMESTAMP
-            WHERE id IN ($2, $3)
-        `, [familyId, husbandId, wifeId]);
+        // Update both people in Redis to link them to their new family
+        await PopulationState.updatePerson(husbandId, { family_id: familyId });
+        await PopulationState.updatePerson(wifeId, { family_id: familyId });
 
-        // console.log(`👨‍👩‍👦 New family created: ID ${familyId} on tile ${tileId}`);
-        return result.rows[0];
+        return family;
     } catch (error) {
         console.error('Error creating family:', error);
         throw error;
@@ -53,47 +52,44 @@ async function createFamily(pool, husbandId, wifeId, tileId) {
 }
 
 /**
- * Starts pregnancy for a family
- * @param {Pool} pool - Database pool instance
+ * Starts pregnancy for a family - Redis-only
+ * @param {Pool} pool - Database pool instance (unused, kept for API compatibility)
  * @param {Object} calendarService - Calendar service instance
  * @param {number} familyId - Family ID
  * @returns {Object} Updated family record
  */
 async function startPregnancy(pool, calendarService, familyId) {
-    const client = await pool.connect();
+    const PopulationState = require('../populationState');
     try {
-        await client.query('BEGIN');
-
         // Get current calendar date
         let currentDate = { year: 1, month: 1, day: 1 };
         if (calendarService && typeof calendarService.getCurrentDate === 'function') {
             currentDate = calendarService.getCurrentDate();
         }
 
-        // Lock the family row to prevent concurrent pregnancy starts
-        const familyResult = await client.query(`
-            SELECT f.id, f.wife_id, f.pregnancy, p.date_of_birth as wife_birth_date
-            FROM family f
-            JOIN people p ON f.wife_id = p.id
-            WHERE f.id = $1
-            FOR UPDATE
-        `, [familyId]);
-
-        if (familyResult.rows.length === 0) {
+        // Get family from Redis
+        const family = await PopulationState.getFamily(familyId);
+        if (!family) {
             throw new Error(`Family ${familyId} not found`);
         }
 
-        const family = familyResult.rows[0];
         if (family.pregnancy) {
             throw new Error(`Family ${familyId} is already pregnant`);
         }
 
-        const wifeBirthDate = family.wife_birth_date;
+        // Get wife from Redis
+        const wife = await PopulationState.getPerson(family.wife_id);
+        if (!wife || !wife.date_of_birth) {
+            throw new Error(`Wife ${family.wife_id} not found in Redis or missing birth date`);
+        }
+
+        const wifeBirthDate = wife.date_of_birth;
 
         // Calculate wife's age - handle both string and Date object formats
         let birthYear, birthMonth, birthDay;
         if (typeof wifeBirthDate === 'string') {
-            [birthYear, birthMonth, birthDay] = wifeBirthDate.split('-').map(Number);
+            const datePart = wifeBirthDate.split('T')[0];
+            [birthYear, birthMonth, birthDay] = datePart.split('-').map(Number);
         } else if (wifeBirthDate instanceof Date) {
             birthYear = wifeBirthDate.getFullYear();
             birthMonth = wifeBirthDate.getMonth() + 1;
@@ -126,33 +122,23 @@ async function startPregnancy(pool, calendarService, familyId) {
         }
         const deliveryDate = `${finalYear}-${String(finalMonth).padStart(2, '0')}-${String(deliveryDay).padStart(2, '0')}`;
 
-        const updateResult = await client.query(`
-            UPDATE family
-            SET pregnancy = TRUE, delivery_date = $1, updated_at = CURRENT_TIMESTAMP
-            WHERE id = $2 AND pregnancy = FALSE
-            RETURNING *
-        `, [deliveryDate, familyId]);
+        // Update family in Redis
+        await PopulationState.updateFamily(familyId, {
+            pregnancy: true,
+            delivery_date: deliveryDate
+        });
 
-        if (updateResult.rows.length === 0) {
-            throw new Error(`Failed to mark family ${familyId} pregnant (concurrent update?)`);
-        }
-
-        await client.query('COMMIT');
-
-        // console.log(`🤰 Pregnancy started for family ${familyId}, wife age: ${wifeAge}, delivery expected: ${deliveryDate}`);
-        return updateResult.rows[0];
+        // Return updated family
+        return { ...family, pregnancy: true, delivery_date: deliveryDate };
     } catch (error) {
-        try { await client.query('ROLLBACK'); } catch (e) { /* ignore rollback errors */ }
         console.error(`Error starting pregnancy for family ${familyId}:`, error.message || error);
         throw error;
-    } finally {
-        client.release();
     }
 }
 
 /**
- * Delivers a baby and adds to family
- * @param {Pool} pool - Database pool instance
+ * Delivers a baby and adds to family - Redis-only (Postgres writes happen on Save)
+ * @param {Pool} pool - Database pool instance (used for family queries only)
  * @param {Object} calendarService - Calendar service instance
  * @param {PopulationService} populationServiceInstance - Population service instance
  * @param {number} familyId - Family ID
@@ -160,13 +146,18 @@ async function startPregnancy(pool, calendarService, familyId) {
  */
 async function deliverBaby(pool, calendarService, populationServiceInstance, familyId) {
     try {
-        // Get family record
-        const familyResult = await pool.query('SELECT * FROM family WHERE id = $1', [familyId]);
-        if (familyResult.rows.length === 0) {
-            throw new Error('Family not found');
+        const PopulationState = require('../populationState');
+        const { isRedisAvailable } = require('../../config/redis');
+        
+        if (!isRedisAvailable()) {
+            throw new Error('Redis not available - cannot deliver baby');
         }
 
-        const family = familyResult.rows[0];
+        // Get family record from Redis
+        const family = await PopulationState.getFamily(familyId);
+        if (!family) {
+            throw new Error('Family not found');
+        }
 
         // Get current calendar date
         let currentDate = { year: 1, month: 1, day: 1 };
@@ -175,54 +166,49 @@ async function deliverBaby(pool, calendarService, populationServiceInstance, fam
         }
 
         const { year: currentYear, month: currentMonth, day: currentDay } = currentDate;
-        const birthDate = `${currentYear}-${String(currentMonth).padStart(2, '0')}-${String(currentDay).padStart(2, '0')}`;        // Create baby
+        const birthDate = `${currentYear}-${String(currentMonth).padStart(2, '0')}-${String(currentDay).padStart(2, '0')}`;
+
+        // Create baby
         const { getRandomSex } = require('./calculator.js');
         const babySex = getRandomSex();
 
-        // Get father's residency to assign to baby
+        // Get father's residency to assign to baby (from Redis)
         let babyResidency = 0;
         if (family.husband_id) {
-            const fatherResult = await pool.query(`SELECT residency FROM people WHERE id = $1`, [family.husband_id]);
-            if (fatherResult.rows.length > 0) {
-                babyResidency = fatherResult.rows[0].residency || 0;
+            const fatherFromRedis = await PopulationState.getPerson(family.husband_id);
+            if (fatherFromRedis) {
+                babyResidency = fatherFromRedis.residency || 0;
             }
         }
 
-        const babyResult = await pool.query(`
-            INSERT INTO people (tile_id, sex, date_of_birth, residency, family_id)
-            VALUES ($1, $2, $3, $4, $5)
-            RETURNING id
-        `, [family.tile_id, babySex, birthDate, babyResidency, familyId]);
+        // Get a temporary ID for Redis-only storage
+        const babyId = await PopulationState.getNextTempId();
 
-        const babyId = babyResult.rows[0].id;
+        const personObj = {
+            id: babyId,
+            tile_id: family.tile_id,
+            residency: babyResidency,
+            sex: babySex,
+            date_of_birth: birthDate,
+            health: 100,
+            family_id: familyId
+        };
 
-        // If baby has residency, add to village housing_slots
-        if (babyResidency !== 0) {
-            await pool.query(`
-                UPDATE villages SET housing_slots = housing_slots || $1::jsonb WHERE id = $2
-            `, [JSON.stringify([babyId]), babyResidency]);
-        }
+        // Add baby to Redis with isNew=true for batch Postgres insert
+        await PopulationState.addPerson(personObj, true);
 
-        // Update family record with new baby
-        const updatedChildrenIds = [...family.children_ids, babyId];
-        const updatedFamilyResult = await pool.query(`
-            UPDATE family 
-            SET children_ids = $1,
-                updated_at = CURRENT_TIMESTAMP
-            WHERE id = $2
-            RETURNING *
-        `, [updatedChildrenIds, familyId]);
+        // Update family record in Redis with new baby
+        const updatedChildrenIds = [...(family.children_ids || []), babyId];
+        await PopulationState.updateFamily(familyId, { children_ids: updatedChildrenIds });
 
         // Track birth
         if (populationServiceInstance && typeof populationServiceInstance.trackBirths === 'function') {
             populationServiceInstance.trackBirths(1);
         }
 
-        // console.log(`👶 Baby born! Family ${familyId}, Baby ID: ${babyId}, Sex: ${babySex ? 'Male' : 'Female'}`);
-
         return {
             baby: { id: babyId, sex: babySex, birthDate },
-            family: updatedFamilyResult.rows[0]
+            family: { ...family, children_ids: updatedChildrenIds }
         };
     } catch (error) {
         console.error('Error delivering baby:', error);
@@ -231,24 +217,16 @@ async function deliverBaby(pool, calendarService, populationServiceInstance, fam
 }
 
 /**
- * Gets all families on a specific tile
- * @param {Pool} pool - Database pool instance
+ * Gets all families on a specific tile - from Redis
+ * @param {Pool} pool - Database pool instance (kept for API compatibility)
  * @param {number} tileId - Tile ID
  * @returns {Array} Array of family records
  */
 async function getFamiliesOnTile(pool, tileId) {
     try {
-        const result = await pool.query(`
-            SELECT f.*, 
-                   h.sex as husband_sex, h.date_of_birth as husband_birth,
-                   w.sex as wife_sex, w.date_of_birth as wife_birth
-            FROM family f
-            LEFT JOIN people h ON f.husband_id = h.id
-            LEFT JOIN people w ON f.wife_id = w.id
-            WHERE f.tile_id = $1
-        `, [tileId]);
-
-        return result.rows;
+        const PopulationState = require('../populationState');
+        const allFamilies = await PopulationState.getAllFamilies();
+        return allFamilies.filter(f => f.tile_id === tileId);
     } catch (error) {
         console.error('Error getting families on tile:', error);
         return [];
@@ -256,14 +234,16 @@ async function getFamiliesOnTile(pool, tileId) {
 }
 
 /**
- * Checks for families ready to deliver and processes births
- * @param {Pool} pool - Database pool instance
+ * Checks for families ready to deliver and processes births - Redis-only
+ * @param {Pool} pool - Database pool instance (kept for API compatibility)
  * @param {Object} calendarService - Calendar service instance
  * @param {PopulationService} populationServiceInstance - Population service instance
  * @returns {number} Number of babies born
  */
 async function processDeliveries(pool, calendarService, populationServiceInstance) {
     try {
+        const PopulationState = require('../populationState');
+        
         // Get current calendar date
         let currentDate = { year: 1, month: 1, day: 1 };
         if (calendarService && typeof calendarService.getCurrentDate === 'function') {
@@ -272,23 +252,34 @@ async function processDeliveries(pool, calendarService, populationServiceInstanc
 
         const { year, month, day } = currentDate;
         const currentDateStr = `${year}-${String(month).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
+        const currentDateValue = new Date(currentDateStr).getTime();
 
-        // Find families ready to deliver and mark them as delivered atomically
-        const readyFamilies = await pool.query(`
-            UPDATE family 
-            SET pregnancy = FALSE, delivery_date = NULL 
-            WHERE pregnancy = TRUE 
-            AND delivery_date <= $1
-            RETURNING id
-        `, [currentDateStr]);
+        // Find families ready to deliver from Redis
+        const allFamilies = await PopulationState.getAllFamilies();
+        const readyFamilies = allFamilies.filter(f => {
+            if (!f.pregnancy || !f.delivery_date) return false;
+            const deliveryValue = new Date(f.delivery_date.split('T')[0]).getTime();
+            return deliveryValue <= currentDateValue;
+        });
 
         let babiesDelivered = 0;
-        for (const family of readyFamilies.rows) {
+        for (const family of readyFamilies) {
             try {
+                // Re-verify family still exists (may have been reassigned during save)
+                const currentFamily = await PopulationState.getFamily(family.id);
+                if (!currentFamily) {
+                    // Family ID was likely reassigned during save, skip silently
+                    continue;
+                }
+                // Clear pregnancy status in Redis before delivery
+                await PopulationState.updateFamily(family.id, { pregnancy: false, delivery_date: null });
                 await deliverBaby(pool, calendarService, populationServiceInstance, family.id);
                 babiesDelivered++;
             } catch (error) {
-                console.error(`Error delivering baby for family ${family.id}:`, error);
+                // Suppress "Family not found" errors (race condition with save)
+                if (!error.message.includes('Family not found')) {
+                    console.error(`Error delivering baby for family ${family.id}:`, error);
+                }
             }
         }
 
@@ -304,25 +295,24 @@ async function processDeliveries(pool, calendarService, populationServiceInstanc
 }
 
 /**
- * Gets family statistics
- * @param {Pool} pool - Database pool instance
+ * Gets family statistics - from Redis
+ * @param {Pool} pool - Database pool instance (kept for API compatibility)
  * @returns {Object} Family statistics
  */
 async function getFamilyStats(pool) {
     try {
-        const result = await pool.query(`
-            SELECT 
-                COUNT(*) as total_families,
-                COUNT(*) FILTER (WHERE pregnancy = TRUE) as pregnant_families,
-                AVG(array_length(children_ids, 1)) as avg_children_per_family
-            FROM family
-        `);
+        const PopulationState = require('../populationState');
+        const allFamilies = await PopulationState.getAllFamilies();
+        
+        const totalFamilies = allFamilies.length;
+        const pregnantFamilies = allFamilies.filter(f => f.pregnancy).length;
+        const totalChildren = allFamilies.reduce((sum, f) => sum + (f.children_ids?.length || 0), 0);
+        const avgChildrenPerFamily = totalFamilies > 0 ? totalChildren / totalFamilies : 0;
 
-        const stats = result.rows[0];
         return {
-            totalFamilies: parseInt(stats.total_families, 10) || 0,
-            pregnantFamilies: parseInt(stats.pregnant_families, 10) || 0,
-            avgChildrenPerFamily: parseFloat(stats.avg_children_per_family) || 0
+            totalFamilies,
+            pregnantFamilies,
+            avgChildrenPerFamily
         };
     } catch (error) {
         console.error('Error getting family stats:', error);
@@ -335,13 +325,16 @@ async function getFamilyStats(pool) {
 }
 
 /**
- * Forms new families from eligible bachelors
+ * Forms new families from eligible bachelors - uses Redis for people data
  * @param {Pool} pool - Database pool instance
  * @param {Object} calendarService - Calendar service instance
  * @returns {number} Number of new families formed
  */
 async function formNewFamilies(pool, calendarService) {
     try {
+        const PopulationState = require('../populationState');
+        const { calculateAge } = require('./calculator.js');
+
         // Get current calendar date for age calculations
         let currentDate = { year: 1, month: 1, day: 1 };
         if (calendarService && typeof calendarService.getCurrentDate === 'function') {
@@ -349,52 +342,36 @@ async function formNewFamilies(pool, calendarService) {
         }
 
         const { year, month, day } = currentDate;
-        // Calculate birth year ranges for eligible bachelors
-        // Males aged 16-45: born (currentYear - 45) to (currentYear - 16) years ago
-        const maleMinBirthYear = year - 45;
-        const maleMaxBirthYear = year - 16;
-        // Females aged 16-30: born (currentYear - 30) to (currentYear - 16) years ago
-        const femaleMinBirthYear = year - 30;
-        const femaleMaxBirthYear = year - 16;
-        // Format dates properly
-        const maleMinBirthDate = `${maleMinBirthYear}-${String(month).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
-        const maleMaxBirthDate = `${maleMaxBirthYear}-${String(month).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
-        const femaleMinBirthDate = `${femaleMinBirthYear}-${String(month).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
-        const femaleMaxBirthDate = `${femaleMaxBirthYear}-${String(month).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
 
-        // Quiet: searching for eligible bachelors (log suppressed)
+        // Get all people from Redis
+        const allPeople = await PopulationState.getAllPeople();
+        
+        // Filter eligible bachelors from Redis data
+        const eligibleMales = [];
+        const eligibleFemales = [];
 
-        // Get eligible male bachelors (age 16-45, not in a family)
-        const malesResult = await pool.query(`
-            SELECT id, tile_id, date_of_birth 
-            FROM people 
-            WHERE sex = true 
-            AND family_id IS NULL 
-            AND date_of_birth >= $1 
-            AND date_of_birth <= $2
-            ORDER BY RANDOM()
-        `, [maleMinBirthDate, maleMaxBirthDate]);
+        for (const person of allPeople) {
+            // Skip if already in a family
+            if (person.family_id) continue;
+            if (!person.date_of_birth) continue;
 
-        // Get eligible female bachelors (age 16-30, not in a family)
-        const femalesResult = await pool.query(`
-            SELECT id, tile_id, date_of_birth 
-            FROM people 
-            WHERE sex = false 
-            AND family_id IS NULL 
-            AND date_of_birth >= $1 
-            AND date_of_birth <= $2
-            ORDER BY RANDOM()
-        `, [femaleMinBirthDate, femaleMaxBirthDate]);
+            const age = calculateAge(person.date_of_birth, year, month, day);
 
-        const eligibleMales = malesResult.rows;
-        const eligibleFemales = femalesResult.rows;
+            if (person.sex === true && age >= 16 && age <= 45) {
+                eligibleMales.push(person);
+            } else if (person.sex === false && age >= 16 && age <= 30) {
+                eligibleFemales.push(person);
+            }
+        }
 
-        // Quiet: found eligible candidates (log suppressed)
+        // Shuffle for randomness
+        eligibleMales.sort(() => Math.random() - 0.5);
+        eligibleFemales.sort(() => Math.random() - 0.5);
 
         if (eligibleMales.length === 0 || eligibleFemales.length === 0) {
-            // Quiet: no eligible bachelors to form families (log suppressed)
             return 0;
         }
+        
         // Group people by tile to only allow same-tile marriages
         const malesByTile = {};
         const femalesByTile = {};
@@ -432,20 +409,15 @@ async function formNewFamilies(pool, calendarService) {
 
                 if (!usedMales.has(male.id) && !usedFemales.has(female.id)) {
                     try {
-                        await createFamily(pool, male.id, female.id, tileId);
+                        // createFamily now returns the family with its (temp) ID
+                        const newFamily = await createFamily(pool, male.id, female.id, parseInt(tileId));
                         usedMales.add(male.id);
                         usedFemales.add(female.id);
                         newFamiliesCount++;
 
                         // Higher chance to start immediate pregnancy (40% - increased to boost birth rates to 40 per 1000 per year)
                         if (Math.random() < 0.40) {
-                            const familyResult = await pool.query(
-                                'SELECT id FROM family WHERE husband_id = $1 AND wife_id = $2',
-                                [male.id, female.id]
-                            );
-                            if (familyResult.rows.length > 0) {
-                                await startPregnancy(pool, calendarService, familyResult.rows[0].id);
-                            }
+                            await startPregnancy(pool, calendarService, newFamily.id);
                         }
                     } catch (error) {
                         console.error(`Error creating family between ${male.id} and ${female.id} on tile ${tileId}:`, error);

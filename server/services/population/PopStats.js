@@ -1,4 +1,6 @@
 // Population Statistics and Reporting - Handles all population statistics and reporting functionality
+const { isRedisAvailable } = require('../../config/redis');
+const PopulationState = require('../populationState');
 
 // ==================== UTILITY FUNCTIONS ====================
 
@@ -39,6 +41,7 @@ function getCalendarCutoffs(calendarService) {
     const bachelorFemaleYear = year - 30;
 
     return {
+        currentDateStr: `${year}-${String(month).padStart(2, '0')}-${String(day).padStart(2, '0')}`,
         minorsCutoff: `${minorsYear}-${String(month).padStart(2, '0')}-${String(day).padStart(2, '0')}`,
         elderlyCutoff: `${elderlyYear}-${String(month).padStart(2, '0')}-${String(day).padStart(2, '0')}`,
         bachelorMaleCutoff: `${bachelorMaleYear}-${String(month).padStart(2, '0')}-${String(day).padStart(2, '0')}`,
@@ -50,28 +53,73 @@ function getCalendarCutoffs(calendarService) {
 
 /**
  * Gets comprehensive population statistics with demographics and rates
+ * Now reads from Redis as the primary source, falls back to Postgres if Redis unavailable
  */
 async function getPopulationStats(pool, calendarService, populationServiceInstance) {
     try {
-        const { minorsCutoff, elderlyCutoff, bachelorMaleCutoff, bachelorFemaleCutoff } = getCalendarCutoffs(calendarService);
+        const cutoffs = getCalendarCutoffs(calendarService);
+        const { currentDateStr, minorsCutoff, elderlyCutoff, bachelorMaleCutoff, bachelorFemaleCutoff } = cutoffs;
 
-        const result = await pool.query(`
-            SELECT 
-                COUNT(*) as total_population,
-                COUNT(*) FILTER (WHERE sex = true) AS male,
-                COUNT(*) FILTER (WHERE sex = false) AS female,
-                COUNT(*) FILTER (WHERE date_of_birth > $1) AS minors,
-                COUNT(*) FILTER (WHERE date_of_birth <= $1 AND date_of_birth > $2) AS working_age,
-                COUNT(*) FILTER (WHERE date_of_birth <= $2) AS elderly,
-                COUNT(*) FILTER (
-                    WHERE family_id IS NULL AND (
-                        (sex = true AND date_of_birth <= $1 AND date_of_birth > $3) OR
-                        (sex = false AND date_of_birth <= $1 AND date_of_birth > $4)
-                    )
-                ) AS bachelors
-            FROM people;`, [minorsCutoff, elderlyCutoff, bachelorMaleCutoff, bachelorFemaleCutoff]);
+        let stats;
+        let villagesCount = 0;
 
-        const stats = result.rows[0] || {};
+        // Try Redis first
+        if (isRedisAvailable()) {
+            const redisStats = await PopulationState.getDemographicStats(currentDateStr);
+            if (redisStats) {
+                stats = redisStats;
+                // Get villages count from Redis
+                const redis = require('../../config/redis');
+                try {
+                    const villageData = await redis.hgetall('village');
+                    villagesCount = Object.keys(villageData).length;
+                } catch (e) {
+                    // Fall back to Postgres for villages count
+                    const vres = await pool.query('SELECT COUNT(*)::int AS cnt FROM villages');
+                    villagesCount = vres.rows && vres.rows[0] ? vres.rows[0].cnt : 0;
+                }
+            }
+        }
+
+        // Fall back to Postgres if Redis didn't provide stats
+        if (!stats) {
+            const result = await pool.query(`
+                SELECT 
+                    COUNT(*) as total_population,
+                    COUNT(*) FILTER (WHERE sex = true) AS male,
+                    COUNT(*) FILTER (WHERE sex = false) AS female,
+                    COUNT(*) FILTER (WHERE date_of_birth > $1) AS minors,
+                    COUNT(*) FILTER (WHERE date_of_birth <= $1 AND date_of_birth > $2) AS working_age,
+                    COUNT(*) FILTER (WHERE date_of_birth <= $2) AS elderly,
+                    COUNT(*) FILTER (
+                        WHERE family_id IS NULL AND (
+                            (sex = true AND date_of_birth <= $1 AND date_of_birth > $3) OR
+                            (sex = false AND date_of_birth <= $1 AND date_of_birth > $4)
+                        )
+                    ) AS bachelors
+                FROM people;`, [minorsCutoff, elderlyCutoff, bachelorMaleCutoff, bachelorFemaleCutoff]);
+
+            const row = result.rows[0] || {};
+            stats = {
+                totalPopulation: parseInt(row.total_population, 10) || 0,
+                male: parseInt(row.male, 10) || 0,
+                female: parseInt(row.female, 10) || 0,
+                minors: parseInt(row.minors, 10) || 0,
+                working_age: parseInt(row.working_age, 10) || 0,
+                elderly: parseInt(row.elderly, 10) || 0,
+                bachelors: parseInt(row.bachelors, 10) || 0
+            };
+            
+            // Get villages count from Postgres
+            try {
+                const vres = await pool.query('SELECT COUNT(*)::int AS cnt FROM villages');
+                villagesCount = vres.rows && vres.rows[0] ? vres.rows[0].cnt : 0;
+            } catch (e) {
+                console.warn('[getPopulationStats] Failed to query villages count:', e && e.message ? e.message : e);
+                villagesCount = 0;
+            }
+        }
+
         const rates = calculateRates(populationServiceInstance);
         // In-game rates
         let inGameRatesYear = { birthRateYear: 0, deathRateYear: 0, birthCountYear: 0, deathCountYear: 0 };
@@ -80,24 +128,15 @@ async function getPopulationStats(pool, calendarService, populationServiceInstan
             inGameRatesYear = calculateRatesInGame(populationServiceInstance, populationServiceInstance.calendarService, 'year');
             inGameRates12m = calculateRatesInGame(populationServiceInstance, populationServiceInstance.calendarService, '12months');
         }
-        // Add villages count
-        let villagesCount = 0;
-        try {
-            const vres = await pool.query('SELECT COUNT(*)::int AS cnt FROM villages');
-            villagesCount = vres.rows && vres.rows[0] ? vres.rows[0].cnt : 0;
-        } catch (e) {
-            console.warn('[getPopulationStats] Failed to query villages count:', e && e.message ? e.message : e);
-            villagesCount = 0;
-        }
 
         return {
-            totalPopulation: parseInt(stats.total_population, 10) || 0,
-            male: parseInt(stats.male, 10) || 0,
-            female: parseInt(stats.female, 10) || 0,
-            minors: parseInt(stats.minors, 10) || 0,
-            working_age: parseInt(stats.working_age, 10) || 0,
-            elderly: parseInt(stats.elderly, 10) || 0,
-            bachelors: parseInt(stats.bachelors, 10) || 0,
+            totalPopulation: stats.totalPopulation,
+            male: stats.male,
+            female: stats.female,
+            minors: stats.minors,
+            working_age: stats.working_age,
+            elderly: stats.elderly,
+            bachelors: stats.bachelors,
             villagesCount: villagesCount,
             ...rates,
             ...inGameRatesYear,

@@ -12,12 +12,72 @@ const dbService = new DatabaseService();
 const http = require('http');
 const pool = require('../config/database');
 const villageSeeder = require('../services/villageSeeder');
+const StateManager = require('../services/stateManager');
 
 // Use route modules
 router.use('/population', populationRoutes);
 router.use('/tiles', tilesRoutes);
 router.use('/calendar', calendarRoutes);
 router.use('/db', dbRoutes);
+
+// POST /api/save - Save game state from Redis to PostgreSQL
+router.post('/save', async (req, res) => {
+    try {
+        console.log('💾 Save request received...');
+        if (!StateManager.isRedisAvailable()) {
+            console.warn('⚠️ Save attempted but Redis is not available');
+            return res.status(503).json({ success: false, error: 'Redis not available - cannot save in-memory state' });
+        }
+
+        const result = await StateManager.saveToDatabase();
+        res.json({ success: true, ...result });
+    } catch (error) {
+        console.error('Error saving game:', error);
+        res.status(500).json({ success: false, error: error.message });
+    }
+});
+
+// POST /api/sync - Force full Redis sync from PostgreSQL
+router.post('/sync', async (req, res) => {
+    try {
+        console.log('🔄 Forced sync request received...');
+        const result = await StateManager.loadFromDatabase();
+        res.json({ success: true, ...result });
+    } catch (error) {
+        console.error('Error forcing sync:', error);
+        res.status(500).json({ success: false, error: error.message });
+    }
+});
+
+// POST /api/population/sync - Force population-only redis sync from Postgres
+const PopulationState = require('../services/populationState');
+router.post('/population/sync', async (req, res) => {
+    try {
+        console.log('🔄 Forced population sync request received...');
+        const result = await PopulationState.syncFromPostgres();
+        res.json({ success: true, ...result });
+    } catch (error) {
+        console.error('Error forcing population sync:', error);
+        res.status(500).json({ success: false, error: error.message });
+    }
+});
+
+// GET /api/state - Get current Redis state status
+router.get('/state', async (req, res) => {
+    try {
+        const villages = await StateManager.getAllVillages();
+        const people = await StateManager.getAllPeople();
+        res.json({
+            initialized: StateManager.isInitialized(),
+            villages: villages.length,
+            people: people.length,
+            totalFoodStores: villages.reduce((sum, v) => sum + (v.food_stores || 0), 0).toFixed(2)
+        });
+    } catch (error) {
+        console.error('Error getting state:', error);
+        res.status(500).json({ error: error.message });
+    }
+});
 
 // Helper: internal GET request to this server
 async function selfGet(path) {

@@ -7,8 +7,6 @@ class UIManager {
     constructor(sceneManager) {
         this.controlsPanel = null;
         this.toggleHelpButton = null;
-        this.populationDisplay = null; // This will be the wrapper for the connection icon
-        // this.connectionStatus = null; // No longer needed as a separate element
         this.isInitialized = false;
         this.populationUnsubscribe = null;
         this.sceneManager = sceneManager; // Store sceneManager instance
@@ -137,37 +135,11 @@ class UIManager {
         const oldPanel = document.getElementById('population-panel');
         if (oldPanel) oldPanel.remove();
 
-        // Create population display elements - now only the icon
-        const populationWrapper = document.createElement('span');
-        populationWrapper.id = 'population-panel'; // Keep ID for consistency if needed elsewhere
-        populationWrapper.classList.add('population-panel-wrapper');
-
-        // Create the connection status icon, which was previously missing
-        const icon = document.createElement('span');
-        icon.id = 'connection-icon';
-        icon.className = 'connection-icon';
-        icon.textContent = '●'; // Default icon, color will be set by CSS
-        populationWrapper.appendChild(icon);
-
-        // The year display logic has been removed from here and is now exclusively
-        // handled by the CalendarDisplay component to avoid duplication.
-
-        const statsButton = document.getElementById('show-stats');
-        const toggleHelpButton = document.getElementById('toggle-help');
-
-        if (statsButton) {
-            statsButton.insertAdjacentElement('afterend', populationWrapper);
-        } else if (toggleHelpButton) {
-            dashboard.insertBefore(populationWrapper, toggleHelpButton);
-        } else {
-            dashboard.appendChild(populationWrapper);
-        }
-
-        this.populationDisplay = populationWrapper; // Reference to the wrapper span
-        this.updateConnectionVisuals(); // Initialize icon color
+        // The year display logic is handled by the CalendarDisplay component
     } setupResetButtons() {
         const resetDataButton = document.getElementById('reset-data');
         const showStatsButton = document.getElementById('show-stats');
+        const saveGameButton = document.getElementById('save-game');
 
         if (resetDataButton) {
             resetDataButton.addEventListener('click', () => {
@@ -180,7 +152,90 @@ class UIManager {
                 this.handleShowStats();
             });
         }
-    } async handleResetData() {
+
+        if (saveGameButton) {
+            saveGameButton.addEventListener('click', () => {
+                this.handleSaveGame();
+            });
+        }
+
+        // Normalize dashboard buttons sizes and log pixel sizes for debugging
+        this.measureAndNormalizeDashboardButtons();
+    }
+
+    /**
+     * Measure the pixel heights of the dashboard buttons and normalize
+     * If one button is smaller, apply a min-height so all match the tallest
+     */
+    measureAndNormalizeDashboardButtons() {
+        try {
+            const resetBtn = document.getElementById('reset-data');
+            const statsBtn = document.getElementById('show-stats');
+            const saveBtn = document.getElementById('save-game');
+            if (!resetBtn || !statsBtn || !saveBtn) return;
+
+            const r = resetBtn.getBoundingClientRect();
+            const s = statsBtn.getBoundingClientRect();
+            const v = saveBtn.getBoundingClientRect();
+
+            const heights = { reset: Math.round(r.height), stats: Math.round(s.height), save: Math.round(v.height) };
+            console.log('🔍 Dashboard button heights (px):', heights);
+
+            const maxHeight = Math.max(heights.reset, heights.stats, heights.save);
+            // Apply min-height to all dashboard buttons to ensure uniform vertical size
+            [resetBtn, statsBtn, saveBtn].forEach(btn => {
+                btn.style.minHeight = maxHeight + 'px';
+                // Also set line-height to center single-line content if needed
+                btn.style.lineHeight = maxHeight + 'px';
+            });
+        } catch (err) {
+            console.warn('Could not normalize dashboard button heights:', err.message);
+        }
+    }
+
+    async handleSaveGame() {
+        const saveButton = document.getElementById('save-game');
+        if (!saveButton) return;
+
+        // Prevent double-clicking
+        if (saveButton.disabled) return;
+        
+        const originalText = saveButton.innerHTML;
+        saveButton.disabled = true;
+        saveButton.classList.add('saving');
+        saveButton.innerHTML = '⏳ Saving...';
+
+        try {
+            const response = await fetch('/api/save', { method: 'POST' });
+            const result = await response.json();
+
+            if (result.success) {
+                saveButton.classList.remove('saving');
+                saveButton.classList.add('saved');
+                saveButton.innerHTML = '✅ Saved!';
+                console.log(`💾 Game saved: ${result.villages} villages, ${result.people} people in ${result.elapsed}ms`);
+                
+                setTimeout(() => {
+                    saveButton.innerHTML = originalText;
+                    saveButton.classList.remove('saved');
+                    saveButton.disabled = false;
+                }, 2000);
+            } else {
+                throw new Error(result.error || 'Save failed');
+            }
+        } catch (error) {
+            console.error('❌ Save failed:', error);
+            saveButton.classList.remove('saving');
+            saveButton.innerHTML = '❌ Failed';
+            
+            setTimeout(() => {
+                saveButton.innerHTML = originalText;
+                saveButton.disabled = false;
+            }, 2000);
+        }
+    }
+
+    async handleResetData() {
         if (!this.sceneManager) {
             console.error("SceneManager not available in UIManager for reset.");
             return;
@@ -416,25 +471,10 @@ class UIManager {
         this.populationUnsubscribe = populationManager.subscribe((eventType, eventData) => {
             if (eventType === 'connected') {
                 this.isConnected = eventData;
-                this.updateConnectionVisuals(); // Update dashboard icon color
             }
             // Do NOT update currentTotalPopulation on populationUpdate anymore
         });
         populationManager.connect();
-    }
-
-    updateConnectionVisuals() {
-        if (!this.populationDisplay) return;
-        const iconElement = this.populationDisplay.querySelector('#connection-icon');
-        if (iconElement) {
-            if (this.isConnected) {
-                iconElement.classList.remove('disconnected');
-                iconElement.classList.add('connected');
-            } else {
-                iconElement.classList.remove('connected');
-                iconElement.classList.add('disconnected');
-            }
-        }
     }
 
     updateStatsModalPopulation() {
@@ -449,14 +489,10 @@ class UIManager {
             this.populationUnsubscribe();
             this.populationUnsubscribe = null;
         }
-        // Remove controls panel and population display if they exist
+        // Remove controls panel if it exists
         if (this.controlsPanel) {
             this.controlsPanel.remove();
             this.controlsPanel = null;
-        }
-        if (this.populationDisplay) {
-            this.populationDisplay.remove();
-            this.populationDisplay = null;
         }
         this.isInitialized = false;
     }

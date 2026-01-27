@@ -1,16 +1,49 @@
 const pool = require('../config/database');
+const redis = require('../config/redis');
+const { isRedisAvailable } = require('../config/redis');
+const StateManager = require('./stateManager');
 
 class VillageService {
-    // Static timer for food updates
+    // Static timer for food updates (legacy - now tick-based)
     static foodUpdateTimer = null;
     // Socket instance for emitting real-time updates (set by server)
     static io = null;
+    // Flag to use Redis or PostgreSQL (auto-detected based on Redis availability)
+    static useRedis = true;
+    // Calendar service reference for tick-based updates
+    static calendarService = null;
 
     static setIo(io) {
         this.io = io;
+        StateManager.setIo(io);
     }
+
     /**
-     * Start automatic food store updates
+     * Setup tick-based food updates (replaces interval timer)
+     * Food production now happens on calendar ticks instead of wall-clock time
+     * @param {CalendarService} calendarService - The calendar service instance
+     */
+    static setupTickBasedFoodUpdates(calendarService) {
+        this.calendarService = calendarService;
+        const redisMode = this.useRedis && isRedisAvailable();
+        console.log(`🍖 Setting up tick-based food updates [Redis mode: ${redisMode}]`);
+        
+        calendarService.on('tick', async (tickData) => {
+            try {
+                // Update food on each calendar tick
+                if (this.useRedis && isRedisAvailable() && StateManager.isInitialized()) {
+                    await this.updateAllVillageFoodStoresRedis();
+                } else {
+                    await this.updateAllVillageFoodStores();
+                }
+            } catch (error) {
+                console.error('Error in tick-based food update:', error);
+            }
+        });
+    }
+
+    /**
+     * Start automatic food store updates (LEGACY - use setupTickBasedFoodUpdates instead)
      * @param {number} intervalMs - Update interval in milliseconds (default: 1000ms = 1 second)
      */
     static startFoodUpdateTimer(intervalMs = 1000) {
@@ -19,10 +52,17 @@ class VillageService {
             return;
         }
 
-        console.log(`🍖 Starting food update timer (${intervalMs}ms intervals)`);
+        const redisMode = this.useRedis && isRedisAvailable();
+        console.log(`🍖 Starting food update timer (${intervalMs}ms intervals) [Redis mode: ${redisMode}]`);
+        
         this.foodUpdateTimer = setInterval(async () => {
             try {
-                await this.updateAllVillageFoodStores();
+                // Check Redis availability each tick in case it reconnects
+                if (this.useRedis && isRedisAvailable() && StateManager.isInitialized()) {
+                    await this.updateAllVillageFoodStoresRedis();
+                } else {
+                    await this.updateAllVillageFoodStores();
+                }
             } catch (error) {
                 console.error('Error in food update timer:', error);
             }
@@ -347,6 +387,66 @@ class VillageService {
             return updatedVillages;
         } catch (error) {
             console.error('Error updating all village food stores:', error);
+            throw error;
+        }
+    }
+
+    /**
+     * Update all village food stores using Redis (no database writes!)
+     * This is the high-performance version for 1M+ populations
+     * @returns {Promise<Array>} Array of updated villages
+     */
+    static async updateAllVillageFoodStoresRedis() {
+        try {
+            const villages = await StateManager.getAllVillages();
+            if (villages.length === 0) return [];
+
+            const pipeline = redis.pipeline();
+            const updatedVillages = [];
+
+            for (const village of villages) {
+                // Get fertility from Redis
+                const fertility = await StateManager.getTileFertility(village.tile_id);
+                
+                // Get cleared land count from Redis
+                const clearedCnt = await StateManager.getVillageClearedLand(village.id);
+                
+                // Get population count from Redis index
+                const population = await StateManager.getVillagePopulation(village.tile_id, village.land_chunk_index);
+
+                // Calculate production rate
+                const productionRate = this.calculateFoodProduction(fertility, clearedCnt, population);
+                
+                // Update food stores (add 1 second of production)
+                const newFoodStores = Math.min(
+                    village.food_capacity || 1000,
+                    Math.max(0, (village.food_stores || 0) + productionRate)
+                );
+
+                // Update in Redis
+                const updatedVillage = {
+                    ...village,
+                    food_stores: newFoodStores,
+                    food_production_rate: productionRate,
+                };
+                pipeline.hset('village', village.id.toString(), JSON.stringify(updatedVillage));
+                updatedVillages.push(updatedVillage);
+            }
+
+            await pipeline.exec();
+
+            // Emit to clients
+            if (this.io && updatedVillages.length > 0) {
+                try {
+                    this.io.emit('villagesUpdated', updatedVillages);
+                } catch (e) {
+                    console.warn('[villageService] Failed to emit village updates via socket:', e.message);
+                }
+            }
+
+            return updatedVillages;
+        } catch (error) {
+            console.error('Error updating village food stores in Redis:', error);
             throw error;
         }
     }

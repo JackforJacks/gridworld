@@ -143,8 +143,8 @@ module.exports = (env, argv) => {
         '/api': {
           target: 'http://localhost:3000',
           changeOrigin: true,
-          timeout: 30000,
-          proxyTimeout: 30000,
+          timeout: 60000,
+          proxyTimeout: 60000,
         },
         '/socket.io': {
           target: 'http://localhost:3000',

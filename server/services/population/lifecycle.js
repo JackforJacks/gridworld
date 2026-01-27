@@ -1,5 +1,6 @@
 // Population Lifecycle Management - Handles growth, aging, and life cycle events
 const config = require('../../config/server.js');
+const redis = require('../../config/redis');
 
 /**
  * Starts population growth simulation
@@ -96,14 +97,22 @@ async function updateGrowthRate(serviceInstance, rate) {
 }
 
 /**
- * Applies senescence (aging deaths) to the population
- * @param {Pool} pool - Database pool instance
+ * Applies senescence (aging deaths) to the population - Redis-only (Postgres deletes happen on Save)
+ * @param {Pool} pool - Database pool instance (used for family queries only)
  * @param {Object} calendarService - Calendar service instance
  * @param {PopulationService} populationServiceInstance - Population service instance
  * @returns {number} Number of deaths
  */
 async function applySenescence(pool, calendarService, populationServiceInstance) {
     try {
+        const PopulationState = require('../populationState');
+        const { isRedisAvailable } = require('../../config/redis');
+        
+        if (!isRedisAvailable()) {
+            console.warn('⚠️ Redis not available - cannot process senescence');
+            return 0;
+        }
+
         let currentYear = 4000, currentMonth = 1, currentDay = 1;
         try {
             if (calendarService && typeof calendarService.getState === 'function') {
@@ -118,19 +127,15 @@ async function applySenescence(pool, calendarService, populationServiceInstance)
             console.warn('Using fallback calendar date for senescence due to error:', e);
         }
 
-        const cutoffYear = currentYear - 60;
-        const cutoffDate = `${cutoffYear}-${String(currentMonth).padStart(2, '0')}-${String(currentDay).padStart(2, '0')}`;
-
-        const result = await pool.query(
-            'SELECT id, date_of_birth, tile_id FROM people WHERE date_of_birth < $1',
-            [cutoffDate]
-        );
-
-        const elderlyPeople = result.rows;
-        const deaths = [];
+        // Get all people from Redis
+        const allPeople = await PopulationState.getAllPeople();
         const { calculateAge } = require('./calculator.js');
 
-        for (const person of elderlyPeople) {
+        const deaths = [];
+
+        for (const person of allPeople) {
+            if (!person.date_of_birth) continue;
+            
             const age = calculateAge(person.date_of_birth, currentYear, currentMonth, currentDay);
             if (age >= 60) {
                 const monthlyDeathChance = (age - 59) * 0.0005;
@@ -141,23 +146,39 @@ async function applySenescence(pool, calendarService, populationServiceInstance)
         }
 
         if (deaths.length > 0) {
-            const placeholders = deaths.map((_, idx) => `$${idx + 1}`).join(',');
-            // Find families to be deleted
-            const familiesToDeleteResult = await pool.query(`SELECT id FROM family WHERE husband_id IN (${placeholders}) OR wife_id IN (${placeholders})`, deaths);
-            const familyIdsToDelete = familiesToDeleteResult.rows.map(r => r.id);
-            if (familyIdsToDelete.length > 0) {
-                const famPlaceholders = familyIdsToDelete.map((_, idx) => `$${idx + 1}`).join(',');
-                // Set family_id to NULL for all people in these families
-                await pool.query(`UPDATE people SET family_id = NULL WHERE family_id IN (${famPlaceholders})`, familyIdsToDelete);
-                // Now delete the families
-                await pool.query(`DELETE FROM family WHERE id IN (${famPlaceholders})`, familyIdsToDelete);
+            // Handle family cleanup (now using Redis for families)
+            const deathIds = new Set(deaths);
+            const allFamilies = await PopulationState.getAllFamilies();
+            
+            for (const family of allFamilies) {
+                // Check if husband or wife died
+                const husbandDied = deathIds.has(family.husband_id);
+                const wifeDied = deathIds.has(family.wife_id);
+                
+                if (husbandDied || wifeDied) {
+                    // Clear family_id from all family members in Redis
+                    await PopulationState.updatePerson(family.husband_id, { family_id: null });
+                    await PopulationState.updatePerson(family.wife_id, { family_id: null });
+                    for (const childId of (family.children_ids || [])) {
+                        await PopulationState.updatePerson(childId, { family_id: null });
+                    }
+                    // Delete the family from Redis
+                    await redis.hdel('family', family.id.toString());
+                    // Track for Postgres delete only if it's a positive ID (exists in Postgres)
+                    if (family.id > 0) {
+                        await redis.sadd('pending:family:deletes', family.id.toString());
+                    }
+                }
             }
-            // Now delete the people
-            await pool.query(`DELETE FROM people WHERE id IN (${placeholders})`, deaths);
+            
+            // Remove from Redis (this tracks for batch Postgres delete)
+            for (const personId of deaths) {
+                await PopulationState.removePerson(personId, true);
+            }
+            
             if (populationServiceInstance && typeof populationServiceInstance.trackDeaths === 'function') {
                 populationServiceInstance.trackDeaths(deaths.length);
             }
-            // Quiet: senescence occurred (log suppressed)
             return deaths.length;
         }
         return 0;
@@ -176,7 +197,9 @@ async function applySenescence(pool, calendarService, populationServiceInstance)
  */
 async function processDailyFamilyEvents(pool, calendarService, serviceInstance) {
     try {
-        const { processDeliveries } = require('./familyManager.js');
+        const { processDeliveries, startPregnancy } = require('./familyManager.js');
+        const PopulationState = require('../populationState');
+        const { calculateAge } = require('./calculator.js');
 
         // Process deliveries for families ready to give birth
         const deliveries = await processDeliveries(pool, calendarService, serviceInstance);
@@ -187,27 +210,26 @@ async function processDailyFamilyEvents(pool, calendarService, serviceInstance) 
             currentDate = calendarService.getCurrentDate();
         }
 
-        // Calculate age limit date (wife must be born after this date to be 33 or younger)
-        const ageLimitYear = currentDate.year - 33;
-        const ageLimitDate = `${ageLimitYear}-${String(currentDate.month).padStart(2, '0')}-${String(currentDate.day).padStart(2, '0')}`;
-
-        // Random chance for new pregnancies in existing families (only wives 33 and under)
-        const familiesResult = await pool.query(`
-            SELECT f.id FROM family f
-            JOIN people p ON f.wife_id = p.id
-            WHERE f.pregnancy = FALSE 
-            AND array_length(f.children_ids, 1) < 5
-            AND p.date_of_birth >= $1
-            ORDER BY RANDOM() 
-            LIMIT 30
-        `, [ageLimitDate]);
+        // Get eligible families from Redis (not pregnant, less than 5 children)
+        const allFamilies = await PopulationState.getAllFamilies();
+        const eligibleFamilies = allFamilies.filter(f => 
+            !f.pregnancy && (!f.children_ids || f.children_ids.length < 5)
+        );
+        // Shuffle and take up to 30
+        const shuffledFamilies = eligibleFamilies.sort(() => Math.random() - 0.5).slice(0, 30);
 
         let newPregnancies = 0;
-        for (const family of familiesResult.rows) {
-            // 25% daily chance of pregnancy for eligible families (increased to achieve ~40 births per 1000 per year)
+        for (const family of shuffledFamilies) {
+            // Check wife's age from Redis
+            const wife = await PopulationState.getPerson(family.wife_id);
+            if (!wife || !wife.date_of_birth) continue;
+            
+            const wifeAge = calculateAge(wife.date_of_birth, currentDate.year, currentDate.month, currentDate.day);
+            if (wifeAge > 33) continue; // Wife too old
+
+            // 25% daily chance of pregnancy for eligible families
             if (Math.random() < 0.25) {
                 try {
-                    const { startPregnancy } = require('./familyManager.js');
                     await startPregnancy(pool, calendarService, family.id);
                     newPregnancies++;
                 } catch (error) {
@@ -217,15 +239,26 @@ async function processDailyFamilyEvents(pool, calendarService, serviceInstance) 
             }
         }
 
-        // Release children who reach adulthood (age >= 16) from their family
-        const releaseAdultsResult = await pool.query(`
-            UPDATE people
-            SET family_id = NULL
-            WHERE family_id IS NOT NULL
-              AND EXTRACT(YEAR FROM AGE(date_of_birth)) >= 16
-        `);
-        if (releaseAdultsResult.rowCount > 0) {
-            // Quiet: released new adults (log suppressed)
+        // Release children who reach adulthood (age >= 16) from their family - update Redis
+        const allPeople = await PopulationState.getAllPeople();
+        let releasedAdults = 0;
+        for (const person of allPeople) {
+            if (person.family_id && person.date_of_birth) {
+                const age = calculateAge(person.date_of_birth, currentDate.year, currentDate.month, currentDate.day);
+                if (age >= 16) {
+                    // Check if this person is a child (not the husband or wife) - use Redis
+                    const family = await PopulationState.getFamily(person.family_id);
+                    if (family) {
+                        if (person.id !== family.husband_id && person.id !== family.wife_id) {
+                            await PopulationState.updatePerson(person.id, { family_id: null });
+                            // Also remove from children_ids
+                            const newChildrenIds = (family.children_ids || []).filter(cid => cid !== person.id);
+                            await PopulationState.updateFamily(family.id, { children_ids: newChildrenIds });
+                            releasedAdults++;
+                        }
+                    }
+                }
+            }
         }
 
         if (deliveries > 0 || newPregnancies > 0) {

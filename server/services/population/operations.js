@@ -4,6 +4,32 @@ const { ensureTableExists } = require('./initializer.js');
 const { Procreation } = require('./family.js');
 
 /**
+ * Clears all population data from Redis
+ */
+async function clearRedisPopulation() {
+    try {
+        const { isRedisAvailable } = require('../../config/redis');
+        if (!isRedisAvailable()) return;
+        
+        const redis = require('../../config/redis');
+        // Clear person hash
+        await redis.del('person');
+        // Clear all village:*:*:people sets
+        const stream = redis.scanStream({ match: 'village:*:*:people', count: 1000 });
+        const keys = [];
+        for await (const resultKeys of stream) {
+            for (const key of resultKeys) keys.push(key);
+        }
+        if (keys.length > 0) await redis.del(...keys);
+        // Reset counts
+        await redis.del('counts:global');
+        console.log('[clearRedisPopulation] Cleared Redis population data');
+    } catch (err) {
+        console.warn('[clearRedisPopulation] Failed to clear Redis:', err.message);
+    }
+}
+
+/**
  * Updates population for a specific tile
  * @param {Pool} pool - Database pool instance
  * @param {Object} calendarService - Calendar service instance
@@ -24,6 +50,8 @@ async function updateTilePopulation(pool, calendarService, serviceInstance, tile
 async function resetAllPopulation(pool, serviceInstance) {
     try {
         console.log('[resetAllPopulation] Attempting to truncate people and families tables...');
+        // Clear Redis population data first
+        await clearRedisPopulation();
         // Truncate people and family tables to clear all data and reset sequences.
         await pool.query('TRUNCATE TABLE family, people RESTART IDENTITY CASCADE');
         console.log('[resetAllPopulation] Truncate successful. Broadcasting update...');
@@ -94,6 +122,8 @@ async function initializeTilePopulations(pool, calendarService, serviceInstance,
             };
         }
 
+        // Clear Redis population data first
+        await clearRedisPopulation();
         await pool.query('TRUNCATE TABLE family, people RESTART IDENTITY CASCADE');
 
         // Get current date from calendar service
@@ -296,6 +326,8 @@ async function regeneratePopulationWithNewAgeDistribution(pool, calendarService,
         }
 
         const currentPopulations = { ...existingPopulations };
+        // Clear Redis population data first
+        await clearRedisPopulation();
         await pool.query('TRUNCATE TABLE family, people RESTART IDENTITY CASCADE');
 
         // Get current date from calendar service
