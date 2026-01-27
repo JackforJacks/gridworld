@@ -120,11 +120,11 @@ async function createInitialTiles() {
 async function createInitialPopulation(tileId) {
     console.log(`[villageSeeder] Creating initial population on tile ${tileId}`);
     console.warn('⚠️ [villageSeeder] Creating fallback initial population - this should only happen on first run!');
-    
+
     const initialPopulation = 2500;
     const values = [];
     const params = [];
-    
+
     for (let i = 0; i < initialPopulation; i++) {
         const pIndex = i * 3;
         values.push(`($${pIndex + 1}, $${pIndex + 2}, $${pIndex + 3})`);
@@ -136,13 +136,13 @@ async function createInitialPopulation(tileId) {
         const birthDate = `${birthYear}-${String(birthMonth).padStart(2, '0')}-${String(birthDay).padStart(2, '0')}`;
         params.push(tileId, Math.random() > 0.5, birthDate);
     }
-    
+
     if (values.length > 0) {
         const res = await pool.query(
-            `INSERT INTO people (tile_id, sex, date_of_birth) VALUES ${values.join(',')} RETURNING id, tile_id, residency, sex, date_of_birth`, 
+            `INSERT INTO people (tile_id, sex, date_of_birth) VALUES ${values.join(',')} RETURNING id, tile_id, residency, sex, date_of_birth`,
             params
         );
-        
+
         // Sync to Redis
         try {
             const PopulationState = require('../populationState');

@@ -194,7 +194,7 @@ async function seedVillagesForTile(tileId) {
     const perTileMin = 1;
     const perTileMax = 30;
     const housingCapacity = 1000;
-    
+
     await pool.query('BEGIN');
     try {
         // Get tile population

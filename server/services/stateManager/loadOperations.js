@@ -19,10 +19,10 @@ async function loadFromDatabase(context) {
     }
 
     console.log('📥 Loading state from PostgreSQL to Redis...');
-    
+
     // Clear existing Redis state keys to avoid stale data
     await clearExistingRedisState();
-    
+
     const pipeline = redis.pipeline();
 
     // Load villages
@@ -54,12 +54,12 @@ async function loadFromDatabase(context) {
     // Populate eligible matchmaking sets
     await populateEligibleSets(people, context.calendarService);
 
-    return { 
-        villages: villages.length, 
-        people: people.length, 
-        families: families.length, 
-        male: maleCount, 
-        female: femaleCount 
+    return {
+        villages: villages.length,
+        people: people.length,
+        families: families.length,
+        male: maleCount,
+        female: femaleCount
     };
 }
 
@@ -69,11 +69,11 @@ async function loadFromDatabase(context) {
 async function clearExistingRedisState() {
     try {
         await redis.del(
-            'village', 'person', 'family', 'tile:fertility', 
-            'village:cleared', 'counts:global', 'pending:inserts', 
+            'village', 'person', 'family', 'tile:fertility',
+            'village:cleared', 'counts:global', 'pending:inserts',
             'pending:deletes', 'pending:family:inserts', 'pending:family:updates'
         );
-        
+
         // Clear all village:*:*:people sets
         const stream = redis.scanStream({ match: 'village:*:*:people', count: 1000 });
         const keysToDelete = [];
@@ -115,11 +115,11 @@ async function loadVillages(pipeline) {
 async function loadPeople(pipeline) {
     const { rows: people } = await pool.query('SELECT * FROM people');
     let maleCount = 0, femaleCount = 0;
-    
+
     for (const p of people) {
         // Normalize sex to boolean
         const sex = p.sex === true || p.sex === 'true' || p.sex === 1 ? true : false;
-        
+
         pipeline.hset('person', p.id.toString(), JSON.stringify({
             id: p.id,
             tile_id: p.tile_id,
@@ -129,17 +129,17 @@ async function loadPeople(pipeline) {
             family_id: p.family_id,
             date_of_birth: p.date_of_birth,
         }));
-        
+
         // Index: which village does this person belong to?
         if (p.tile_id && p.residency !== null) {
             pipeline.sadd(`village:${p.tile_id}:${p.residency}:people`, p.id.toString());
         }
-        
+
         // Count demographics
         if (sex === true) maleCount++;
         else femaleCount++;
     }
-    
+
     return { people, maleCount, femaleCount };
 }
 
@@ -222,7 +222,7 @@ async function populateEligibleSets(people, calendarService) {
             if (cs && cs.currentDate) currentDate = cs.currentDate;
         }
         console.log('📅 [StateManager] Using calendar date for eligible sets:', currentDate);
-        
+
         for (const p of people) {
             try {
                 await PopulationState.addEligiblePerson(p, currentDate.year, currentDate.month, currentDate.day);

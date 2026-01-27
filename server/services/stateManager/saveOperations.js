@@ -14,7 +14,7 @@ const pool = require('../../config/database');
 async function saveToDatabase(context) {
     console.log(`💾 Calendar service available: ${!!context.calendarService}, isRunning: ${context.calendarService?.state?.isRunning}`);
     const wasRunning = context.calendarService?.state?.isRunning;
-    
+
     // Pause calendar ticks during save
     if (wasRunning && context.calendarService) {
         console.log('⏸️ Pausing calendar for save...');
@@ -179,25 +179,25 @@ async function processFamilyDeletes(PopulationState) {
     console.log('💾 [3/8] Getting pending family deletes...');
     const pendingFamilyDeletes = await PopulationState.getPendingFamilyDeletes();
     console.log(`💾 [3/8] Found ${pendingFamilyDeletes.length} family deletes`);
-    
+
     if (pendingFamilyDeletes.length > 0) {
         console.log(`🗑️ Deleting ${pendingFamilyDeletes.length} families from PostgreSQL...`);
-        
+
         // Remove from fertile family set
         try {
             for (const fid of pendingFamilyDeletes) {
                 await redis.srem('eligible:pregnancy:families', fid.toString());
             }
         } catch (_) { }
-        
+
         // Clear family_id references in people table
         const famPlaceholders = pendingFamilyDeletes.map((_, idx) => `$${idx + 1}`).join(',');
         await pool.query(`UPDATE people SET family_id = NULL WHERE family_id IN (${famPlaceholders})`, pendingFamilyDeletes);
-        
+
         // Delete the families
         await pool.query(`DELETE FROM family WHERE id IN (${famPlaceholders})`, pendingFamilyDeletes);
     }
-    
+
     return pendingFamilyDeletes.length;
 }
 
@@ -206,13 +206,13 @@ async function processFamilyDeletes(PopulationState) {
  */
 async function processPeopleDeletes(PopulationState) {
     const pendingDeletes = await PopulationState.getPendingDeletes();
-    
+
     if (pendingDeletes.length > 0) {
         console.log(`🗑️ Deleting ${pendingDeletes.length} people from PostgreSQL...`);
         const placeholders = pendingDeletes.map((_, idx) => `$${idx + 1}`).join(',');
         await pool.query(`DELETE FROM people WHERE id IN (${placeholders})`, pendingDeletes);
     }
-    
+
     return pendingDeletes.length;
 }
 
@@ -223,7 +223,7 @@ async function insertPendingFamilies(PopulationState) {
     console.log('💾 [5/8] Getting pending family inserts...');
     const pendingFamilyInserts = await PopulationState.getPendingFamilyInserts();
     console.log(`💾 [5/8] Found ${pendingFamilyInserts.length} family inserts`);
-    
+
     let familiesInserted = 0;
     const familyIdMappings = [];
 
@@ -261,7 +261,7 @@ async function insertPendingFamilies(PopulationState) {
 async function insertPendingPeople(PopulationState, familyIdMappings) {
     console.log('💾 [6/8] Getting pending people inserts...');
     const pendingInserts = await PopulationState.getPendingInserts();
-    
+
     let insertedCount = 0;
     const idMappings = [];
 
@@ -272,7 +272,7 @@ async function insertPendingPeople(PopulationState, familyIdMappings) {
         for (let i = 0; i < pendingInserts.length; i += batchSize) {
             const batch = pendingInserts.slice(i, i + batchSize);
             console.log(`   Batch ${Math.floor(i / batchSize) + 1}/${Math.ceil(pendingInserts.length / batchSize)}: ${batch.length} people`);
-            
+
             const values = [];
             const params = [];
             let paramIdx = 1;
@@ -375,7 +375,7 @@ async function updateExistingFamilies(PopulationState, familyIdMappings) {
     console.log('💾 [7/8] Getting pending family updates...');
     const pendingFamilyUpdates = await PopulationState.getPendingFamilyUpdates();
     let familiesUpdated = 0;
-    
+
     if (pendingFamilyUpdates.length > 0) {
         console.log(`📝 Updating ${pendingFamilyUpdates.length} families in PostgreSQL...`);
         const existingFamilies = pendingFamilyUpdates.filter(f => f.id > 0);
@@ -398,7 +398,7 @@ async function updateExistingFamilies(PopulationState, familyIdMappings) {
         }
         console.log(`   Family updates complete: ${familiesUpdated}`);
     }
-    
+
     return familiesUpdated;
 }
 
@@ -413,12 +413,12 @@ async function updateExistingPeople(familyIdMappings) {
         .filter(p => p.id > 0 && !p._isNew);
 
     console.log(`   Found ${existingPeople.length} existing people to update`);
-    
+
     if (existingPeople.length > 0) {
         try {
             const peopleWithTempFamilyIds = existingPeople.filter(p => p.family_id && p.family_id < 0);
             console.log(`   ${peopleWithTempFamilyIds.length} people have temp family_id to remap`);
-            
+
             if (peopleWithTempFamilyIds.length > 0) {
                 for (const p of peopleWithTempFamilyIds) {
                     const mapping = familyIdMappings.find(m => m.tempId === p.family_id);
@@ -434,7 +434,7 @@ async function updateExistingPeople(familyIdMappings) {
             console.warn('⚠️ Could not update people:', err.message);
         }
     }
-    
+
     return 0; // Health updates not implemented yet
 }
 
