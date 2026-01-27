@@ -162,18 +162,18 @@ async function assignResidencyStorage(populatedTileIds, allVillages) {
                 const toAssign = Math.min(available, people.length - peopleIndex);
                 const assignedPeople = people.slice(peopleIndex, peopleIndex + toAssign);
 
-// Update people with residency in storage
-const personWritePipeline = storage.pipeline();
-                    for (const person of assignedPeople) {
-                        const pid = person.id;
-                        await PopulationState.updatePerson(pid, { residency: village.land_chunk_index });
-                        personWritePipeline.sadd(`village:${village.tile_id}:${village.land_chunk_index}:people`, pid.toString());
-                        village.housing_slots.push(pid);
-                    }
-                    await personWritePipeline.exec();
+                // Update people with residency in storage
+                const personWritePipeline = storage.pipeline();
+                for (const person of assignedPeople) {
+                    const pid = person.id;
+                    await PopulationState.updatePerson(pid, { residency: village.land_chunk_index });
+                    personWritePipeline.sadd(`village:${village.tile_id}:${village.land_chunk_index}:people`, pid.toString());
+                    village.housing_slots.push(pid);
+                }
+                await personWritePipeline.exec();
 
-                    // Update village housing_slots in storage
-                    await storage.hset('village', village.id.toString(), JSON.stringify(village));
+                // Update village housing_slots in storage
+                await storage.hset('village', village.id.toString(), JSON.stringify(village));
 
                 peopleIndex += toAssign;
             }

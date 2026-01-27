@@ -586,7 +586,7 @@ class PeopleState {
             await storage.hset('counts:global', 'male', maleCount.toString());
             await storage.hset('counts:global', 'female', femaleCount.toString());
 
-                console.log(`[PeopleState] Synced ${total} people to storage (${maleCount} male, ${femaleCount} female)`);
+            console.log(`[PeopleState] Synced ${total} people to storage (${maleCount} male, ${femaleCount} female)`);
             return { success: true, total, male: maleCount, female: femaleCount };
         } catch (err) {
             console.error('[PeopleState] syncFromPostgres failed:', err.message);

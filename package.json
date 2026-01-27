@@ -35,7 +35,9 @@
   "jest": {
     "collectCoverage": false,
     "coverageDirectory": "coverage",
-    "coveragePathIgnorePatterns": ["/node_modules/"],
+    "coveragePathIgnorePatterns": [
+      "/node_modules/"
+    ],
     "coverageThreshold": {
       "global": {
         "branches": 70,
