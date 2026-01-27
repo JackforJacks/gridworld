@@ -55,8 +55,8 @@ try {
 // Helper to check if Redis is available
 const isRedisAvailable = () => redisAvailable;
 
-// Try to connect (non-blocking)
-if (redis) {
+// Try to connect (non-blocking) unless running tests (avoid open TCP handles in Jest)
+if (redis && process.env.NODE_ENV !== 'test') {
     redis.connect().catch(() => {
         console.warn('⚠️ Redis not available, will use PostgreSQL mode');
         redisAvailable = false;

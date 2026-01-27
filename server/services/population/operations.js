@@ -3,30 +3,29 @@ const { addPeopleToTile, removePeopleFromTile } = require('./manager.js');
 const { ensureTableExists } = require('./initializer.js');
 const { Procreation } = require('./family.js');
 const serverConfig = require('../../config/server');
+const storage = require('../storage');
 
 /**
- * Clears all population data from Redis
+ * Clears all population data from storage
  */
-async function clearRedisPopulation() {
+async function clearStoragePopulation() {
     try {
-        const { isRedisAvailable } = require('../../config/redis');
-        if (!isRedisAvailable()) return;
+        if (!storage.isAvailable()) return;
 
-        const redis = require('../../config/redis');
         // Clear person hash
-        await redis.del('person');
+        await storage.del('person');
         // Clear all village:*:*:people sets
-        const stream = redis.scanStream({ match: 'village:*:*:people', count: 1000 });
+        const stream = storage.scanStream({ match: 'village:*:*:people', count: 1000 });
         const keys = [];
         for await (const resultKeys of stream) {
             for (const key of resultKeys) keys.push(key);
         }
-        if (keys.length > 0) await redis.del(...keys);
+        if (keys.length > 0) await storage.del(...keys);
         // Reset counts
-        await redis.del('counts:global');
-        if (serverConfig.verboseLogs) console.log('[clearRedisPopulation] Cleared Redis population data');
+        await storage.del('counts:global');
+        if (serverConfig.verboseLogs) console.log('[clearStoragePopulation] Cleared storage population data');
     } catch (err) {
-        console.warn('[clearRedisPopulation] Failed to clear Redis:', err.message);
+        console.warn('[clearStoragePopulation] Failed to clear storage:', err.message);
     }
 }
 
@@ -51,8 +50,8 @@ async function updateTilePopulation(pool, calendarService, serviceInstance, tile
 async function resetAllPopulation(pool, serviceInstance) {
     try {
         console.log('[resetAllPopulation] Attempting to truncate people and families tables...');
-        // Clear Redis population data first
-        await clearRedisPopulation();
+        // Clear storage population data first
+        await clearStoragePopulation();
         // Truncate people and family tables to clear all data and reset sequences.
         await pool.query('TRUNCATE TABLE family, people RESTART IDENTITY CASCADE');
         console.log('[resetAllPopulation] Truncate successful. Broadcasting update...');
@@ -97,7 +96,7 @@ async function initializeTilePopulations(pool, calendarService, serviceInstance,
                 ...formatPopulationData(populations)
             };
         }
-        if (serverConfig.verboseLogs) console.log('[PopulationOperations] No existing population found. Proceeding with Redis-first initialization...');
+        if (serverConfig.verboseLogs) console.log('[PopulationOperations] No existing population found. Proceeding with storage-first initialization...');
 
         // Fetch habitable tiles from the database
         const habitableResult = await pool.query(`SELECT id FROM tiles WHERE is_habitable = TRUE`);
@@ -123,9 +122,9 @@ async function initializeTilePopulations(pool, calendarService, serviceInstance,
             };
         }
 
-        // Clear Redis population data and Postgres tables
+        // Clear storage population data and Postgres tables
         console.log('⏱️ [initPop] Clearing data...');
-        await clearRedisPopulation();
+        await clearStoragePopulation();
         await pool.query('TRUNCATE TABLE family, people RESTART IDENTITY CASCADE');
         console.log(`⏱️ [initPop] Clear done in ${Date.now() - startTime}ms`);
 
@@ -140,7 +139,7 @@ async function initializeTilePopulations(pool, calendarService, serviceInstance,
         const { year: currentYear, month: currentMonth, day: currentDay } = currentDate;
         const { getRandomSex, getRandomAge, getRandomBirthDate } = require('./calculator.js');
 
-        // ========== REDIS-FIRST: Generate all people in memory ==========
+        // ========== STORAGE-FIRST: Generate all people in memory ==========
         const step1Start = Date.now();
         if (serverConfig.verboseLogs) console.log('⏱️ [initPop] Step 1: Generating people data in memory...');
 
@@ -160,6 +159,7 @@ async function initializeTilePopulations(pool, calendarService, serviceInstance,
                 const person = {
                     id: personIdCounter++,
                     tile_id,
+                    residency: 0,
                     sex: true,
                     date_of_birth: birthDate,
                     family_id: null
@@ -174,6 +174,7 @@ async function initializeTilePopulations(pool, calendarService, serviceInstance,
                 const person = {
                     id: personIdCounter++,
                     tile_id,
+                    residency: 0,
                     sex: false,
                     date_of_birth: birthDate,
                     family_id: null
@@ -190,6 +191,7 @@ async function initializeTilePopulations(pool, calendarService, serviceInstance,
                 const person = {
                     id: personIdCounter++,
                     tile_id,
+                    residency: 0,
                     sex,
                     date_of_birth: birthDate,
                     family_id: null
@@ -283,7 +285,7 @@ async function initializeTilePopulations(pool, calendarService, serviceInstance,
 
         // ========== Step 3: Write all data to Redis ==========
         const step3Start = Date.now();
-        if (serverConfig.verboseLogs) console.log('⏱️ [initPop] Step 3: Writing to Redis...');
+        if (serverConfig.verboseLogs) console.log('⏱️ [initPop] Step 3: Writing to storage...');
 
         // Use batch operations for Redis
         const BATCH_SIZE = 500;
@@ -293,20 +295,20 @@ async function initializeTilePopulations(pool, calendarService, serviceInstance,
             const batch = allPeople.slice(i, i + BATCH_SIZE);
             await Promise.all(batch.map(person => PopulationState.addPerson(person, true)));
         }
-        if (serverConfig.verboseLogs) console.log(`⏱️ [initPop] Added ${allPeople.length} people to Redis`);
+        if (serverConfig.verboseLogs) console.log(`⏱️ [initPop] Added ${allPeople.length} people to storage`);
 
         // Add all families to Redis with isNew=true (marks as pending insert)
         for (let i = 0; i < allFamilies.length; i += BATCH_SIZE) {
             const batch = allFamilies.slice(i, i + BATCH_SIZE);
             await Promise.all(batch.map(family => PopulationState.addFamily(family, true)));
         }
-        if (serverConfig.verboseLogs) console.log(`⏱️ [initPop] Added ${allFamilies.length} families to Redis`);
+        if (serverConfig.verboseLogs) console.log(`⏱️ [initPop] Added ${allFamilies.length} families to storage`);
 
-        if (serverConfig.verboseLogs) console.log(`⏱️ [initPop] Step 3 done: Redis write completed in ${Date.now() - step3Start}ms`);
+        if (serverConfig.verboseLogs) console.log(`⏱️ [initPop] Step 3 done: storage write completed in ${Date.now() - step3Start}ms`);
 
         // ========== Return formatted result ==========
         const totalTime = Date.now() - startTime;
-        if (serverConfig.verboseLogs) console.log(`✅ [initPop] COMPLETE: ${allPeople.length} people, ${allFamilies.length} families in ${totalTime}ms (Redis-only, pending Postgres save)`);
+        if (serverConfig.verboseLogs) console.log(`✅ [initPop] COMPLETE: ${allPeople.length} people, ${allFamilies.length} families in ${totalTime}ms (storage-only, pending Postgres save)`);
 
         const populations = await PopulationState.getAllTilePopulations();
         return formatPopulationData(populations);
@@ -366,8 +368,8 @@ async function regeneratePopulationWithNewAgeDistribution(pool, calendarService,
         }
 
         const currentPopulations = { ...existingPopulations };
-        // Clear Redis population data first
-        await clearRedisPopulation();
+        // Clear storage population data first
+        await clearStoragePopulation();
         await pool.query('TRUNCATE TABLE family, people RESTART IDENTITY CASCADE');
 
         // Get current date from calendar service

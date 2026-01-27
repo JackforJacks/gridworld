@@ -1,6 +1,5 @@
 const pool = require('../config/database');
-const redis = require('../config/redis');
-const { isRedisAvailable } = require('../config/redis');
+const storage = require('./storage');
 const serverConfig = require('../config/server.js');
 const StateManager = require('./stateManager');
 
@@ -26,13 +25,13 @@ class VillageService {
      */
     static setupTickBasedFoodUpdates(calendarService) {
         this.calendarService = calendarService;
-        const redisMode = this.useRedis && isRedisAvailable();
-        if (serverConfig.verboseLogs) console.log(`🍖 Setting up tick-based food updates [Redis mode: ${redisMode}]`);
+        const storageMode = this.useRedis && storage.isAvailable();
+        if (serverConfig.verboseLogs) console.log(`🍖 Setting up tick-based food updates [storage mode: ${storageMode}]`);
 
         calendarService.on('tick', async (tickData) => {
             try {
                 // Update food on each calendar tick
-                if (this.useRedis && isRedisAvailable() && StateManager.isInitialized()) {
+                if (this.useRedis && storage.isAvailable() && StateManager.isInitialized()) {
                     await this.updateAllVillageFoodStoresRedis();
                 } else {
                     await this.updateAllVillageFoodStores();
@@ -53,13 +52,13 @@ class VillageService {
             return;
         }
 
-        const redisMode = this.useRedis && isRedisAvailable();
-        if (serverConfig.verboseLogs) console.log(`🍖 Starting food update timer (${intervalMs}ms intervals) [Redis mode: ${redisMode}]`);
+        const storageMode = this.useRedis && storage.isAvailable();
+        if (serverConfig.verboseLogs) console.log(`🍖 Starting food update timer (${intervalMs}ms intervals) [storage mode: ${storageMode}]`);
 
         this.foodUpdateTimer = setInterval(async () => {
             try {
-                // Check Redis availability each tick in case it reconnects
-                if (this.useRedis && isRedisAvailable() && StateManager.isInitialized()) {
+                // Check storage availability each tick in case it reconnects
+                if (this.useRedis && storage.isAvailable() && StateManager.isInitialized()) {
                     await this.updateAllVillageFoodStoresRedis();
                 } else {
                     await this.updateAllVillageFoodStores();
@@ -402,7 +401,7 @@ class VillageService {
             const villages = await StateManager.getAllVillages();
             if (villages.length === 0) return [];
 
-            const pipeline = redis.pipeline();
+            const pipeline = storage.pipeline();
             const updatedVillages = [];
 
             for (const village of villages) {

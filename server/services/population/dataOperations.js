@@ -1,6 +1,6 @@
 // Population Data Operations - Handles data loading, saving, and formatting
 const { getTotalPopulation } = require('./PopStats.js');
-const { isRedisAvailable } = require('../../config/redis');
+const storage = require('../storage');
 
 /**
  * Loads population data - tries Redis first (hot data), falls back to Postgres
@@ -9,8 +9,8 @@ const { isRedisAvailable } = require('../../config/redis');
  */
 async function loadPopulationData(pool) {
     try {
-        // Try Redis first for tile populations (hot data after restart)
-        if (isRedisAvailable()) {
+        // Try storage first for tile populations (hot data after restart)
+        if (storage.isAvailable()) {
             try {
                 const PopulationState = require('../populationState');
                 const populations = await PopulationState.getAllTilePopulations();
@@ -18,7 +18,7 @@ async function loadPopulationData(pool) {
                     return populations;
                 }
             } catch (e) {
-                console.warn('[loadPopulationData] Redis failed, falling back to Postgres:', e.message);
+                console.warn('[loadPopulationData] storage failed, falling back to Postgres:', e.message);
             }
         }
 

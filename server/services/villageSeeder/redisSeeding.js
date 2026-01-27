@@ -1,11 +1,10 @@
 /**
- * Village Seeder - Redis-first Seeding
- * Handles village seeding using Redis as the primary store
+ * Village Seeder - storage-first Seeding
+ * Handles village seeding using storage (Redis or memory) as the primary store
  */
 
 const pool = require('../../config/database');
-const redis = require('../../config/redis');
-const { isRedisAvailable } = require('../../config/redis');
+const storage = require('../storage');
 const { ensureVillageIdColumn } = require('./dbUtils');
 const { seedRandomVillages } = require('./postgresSeeding');
 
@@ -13,9 +12,9 @@ const { seedRandomVillages } = require('./postgresSeeding');
  * Redis-first village seeding - reads population from Redis, writes villages to Redis
  * @returns {Promise<Object>} Result with created count and villages
  */
-async function seedVillagesRedisFirst() {
-    if (!isRedisAvailable()) {
-        console.warn('[villageSeeder] Redis not available - falling back to Postgres seeding');
+async function seedVillagesStorageFirst() {
+    if (!storage.isAvailable()) {
+        console.warn('[villageSeeder] storage not available - falling back to Postgres seeding');
         return seedRandomVillages();
     }
 
@@ -31,14 +30,14 @@ async function seedVillagesRedisFirst() {
         const populatedTileIds = Object.keys(tilePopulations).filter(id => tilePopulations[id] > 0);
 
         if (populatedTileIds.length === 0) {
-            console.log('[villageSeeder] No populated tiles in Redis');
+            console.log('[villageSeeder] No populated tiles in storage');
             return { created: 0, villages: [] };
         }
 
-        console.log(`[villageSeeder] Found ${populatedTileIds.length} populated tiles in Redis`);
+        console.log(`[villageSeeder] Found ${populatedTileIds.length} populated tiles in storage`);
 
-        // Clear existing villages in Redis
-        await redis.del('village');
+        // Clear existing villages in storage
+        await storage.del('village');
 
         // Get cleared chunks from Postgres
         const { rows: allChunks } = await pool.query(`
@@ -84,8 +83,8 @@ async function seedVillagesRedisFirst() {
             }
         }
 
-        // Write all villages to Redis
-        const pipeline = redis.pipeline();
+        // Write all villages to storage
+        const pipeline = storage.pipeline();
         for (const village of allVillages) {
             pipeline.hset('village', village.id.toString(), JSON.stringify(village));
         }
@@ -95,22 +94,22 @@ async function seedVillagesRedisFirst() {
         }
         await pipeline.exec();
 
-        console.log(`[villageSeeder] Created ${allVillages.length} villages in Redis (pending Postgres save)`);
+        console.log(`[villageSeeder] Created ${allVillages.length} villages in storage (pending Postgres save)`);
 
-        // Assign residency to people in Redis
-        await assignResidencyRedis(populatedTileIds, allVillages);
+        // Assign residency to people in storage
+        await assignResidencyStorage(populatedTileIds, allVillages);
 
         return { created: allVillages.length, villages: allVillages };
     } catch (err) {
-        console.error('[villageSeeder] Redis-first seeding failed:', err);
+        console.error('[villageSeeder] storage-first seeding failed:', err);
         throw err;
     }
 }
 
 /**
- * Assign residency to people in Redis
+ * Assign residency to people in storage
  */
-async function assignResidencyRedis(populatedTileIds, allVillages) {
+async function assignResidencyStorage(populatedTileIds, allVillages) {
     try {
         const PopulationState = require('../populationState');
 
@@ -121,7 +120,7 @@ async function assignResidencyRedis(populatedTileIds, allVillages) {
             villagesByTile[v.tile_id].push(v);
         }
 
-        // Get all people from Redis
+        // Get all people from storage
         const allPeople = await PopulationState.getAllPeople();
 
         // Group people by tile
@@ -140,7 +139,7 @@ async function assignResidencyRedis(populatedTileIds, allVillages) {
             const people = peopleByTile[tileId] || [];
 
             // Clear existing residency
-            const clearPipeline = redis.pipeline();
+            const clearPipeline = storage.pipeline();
             for (const p of people) {
                 if (p.residency !== null && p.residency !== undefined) {
                     clearPipeline.srem(`village:${p.tile_id}:${p.residency}:people`, p.id.toString());
@@ -163,30 +162,30 @@ async function assignResidencyRedis(populatedTileIds, allVillages) {
                 const toAssign = Math.min(available, people.length - peopleIndex);
                 const assignedPeople = people.slice(peopleIndex, peopleIndex + toAssign);
 
-                // Update people with residency in Redis
-                const personWritePipeline = redis.pipeline();
-                for (const person of assignedPeople) {
-                    const pid = person.id;
-                    await PopulationState.updatePerson(pid, { residency: village.land_chunk_index });
-                    personWritePipeline.sadd(`village:${village.tile_id}:${village.land_chunk_index}:people`, pid.toString());
-                    village.housing_slots.push(pid);
-                }
-                await personWritePipeline.exec();
+// Update people with residency in storage
+const personWritePipeline = storage.pipeline();
+                    for (const person of assignedPeople) {
+                        const pid = person.id;
+                        await PopulationState.updatePerson(pid, { residency: village.land_chunk_index });
+                        personWritePipeline.sadd(`village:${village.tile_id}:${village.land_chunk_index}:people`, pid.toString());
+                        village.housing_slots.push(pid);
+                    }
+                    await personWritePipeline.exec();
 
-                // Update village housing_slots in Redis
-                await redis.hset('village', village.id.toString(), JSON.stringify(village));
+                    // Update village housing_slots in storage
+                    await storage.hset('village', village.id.toString(), JSON.stringify(village));
 
                 peopleIndex += toAssign;
             }
         }
 
-        console.log(`[villageSeeder] Assigned residency to people in Redis`);
+        console.log(`[villageSeeder] Assigned residency to people in storage`);
     } catch (err) {
-        console.error('[villageSeeder] Failed to assign residency in Redis:', err);
+        console.error('[villageSeeder] Failed to assign residency in storage:', err);
     }
 }
 
 module.exports = {
-    seedVillagesRedisFirst,
-    assignResidencyRedis
+    seedVillagesStorageFirst,
+    assignResidencyStorage
 };

@@ -1,9 +1,9 @@
 /**
  * State Manager - Save Operations
- * Handles saving Redis state back to PostgreSQL
+ * Handles saving storage state back to PostgreSQL
  */
 
-const redis = require('../../config/redis');
+const storage = require('../storage');
 const pool = require('../../config/database');
 
 /**
@@ -22,17 +22,21 @@ async function saveToDatabase(context) {
     }
 
     try {
-        console.log('💾 [1/8] Saving Redis state to PostgreSQL...');
+        console.log('💾 [1/8] Saving storage state to PostgreSQL...');
         const startTime = Date.now();
         const PopulationState = require('../populationState');
 
         // Get village data
         console.log('💾 [2/8] Getting village data...');
-        const villageData = await redis.hgetall('village');
-        const villageCount = Object.keys(villageData).length;
+        const villageData = await storage.hgetall('village');
+        const villageCount = villageData ? Object.keys(villageData).length : 0;
         console.log(`💾 [2/8] Got ${villageCount} villages`);
 
         // Handle pending village inserts
+        const { insertPendingVillages } = require('./parts/villages');
+        const { processFamilyDeletes } = require('./parts/families');
+        const { processPeopleDeletes } = require('./parts/people');
+
         const { villagesInserted, villageIdMappings } = await insertPendingVillages(villageData, PopulationState);
 
         // Update existing villages
@@ -142,7 +146,7 @@ async function insertPendingVillages(villageData, PopulationState) {
 
         if (villageIdMappings.length > 0) {
             await PopulationState.reassignVillageIds(villageIdMappings);
-            console.log(`🏗️ Reassigned ${villageIdMappings.length} village IDs in Redis`);
+            console.log(`🏗️ Reassigned ${villageIdMappings.length} village IDs in storage`);
         }
         console.log(`🏗️ Inserted ${villagesInserted} villages into Postgres`);
     }
@@ -186,7 +190,7 @@ async function processFamilyDeletes(PopulationState) {
         // Remove from fertile family set
         try {
             for (const fid of pendingFamilyDeletes) {
-                await redis.srem('eligible:pregnancy:families', fid.toString());
+                await storage.srem('eligible:pregnancy:families', fid.toString());
             }
         } catch (_) { }
 
@@ -245,7 +249,7 @@ async function insertPendingFamilies(PopulationState) {
             familiesInserted++;
         }
 
-        console.log('💾 [5/8] Reassigning family IDs in Redis...');
+        console.log('💾 [5/8] Reassigning family IDs in storage...');
         if (familyIdMappings.length > 0) {
             await PopulationState.reassignFamilyIds(familyIdMappings);
         }
@@ -311,7 +315,7 @@ async function insertPendingPeople(PopulationState, familyIdMappings) {
             }
         }
 
-        console.log(`💾 [6/8] Reassigning ${idMappings.length} IDs in Redis...`);
+        console.log(`💾 [6/8] Reassigning ${idMappings.length} IDs in storage...`);
         if (idMappings.length > 0) {
             await PopulationState.reassignIds(idMappings);
         }
@@ -407,7 +411,7 @@ async function updateExistingFamilies(PopulationState, familyIdMappings) {
  */
 async function updateExistingPeople(familyIdMappings) {
     console.log('💾 [8/8] Updating existing people...');
-    const personData = await redis.hgetall('person');
+    const personData = await storage.hgetall('person');
     const existingPeople = Object.values(personData)
         .map(json => JSON.parse(json))
         .filter(p => p.id > 0 && !p._isNew);

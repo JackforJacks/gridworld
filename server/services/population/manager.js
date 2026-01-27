@@ -2,9 +2,10 @@
 const { getRandomSex, getRandomAge, getRandomBirthDate } = require('./calculator.js');
 const { trackBirths, trackDeaths } = require('./PopStats.js');
 const config = require('../../config/server.js');
+const storage = require('../storage');
 
 /**
- * Add people to a tile - Redis-only (Postgres writes happen on Save)
+ * Add people to a tile - storage-only (Postgres writes happen on Save)
  * @param {Pool} pool - Database pool (used for fallback/queries only)
  * @param {number} tileId - Tile ID
  * @param {number} count - Number of people to add
@@ -16,10 +17,8 @@ const config = require('../../config/server.js');
  */
 async function addPeopleToTile(pool, tileId, count, currentYear, currentMonth, currentDay, populationServiceInstance, doTrackBirths = false) {
     const PopulationState = require('../populationState');
-    const { isRedisAvailable } = require('../../config/redis');
-
-    if (!isRedisAvailable()) {
-        console.warn('⚠️ Redis not available - cannot add people to tile');
+    if (!storage.isAvailable()) {
+        console.warn('⚠️ Storage not available - cannot add people to tile');
         return;
     }
 
@@ -28,7 +27,7 @@ async function addPeopleToTile(pool, tileId, count, currentYear, currentMonth, c
         const age = getRandomAge();
         const birthDate = getRandomBirthDate(currentYear, currentMonth, currentDay, age);
 
-        // Get a temporary ID for Redis-only storage
+        // Get a temporary ID for storage-only mode
         const tempId = await PopulationState.getNextTempId();
 
         const personObj = {
@@ -58,7 +57,7 @@ async function addPeopleToTile(pool, tileId, count, currentYear, currentMonth, c
 }
 
 /**
- * Remove people from a tile - Redis-only (Postgres deletes happen on Save)
+ * Remove people from a tile - storage-only (Postgres deletes happen on Save)
  * @param {Pool} pool - Database pool (used for queries only)
  * @param {number} tileId - Tile ID
  * @param {number} count - Number of people to remove
@@ -69,10 +68,8 @@ async function removePeopleFromTile(pool, tileId, count, populationServiceInstan
     if (count <= 0) return;
 
     const PopulationState = require('../populationState');
-    const { isRedisAvailable } = require('../../config/redis');
-
-    if (!isRedisAvailable()) {
-        console.warn('⚠️ Redis not available - cannot remove people from tile');
+    if (!storage.isAvailable()) {
+        console.warn('⚠️ Storage not available - cannot remove people from tile');
         return;
     }
 

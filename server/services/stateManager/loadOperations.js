@@ -1,29 +1,28 @@
 /**
  * State Manager - Load Operations
- * Handles loading state from PostgreSQL into Redis on server start
+ * Handles loading state from PostgreSQL into storage on server start
  */
 
-const redis = require('../../config/redis');
-const { isRedisAvailable } = require('../../config/redis');
+const storage = require('../storage');
 const pool = require('../../config/database');
 
 /**
- * Load all data from PostgreSQL into Redis on server start
+ * Load all data from PostgreSQL into storage on server start
  * @param {Object} context - StateManager context with calendarService, io
  * @returns {Promise<Object>} Load results
  */
 async function loadFromDatabase(context) {
-    if (!isRedisAvailable()) {
-        console.warn('⚠️ Redis not available, skipping state load');
+    if (!storage.isAvailable()) {
+        console.warn('⚠️ storage not available, skipping state load');
         return { villages: 0, people: 0, families: 0, skipped: true };
     }
 
-    console.log('📥 Loading state from PostgreSQL to Redis...');
+    console.log('📥 Loading state from PostgreSQL to storage...');
 
-    // Clear existing Redis state keys to avoid stale data
-    await clearExistingRedisState();
+    // Clear existing storage state keys to avoid stale data
+    await clearExistingStorageState();
 
-    const pipeline = redis.pipeline();
+    const pipeline = storage.pipeline();
 
     // Load villages
     const villages = await loadVillages(pipeline);
@@ -49,7 +48,7 @@ async function loadFromDatabase(context) {
 
     await pipeline.exec();
 
-    console.log(`✅ Loaded ${villages.length} villages, ${people.length} people (${maleCount} male, ${femaleCount} female), ${families.length} families to Redis`);
+    console.log(`✅ Loaded ${villages.length} villages, ${people.length} people (${maleCount} male, ${femaleCount} female), ${families.length} families to storage`);
 
     // Populate eligible matchmaking sets
     await populateEligibleSets(people, context.calendarService);
@@ -64,33 +63,33 @@ async function loadFromDatabase(context) {
 }
 
 /**
- * Clear existing Redis state keys to avoid stale data
+ * Clear existing storage state keys to avoid stale data
  */
-async function clearExistingRedisState() {
+async function clearExistingStorageState() {
     try {
-        await redis.del(
+        await storage.del(
             'village', 'person', 'family', 'tile:fertility',
             'village:cleared', 'counts:global', 'pending:inserts',
             'pending:deletes', 'pending:family:inserts', 'pending:family:updates'
         );
 
         // Clear all village:*:*:people sets
-        const stream = redis.scanStream({ match: 'village:*:*:people', count: 1000 });
+        const stream = storage.scanStream({ match: 'village:*:*:people', count: 1000 });
         const keysToDelete = [];
         for await (const resultKeys of stream) {
             for (const key of resultKeys) keysToDelete.push(key);
         }
         if (keysToDelete.length > 0) {
-            await redis.del(...keysToDelete);
+            await storage.del(...keysToDelete);
         }
-        console.log('🧹 Cleared existing Redis state keys (including counts:global, village sets, family, and pending ops)');
+        console.log('🧹 Cleared existing storage state keys (including counts:global, village sets, family, and pending ops)');
     } catch (e) {
-        console.warn('⚠️ Failed to clear Redis keys before load:', e.message);
+        console.warn('⚠️ Failed to clear storage keys before load:', e.message);
     }
 }
 
 /**
- * Load villages from PostgreSQL into Redis pipeline
+ * Load villages from PostgreSQL into storage pipeline
  */
 async function loadVillages(pipeline) {
     const { rows: villages } = await pool.query('SELECT * FROM villages');
@@ -110,7 +109,7 @@ async function loadVillages(pipeline) {
 }
 
 /**
- * Load people from PostgreSQL into Redis pipeline
+ * Load people from PostgreSQL into storage pipeline
  */
 async function loadPeople(pipeline) {
     const { rows: people } = await pool.query('SELECT * FROM people');
@@ -144,7 +143,7 @@ async function loadPeople(pipeline) {
 }
 
 /**
- * Load families from PostgreSQL into Redis pipeline
+ * Load families from PostgreSQL into storage pipeline
  */
 async function loadFamilies(pipeline) {
     const { rows: families } = await pool.query('SELECT * FROM family');
@@ -238,7 +237,7 @@ async function populateEligibleSets(people, calendarService) {
 
 module.exports = {
     loadFromDatabase,
-    clearExistingRedisState,
+    clearExistingStorageState,
     loadVillages,
     loadPeople,
     loadFamilies,

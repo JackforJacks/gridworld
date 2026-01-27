@@ -1,22 +1,25 @@
 /**
- * Shared Redis helpers for population state modules
+ * Shared storage helpers for population state modules
  */
 
-const redis = require('../../config/redis');
+const storage = require('../storage');
 const pool = require('../../config/database');
 
 /**
- * Check if Redis is available
+ * Check if Redis (or storage) is available
  */
 function isRedisAvailable() {
-    return redis && redis.status === 'ready';
+    return storage && typeof storage.isAvailable === 'function' ? storage.isAvailable() : false;
 }
 
 /**
- * Get the Redis client
+ * Get the Redis-like client (or adapter). For Redis this will be the Redis client,
+ * for in-memory adapter we return the adapter itself which exposes the subset of
+ * methods used by the codebase.
  */
 function getRedis() {
-    return redis;
+    const adapter = storage.getAdapter ? storage.getAdapter() : storage;
+    return adapter.client || adapter;
 }
 
 /**

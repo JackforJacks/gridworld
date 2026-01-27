@@ -14,7 +14,8 @@
 const PeopleState = require('./PeopleState');
 const FamilyState = require('./FamilyState');
 const VillagePopulationState = require('./VillagePopulationState');
-const { isRedisAvailable, getRedis, getPool } = require('./redisHelpers');
+const storage = require('../storage');
+const { getPool } = require('./redisHelpers');
 
 /**
  * Backwards-compatible PopulationState class that delegates to the new modular classes
@@ -28,10 +29,9 @@ class PopulationState {
      * Initialize nextTempId from current min ID in Redis (call on load)
      */
     static async initTempIdCounter() {
-        const redis = getRedis();
-        if (!isRedisAvailable()) return;
+        if (!storage.isAvailable()) return;
         try {
-            await redis.hset('counts:global', 'nextTempId', '-1');
+            await storage.hset('counts:global', 'nextTempId', '-1');
         } catch (err) {
             console.warn('[PopulationState] initTempIdCounter failed:', err.message);
         }
@@ -85,6 +85,9 @@ module.exports = PopulationState;
 module.exports.PeopleState = PeopleState;
 module.exports.FamilyState = FamilyState;
 module.exports.VillagePopulationState = VillagePopulationState;
-module.exports.isRedisAvailable = isRedisAvailable;
-module.exports.getRedis = getRedis;
+module.exports.isRedisAvailable = () => storage.isAvailable();
+module.exports.getRedis = () => {
+    const adapter = storage.getAdapter ? storage.getAdapter() : storage;
+    return adapter.client || adapter;
+};
 module.exports.getPool = getPool;

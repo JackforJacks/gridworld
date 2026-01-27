@@ -11,7 +11,7 @@
 
 const pool = require('../../config/database');
 const { seedRandomVillages, seedVillagesForTile } = require('./postgresSeeding');
-const { seedVillagesRedisFirst } = require('./redisSeeding');
+const { seedVillagesStorageFirst } = require('./redisSeeding');
 const { assignResidencyForTile } = require('./residency');
 
 /**
@@ -143,7 +143,7 @@ async function createInitialPopulation(tileId) {
             params
         );
 
-        // Sync to Redis
+        // Sync to storage (via PopulationState)
         try {
             const PopulationState = require('../populationState');
             for (const row of res.rows) {
@@ -151,7 +151,7 @@ async function createInitialPopulation(tileId) {
                 await PopulationState.addPerson(personObj);
             }
         } catch (err) {
-            console.warn('⚠️ Could not sync seeded people to Redis (PopulationState):', err.message);
+            console.warn('⚠️ Could not sync seeded people to storage (PopulationState):', err.message);
         }
     }
 
@@ -162,6 +162,6 @@ module.exports = {
     seedRandomVillages,
     seedIfNoVillages,
     assignResidencyForTile,
-    seedVillagesRedisFirst,
+    seedVillagesStorageFirst,
     seedVillagesForTile
 };

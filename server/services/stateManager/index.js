@@ -8,10 +8,10 @@
  * - redisOperations.js - Redis CRUD operations
  */
 
-const { isRedisAvailable } = require('../../config/redis');
+const storage = require('../storage');
 const { loadFromDatabase } = require('./loadOperations');
 const { saveToDatabase } = require('./saveOperations');
-const redisOps = require('./redisOperations');
+const redisOps = require('./storageOperations');
 
 class StateManager {
     static io = null;
@@ -30,7 +30,7 @@ class StateManager {
      * Check if Redis is available
      */
     static isRedisAvailable() {
-        return isRedisAvailable();
+        return storage.isAvailable();
     }
 
     /**
@@ -97,26 +97,26 @@ class StateManager {
         return redisOps.getVillageClearedLand(villageId);
     }
 
-    static async addPersonToRedis(person) {
-        return redisOps.addPersonToRedis(person);
+    static async addPersonToStorage(person) {
+        return redisOps.addPersonToStorage(person);
     }
 
-    static async removePersonFromRedis(personId) {
-        return redisOps.removePersonFromRedis(personId);
+    static async removePersonFromStorage(personId) {
+        return redisOps.removePersonFromStorage(personId);
     }
 
     /**
-     * Check if Redis state is initialized
+     * Check if storage state is initialized
      */
     static isInitialized() {
         return this.initialized;
     }
 
     /**
-     * Clear all Redis state (useful for testing)
+     * Clear all storage state (useful for testing)
      */
-    static async clearRedis() {
-        await redisOps.clearRedis();
+    static async clearStorage() {
+        await redisOps.clearStorage();
         this.initialized = false;
     }
 }

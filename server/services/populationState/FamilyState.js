@@ -8,7 +8,7 @@
  * - ID reassignment after Postgres sync
  */
 
-const { isRedisAvailable, getRedis } = require('./redisHelpers');
+const storage = require('../storage');
 
 class FamilyState {
     static nextFamilyTempId = -1;
@@ -17,10 +17,9 @@ class FamilyState {
      * Get a new temporary ID for a family created in Redis-only mode
      */
     static async getNextTempId() {
-        const redis = getRedis();
-        if (!isRedisAvailable()) return this.nextFamilyTempId--;
+        if (!storage.isAvailable()) return this.nextFamilyTempId--;
         try {
-            const id = await redis.hincrby('counts:global', 'nextFamilyTempId', -1);
+            const id = await storage.hincrby('counts:global', 'nextFamilyTempId', -1);
             return id;
         } catch (err) {
             return this.nextFamilyTempId--;
@@ -33,8 +32,7 @@ class FamilyState {
      * @param {boolean} isNew - If true, track as pending insert
      */
     static async addFamily(family, isNew = false) {
-        const redis = getRedis();
-        if (!isRedisAvailable()) return false;
+        if (!storage.isAvailable()) return false;
         try {
             const id = family.id.toString();
             const f = {
@@ -47,9 +45,9 @@ class FamilyState {
                 children_ids: family.children_ids || [],
                 _isNew: isNew
             };
-            await redis.hset('family', id, JSON.stringify(f));
+            await storage.hset('family', id, JSON.stringify(f));
             if (isNew) {
-                await redis.sadd('pending:family:inserts', id);
+                await storage.sadd('pending:family:inserts', id);
             }
             return true;
         } catch (err) {
@@ -62,9 +60,8 @@ class FamilyState {
      * Get a family from Redis
      */
     static async getFamily(familyId) {
-        const redis = getRedis();
-        if (!isRedisAvailable()) return null;
-        const json = await redis.hget('family', familyId.toString());
+        if (!storage.isAvailable()) return null;
+        const json = await storage.hget('family', familyId.toString());
         return json ? JSON.parse(json) : null;
     }
 
@@ -72,16 +69,15 @@ class FamilyState {
      * Update a family in Redis
      */
     static async updateFamily(familyId, updates) {
-        const redis = getRedis();
-        if (!isRedisAvailable()) return false;
+        if (!storage.isAvailable()) return false;
         try {
             const family = await this.getFamily(familyId);
             if (!family) return false;
             const updated = { ...family, ...updates };
-            await redis.hset('family', familyId.toString(), JSON.stringify(updated));
+            await storage.hset('family', familyId.toString(), JSON.stringify(updated));
             // Track modified families for batch update (only for existing Postgres records)
             if (familyId > 0 && !family._isNew) {
-                await redis.sadd('pending:family:updates', familyId.toString());
+                await storage.sadd('pending:family:updates', familyId.toString());
             }
             return true;
         } catch (err) {
@@ -96,8 +92,7 @@ class FamilyState {
      * @param {boolean} markDeleted - If true, track for Postgres deletion
      */
     static async removeFamily(familyId, markDeleted = false) {
-        const redis = getRedis();
-        if (!isRedisAvailable()) return false;
+        if (!storage.isAvailable()) return false;
         try {
             const family = await this.getFamily(familyId);
             if (!family) return false;
@@ -105,13 +100,13 @@ class FamilyState {
             // Remove from fertile set if present
             await this.removeFertileFamily(familyId);
 
-            await redis.hdel('family', familyId.toString());
+            await storage.hdel('family', familyId.toString());
 
             if (markDeleted && familyId > 0) {
-                await redis.sadd('pending:family:deletes', familyId.toString());
+                await storage.sadd('pending:family:deletes', familyId.toString());
             }
             if (familyId < 0) {
-                await redis.srem('pending:family:inserts', familyId.toString());
+                await storage.srem('pending:family:inserts', familyId.toString());
             }
 
             return true;
@@ -125,9 +120,8 @@ class FamilyState {
      * Get all families from Redis
      */
     static async getAllFamilies() {
-        const redis = getRedis();
-        if (!isRedisAvailable()) return [];
-        const data = await redis.hgetall('family');
+        if (!storage.isAvailable()) return [];
+        const data = await storage.hgetall('family');
         return Object.values(data).map(json => JSON.parse(json));
     }
 
@@ -139,10 +133,9 @@ class FamilyState {
      * @param {number} tileId
      */
     static async addFertileFamily(familyId, tileId) {
-        const redis = getRedis();
-        if (!isRedisAvailable()) return false;
+        if (!storage.isAvailable()) return false;
         try {
-            await redis.sadd(`fertile:${tileId}`, familyId.toString());
+            await storage.sadd(`fertile:${tileId}`, familyId.toString());
             return true;
         } catch (err) {
             console.warn('[FamilyState] addFertileFamily failed:', err.message);
@@ -154,14 +147,13 @@ class FamilyState {
      * Remove a family from all fertile sets
      */
     static async removeFertileFamily(familyId) {
-        const redis = getRedis();
-        if (!isRedisAvailable()) return false;
+        if (!storage.isAvailable()) return false;
         try {
             // Scan for fertile:* keys and remove from all
-            const stream = redis.scanStream({ match: 'fertile:*', count: 100 });
+            const stream = storage.scanStream({ match: 'fertile:*', count: 100 });
             for await (const keys of stream) {
                 for (const key of keys) {
-                    await redis.srem(key, familyId.toString());
+                    await storage.srem(key, familyId.toString());
                 }
             }
             return true;
@@ -175,9 +167,8 @@ class FamilyState {
      * Get all fertile families for a tile
      */
     static async getFertileFamilies(tileId) {
-        const redis = getRedis();
-        if (!isRedisAvailable()) return [];
-        return redis.smembers(`fertile:${tileId}`);
+        if (!storage.isAvailable()) return [];
+        return storage.smembers(`fertile:${tileId}`);
     }
 
     // =========== PENDING OPERATIONS ===========
@@ -186,14 +177,13 @@ class FamilyState {
      * Get pending family inserts
      */
     static async getPendingInserts() {
-        const redis = getRedis();
-        if (!isRedisAvailable()) return [];
+        if (!storage.isAvailable()) return [];
         try {
-            const ids = await redis.smembers('pending:family:inserts');
+            const ids = await storage.smembers('pending:family:inserts');
             if (ids.length === 0) return [];
 
             // Use pipeline for batch reads
-            const pipeline = redis.pipeline();
+            const pipeline = storage.pipeline();
             for (const id of ids) {
                 pipeline.hget('family', id.toString());
             }
@@ -218,14 +208,13 @@ class FamilyState {
      * Get pending family updates (families that were modified)
      */
     static async getPendingUpdates() {
-        const redis = getRedis();
-        if (!isRedisAvailable()) return [];
+        if (!storage.isAvailable()) return [];
         try {
-            const ids = await redis.smembers('pending:family:updates');
+            const ids = await storage.smembers('pending:family:updates');
             if (ids.length === 0) return [];
 
             // Use pipeline for batch reads
-            const pipeline = redis.pipeline();
+            const pipeline = storage.pipeline();
             for (const id of ids) {
                 pipeline.hget('family', id.toString());
             }
@@ -250,10 +239,9 @@ class FamilyState {
      * Get pending family deletes
      */
     static async getPendingDeletes() {
-        const redis = getRedis();
-        if (!isRedisAvailable()) return [];
+        if (!storage.isAvailable()) return [];
         try {
-            const ids = await redis.smembers('pending:family:deletes');
+            const ids = await storage.smembers('pending:family:deletes');
             return ids.map(id => parseInt(id));
         } catch (err) {
             console.warn('[FamilyState] getPendingDeletes failed:', err.message);
@@ -265,12 +253,11 @@ class FamilyState {
      * Clear pending family operations
      */
     static async clearPendingOperations() {
-        const redis = getRedis();
-        if (!isRedisAvailable()) return;
+        if (!storage.isAvailable()) return;
         try {
-            await redis.del('pending:family:inserts');
-            await redis.del('pending:family:updates');
-            await redis.del('pending:family:deletes');
+            await storage.del('pending:family:inserts');
+            await storage.del('pending:family:updates');
+            await storage.del('pending:family:deletes');
         } catch (err) {
             console.warn('[FamilyState] clearPendingOperations failed:', err.message);
         }
@@ -281,18 +268,17 @@ class FamilyState {
      * @param {Array} mappings - Array of { tempId, newId }
      */
     static async reassignIds(mappings) {
-        const redis = getRedis();
-        if (!isRedisAvailable()) return;
+        if (!storage.isAvailable()) return;
         try {
             // First, batch-read all temp families using pipeline
-            const readPipeline = redis.pipeline();
+            const readPipeline = storage.pipeline();
             for (const { tempId } of mappings) {
                 readPipeline.hget('family', tempId.toString());
             }
             const readResults = await readPipeline.exec();
 
             // Parse results and prepare family write operations
-            const writePipeline = redis.pipeline();
+            const writePipeline = storage.pipeline();
             const personUpdates = []; // Collect person updates to batch later
 
             for (let i = 0; i < mappings.length; i++) {
@@ -322,14 +308,14 @@ class FamilyState {
             // Now batch-update person family_ids
             if (personUpdates.length > 0) {
                 // Read all affected people
-                const personReadPipeline = redis.pipeline();
+                const personReadPipeline = storage.pipeline();
                 for (const { personId } of personUpdates) {
                     personReadPipeline.hget('person', personId.toString());
                 }
                 const personReadResults = await personReadPipeline.exec();
 
                 // Update and write back
-                const personWritePipeline = redis.pipeline();
+                const personWritePipeline = storage.pipeline();
                 for (let i = 0; i < personUpdates.length; i++) {
                     const { personId, newFamilyId } = personUpdates[i];
                     const [err, json] = personReadResults[i];
@@ -345,7 +331,7 @@ class FamilyState {
             }
 
             // Clear the pending inserts we just processed
-            const delPipeline = redis.pipeline();
+            const delPipeline = storage.pipeline();
             for (const { tempId } of mappings) {
                 delPipeline.srem('pending:family:inserts', tempId.toString());
             }
@@ -361,14 +347,12 @@ class FamilyState {
      * Full sync from Postgres: refill Redis family hash
      */
     static async syncFromPostgres() {
-        const redis = getRedis();
-        const { getPool } = require('./redisHelpers');
-        const pool = getPool();
-        if (!isRedisAvailable()) return { skipped: true, reason: 'Redis not available' };
+        const pool = require('../../config/database');
+        if (!storage.isAvailable()) return { skipped: true, reason: 'storage not available' };
         try {
-            console.log('[FamilyState] Syncing families from Postgres to Redis...');
+            console.log('[FamilyState] Syncing families from Postgres to storage...');
             // Clear family hash
-            await redis.del('family');
+            await storage.del('family');
 
             // Load families in batches
             const batchSize = 5000;
@@ -378,7 +362,7 @@ class FamilyState {
             while (true) {
                 const res = await pool.query('SELECT id, husband_id, wife_id, tile_id, pregnancy, delivery_date, children_ids FROM families ORDER BY id LIMIT $1 OFFSET $2', [batchSize, offset]);
                 if (!res.rows || res.rows.length === 0) break;
-                const pipeline = redis.pipeline();
+                const pipeline = storage.pipeline();
                 for (const f of res.rows) {
                     const id = f.id.toString();
                     const familyObj = {
@@ -397,7 +381,7 @@ class FamilyState {
                 offset += res.rows.length;
             }
 
-            console.log(`[FamilyState] Synced ${total} families to Redis`);
+            console.log(`[FamilyState] Synced ${total} families to storage`);
             return { success: true, total };
         } catch (err) {
             console.error('[FamilyState] syncFromPostgres failed:', err.message);

@@ -1,10 +1,10 @@
 // Family Management - Handles family creation, pregnancy, and child management
 const { calculateAge } = require('./calculator.js');
-const redis = require('../../config/redis');
+const storage = require('../storage');
 const serverConfig = require('../../config/server.js');
 
 /**
- * Creates a new family unit - Redis-only, batched to Postgres on Save
+ * Creates a new family unit - storage-only, batched to Postgres on Save
  * @param {Pool} pool - Database pool instance (unused, kept for API compatibility)
  * @param {number} husbandId - ID of the husband
  * @param {number} wifeId - ID of the wife
@@ -12,7 +12,7 @@ const serverConfig = require('../../config/server.js');
  * @returns {Object} Created family record
  */
 async function createFamily(pool, husbandId, wifeId, tileId) {
-    const { acquireLock, releaseLock } = require('../../utils/redisLock');
+    const { acquireLock, releaseLock } = require('../../utils/lock');
     const PopulationState = require('../populationState');
     const coupleKeyParts = [husbandId, wifeId].map(id => Number(id)).sort((a, b) => a - b);
     const lockKey = `lock:couple:${coupleKeyParts[0]}:${coupleKeyParts[1]}`;
@@ -27,7 +27,7 @@ async function createFamily(pool, husbandId, wifeId, tileId) {
         // Acquire a lock for this couple to avoid duplicate family creation
         lockToken = await acquireLock(lockKey, 3000, 1500, 40);
         if (!lockToken) {
-            try { await redis.incr('stats:matchmaking:contention'); } catch (_) { }
+            try { await storage.incr('stats:matchmaking:contention'); } catch (_) { }
             console.warn(`[createFamily] Could not acquire couple lock for ${husbandId} & ${wifeId} - skipping`);
             return null;
         }
@@ -93,7 +93,7 @@ async function createFamily(pool, husbandId, wifeId, tileId) {
 }
 
 /**
- * Starts pregnancy for a family - Redis-only
+ * Starts pregnancy for a family - storage-only
  * @param {Pool} pool - Database pool instance (unused, kept for API compatibility)
  * @param {Object} calendarService - Calendar service instance
  * @param {number} familyId - Family ID
@@ -101,13 +101,13 @@ async function createFamily(pool, husbandId, wifeId, tileId) {
  */
 async function startPregnancy(pool, calendarService, familyId) {
     const PopulationState = require('../populationState');
-    const { acquireLock, releaseLock } = require('../../utils/redisLock');
+    const { acquireLock, releaseLock } = require('../../utils/lock');
     const lockKey = `lock:family:${familyId}`;
     let lockToken = null;
 
     try {
         // Record an attempt
-        try { await redis.incr('stats:pregnancy:attempts'); } catch (_) { }
+        try { await storage.incr('stats:pregnancy:attempts'); } catch (_) { }
 
         // Skip if restart is in progress
         if (PopulationState.isRestarting) {
@@ -117,7 +117,7 @@ async function startPregnancy(pool, calendarService, familyId) {
         // Try to acquire an atomic lock for this family to avoid concurrent pregnancies
         lockToken = await acquireLock(lockKey, 5000, 2000, 50);
         if (!lockToken) {
-            try { await redis.incr('stats:pregnancy:contention'); } catch (_) { }
+            try { await storage.incr('stats:pregnancy:contention'); } catch (_) { }
             console.warn(`[startPregnancy] Could not acquire lock for family ${familyId} - another operation in progress`);
             return null;
         }
@@ -214,7 +214,7 @@ async function startPregnancy(pool, calendarService, familyId) {
 }
 
 /**
- * Delivers a baby and adds to family - Redis-only (Postgres writes happen on Save)
+ * Delivers a baby and adds to family - storage-only (Postgres writes happen on Save)
  * @param {Pool} pool - Database pool instance (used for family queries only)
  * @param {Object} calendarService - Calendar service instance
  * @param {PopulationService} populationServiceInstance - Population service instance
@@ -222,7 +222,7 @@ async function startPregnancy(pool, calendarService, familyId) {
  * @returns {Object} Result with baby and updated family
  */
 async function deliverBaby(pool, calendarService, populationServiceInstance, familyId) {
-    const { acquireLock, releaseLock } = require('../../utils/redisLock');
+    const { acquireLock, releaseLock } = require('../../utils/lock');
     const lockKey = `lock:family:${familyId}`;
     let lockToken = null;
 
@@ -235,10 +235,9 @@ async function deliverBaby(pool, calendarService, populationServiceInstance, fam
         }
 
         const PopulationState = require('../populationState');
-        const { isRedisAvailable } = require('../../config/redis');
 
-        if (!isRedisAvailable()) {
-            throw new Error('Redis not available - cannot deliver baby');
+        if (!storage.isAvailable()) {
+            throw new Error('Storage not available - cannot deliver baby');
         }
 
         // Get family record from Redis
@@ -269,7 +268,7 @@ async function deliverBaby(pool, calendarService, populationServiceInstance, fam
             }
         }
 
-        // Get a temporary ID for Redis-only storage
+        // Get a temporary ID for storage-only mode
         const babyId = await PopulationState.getNextTempId();
 
         const personObj = {
@@ -295,7 +294,7 @@ async function deliverBaby(pool, calendarService, populationServiceInstance, fam
         }
 
         // Record delivery metric
-        try { await redis.incr('stats:deliveries:count'); } catch (_) { }
+        try { await storage.incr('stats:deliveries:count'); } catch (_) { }
 
         return {
             baby: { id: babyId, sex: babySex, birthDate },
@@ -329,7 +328,7 @@ async function getFamiliesOnTile(pool, tileId) {
 }
 
 /**
- * Checks for families ready to deliver and processes births - Redis-only
+ * Checks for families ready to deliver and processes births - storage-only
  * @param {Pool} pool - Database pool instance (kept for API compatibility)
  * @param {Object} calendarService - Calendar service instance
  * @param {PopulationService} populationServiceInstance - Population service instance
@@ -365,14 +364,14 @@ async function processDeliveries(pool, calendarService, populationServiceInstanc
 
         let babiesDelivered = 0;
         for (const family of readyFamilies) {
-            const { acquireLock, releaseLock } = require('../../utils/redisLock');
+            const { acquireLock, releaseLock } = require('../../utils/lock');
             const lockKey = `lock:family:${family.id}`;
             let lockToken = null;
             try {
                 // Try to acquire a lock for this family to prevent concurrent deliveries
                 lockToken = await acquireLock(lockKey, 5000, 1500, 50);
                 if (!lockToken) {
-                    try { await redis.incr('stats:deliveries:contention'); } catch (_) { }
+                    try { await storage.incr('stats:deliveries:contention'); } catch (_) { }
                     console.warn(`[processDeliveries] Could not acquire lock for family ${family.id} - skipping delivery this cycle`);
                     continue;
                 }
@@ -485,9 +484,9 @@ async function formNewFamilies(pool, calendarService) {
 
         // Use Redis-based eligible sets for faster matchmaking
         // Collect tiles that have eligible males or females
-        const maleTiles = await redis.smembers('tiles_with_eligible_males');
-        const femaleTiles = await redis.smembers('tiles_with_eligible_females');
-        const tileSet = new Set([...maleTiles, ...femaleTiles]);
+        const maleTiles = await storage.smembers('tiles_with_eligible_males');
+        const femaleTiles = await storage.smembers('tiles_with_eligible_females');
+        const tileSet = new Set([...(maleTiles || []), ...(femaleTiles || [])]);
 
         let newFamiliesCount = 0;
 
@@ -497,8 +496,8 @@ async function formNewFamilies(pool, calendarService) {
                 const femaleSetKey = `eligible:females:tile:${tileId}`;
 
                 // Check approximate counts
-                const maleCount = parseInt(await redis.scard(maleSetKey), 10) || 0;
-                const femaleCount = parseInt(await redis.scard(femaleSetKey), 10) || 0;
+                const maleCount = parseInt(await storage.scard(maleSetKey), 10) || 0;
+                const femaleCount = parseInt(await storage.scard(femaleSetKey), 10) || 0;
 
                 if (maleCount === 0 || femaleCount === 0) {
                     // Nothing to do on this tile
@@ -510,15 +509,19 @@ async function formNewFamilies(pool, calendarService) {
 
                 for (let i = 0; i < pairs; i++) {
                     // Record attempt
-                    try { await redis.incr('stats:matchmaking:attempts'); } catch (_) { }
+                    try { await storage.incr('stats:matchmaking:attempts'); } catch (_) { }
 
-                    // Pop one candidate from each set
-                    const maleId = await redis.spop(maleSetKey);
+                    // Pop one candidate from each set (emulate spop using smembers + srem)
+                    const maleMembers = await storage.smembers(maleSetKey);
+                    const maleId = (maleMembers && maleMembers.length > 0) ? maleMembers[Math.floor(Math.random() * maleMembers.length)] : null;
                     if (!maleId) break; // no more males
-                    const femaleId = await redis.spop(femaleSetKey);
+                    await storage.srem(maleSetKey, maleId);
+
+                    const femaleMembers = await storage.smembers(femaleSetKey);
+                    const femaleId = (femaleMembers && femaleMembers.length > 0) ? femaleMembers[Math.floor(Math.random() * femaleMembers.length)] : null;
                     if (!femaleId) {
                         // Put male back and stop trying for this tile now
-                        await redis.sadd(maleSetKey, maleId);
+                        await storage.sadd(maleSetKey, maleId);
                         break;
                     }
 
@@ -527,8 +530,8 @@ async function formNewFamilies(pool, calendarService) {
                         const newFamily = await createFamily(pool, parseInt(maleId), parseInt(femaleId), parseInt(tileId));
                         if (!newFamily) {
                             // Creation failed (race or restart) - return survivors to sets
-                            await redis.sadd(maleSetKey, maleId);
-                            await redis.sadd(femaleSetKey, femaleId);
+                            try { await storage.sadd(maleSetKey, maleId); } catch (_) { }
+                            try { await storage.sadd(femaleSetKey, femaleId); } catch (_) { }
                             continue;
                         }
                         // Add family to fertile family set if wife is fertile
@@ -543,11 +546,11 @@ async function formNewFamilies(pool, calendarService) {
                             try { await startPregnancy(pool, calendarService, newFamily.id); } catch (e) { /* ignore */ }
                         }
                     } catch (err) {
-                        try { await redis.incr('stats:matchmaking:failures'); } catch (_) { }
+                        try { await storage.incr('stats:matchmaking:failures'); } catch (_) { }
                         console.error(`Error creating family between ${maleId} and ${femaleId} on tile ${tileId}:`, err);
                         // Return survivors to sets
-                        try { await redis.sadd(maleSetKey, maleId); } catch (_) { }
-                        try { await redis.sadd(femaleSetKey, femaleId); } catch (_) { }
+                        try { await storage.sadd(maleSetKey, maleId); } catch (_) { }
+                        try { await storage.sadd(femaleSetKey, femaleId); } catch (_) { }
                     }
                 }
             } catch (err) {

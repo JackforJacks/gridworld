@@ -6,19 +6,18 @@
  * - Village ID reassignment after Postgres sync
  */
 
-const { isRedisAvailable, getRedis } = require('./redisHelpers');
+const storage = require('../storage');
 
 class VillagePopulationState {
     static nextVillageTempId = -1;
 
     /**
-     * Get a new temporary ID for a village created in Redis-only mode
+     * Get a new temporary ID for a village created in storage-only mode
      */
     static async getNextTempId() {
-        const redis = getRedis();
-        if (!isRedisAvailable()) return this.nextVillageTempId--;
+        if (!storage.isAvailable()) return this.nextVillageTempId--;
         try {
-            const id = await redis.hincrby('counts:global', 'nextVillageTempId', -1);
+            const id = await storage.hincrby('counts:global', 'nextVillageTempId', -1);
             return id;
         } catch (err) {
             return this.nextVillageTempId--;
@@ -29,10 +28,9 @@ class VillagePopulationState {
      * Add a village to pending inserts
      */
     static async markVillageAsNew(villageId) {
-        const redis = getRedis();
-        if (!isRedisAvailable()) return false;
+        if (!storage.isAvailable()) return false;
         try {
-            await redis.sadd('pending:village:inserts', villageId.toString());
+            await storage.sadd('pending:village:inserts', villageId.toString());
             return true;
         } catch (err) {
             console.warn('[VillagePopulationState] markVillageAsNew failed:', err.message);
@@ -44,10 +42,9 @@ class VillagePopulationState {
      * Get pending village inserts (temp IDs)
      */
     static async getPendingInserts() {
-        const redis = getRedis();
-        if (!isRedisAvailable()) return [];
+        if (!storage.isAvailable()) return [];
         try {
-            const ids = await redis.smembers('pending:village:inserts');
+            const ids = await storage.smembers('pending:village:inserts');
             return ids.map(id => parseInt(id, 10));
         } catch (err) {
             console.warn('[VillagePopulationState] getPendingInserts failed:', err.message);
@@ -59,10 +56,9 @@ class VillagePopulationState {
      * Clear pending village operations
      */
     static async clearPendingOperations() {
-        const redis = getRedis();
-        if (!isRedisAvailable()) return;
+        if (!storage.isAvailable()) return;
         try {
-            await redis.del('pending:village:inserts');
+            await storage.del('pending:village:inserts');
         } catch (err) {
             console.warn('[VillagePopulationState] clearPendingOperations failed:', err.message);
         }
@@ -73,17 +69,16 @@ class VillagePopulationState {
      * @param {Array} mappings - Array of { tempId, newId }
      */
     static async reassignIds(mappings) {
-        const redis = getRedis();
-        if (!isRedisAvailable()) return;
+        if (!storage.isAvailable()) return;
         try {
-            const readPipeline = redis.pipeline();
+            const readPipeline = storage.pipeline();
             for (const { tempId } of mappings) {
                 readPipeline.hget('village', tempId.toString());
                 readPipeline.hget('village:cleared', tempId.toString());
             }
             const readResults = await readPipeline.exec();
 
-            const writePipeline = redis.pipeline();
+            const writePipeline = storage.pipeline();
             for (let i = 0; i < mappings.length; i++) {
                 const { tempId, newId } = mappings[i];
                 const [vErr, vJson] = readResults[i * 2] || [];
@@ -108,7 +103,7 @@ class VillagePopulationState {
             await writePipeline.exec();
 
             // Clear the pending inserts we just processed
-            const delPipeline = redis.pipeline();
+            const delPipeline = storage.pipeline();
             for (const { tempId } of mappings) {
                 delPipeline.srem('pending:village:inserts', tempId.toString());
             }

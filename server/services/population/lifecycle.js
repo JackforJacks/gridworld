@@ -1,6 +1,6 @@
 // Population Lifecycle Management - Handles growth, aging, and life cycle events
 const config = require('../../config/server.js');
-const redis = require('../../config/redis');
+const storage = require('../storage');
 
 /**
  * Starts population growth simulation
@@ -97,7 +97,7 @@ async function updateGrowthRate(serviceInstance, rate) {
 }
 
 /**
- * Applies senescence (aging deaths) to the population - Redis-only (Postgres deletes happen on Save)
+ * Applies senescence (aging deaths) to the population - storage-only (Postgres deletes happen on Save)
  * @param {Pool} pool - Database pool instance (used for family queries only)
  * @param {Object} calendarService - Calendar service instance
  * @param {PopulationService} populationServiceInstance - Population service instance
@@ -107,10 +107,9 @@ async function updateGrowthRate(serviceInstance, rate) {
 async function applySenescence(pool, calendarService, populationServiceInstance, daysAdvanced = 1) {
     try {
         const PopulationState = require('../populationState');
-        const { isRedisAvailable } = require('../../config/redis');
 
-        if (!isRedisAvailable()) {
-            console.warn('⚠️ Redis not available - cannot process senescence');
+        if (!storage.isAvailable()) {
+            console.warn('⚠️ Storage not available - cannot process senescence');
             return 0;
         }
 
@@ -169,11 +168,11 @@ async function applySenescence(pool, calendarService, populationServiceInstance,
                     for (const childId of (family.children_ids || [])) {
                         await PopulationState.updatePerson(childId, { family_id: null });
                     }
-                    // Delete the family from Redis
-                    await redis.hdel('family', family.id.toString());
+                    // Delete the family from storage
+                    await storage.hdel('family', family.id.toString());
                     // Track for Postgres delete only if it's a positive ID (exists in Postgres)
                     if (family.id > 0) {
-                        await redis.sadd('pending:family:deletes', family.id.toString());
+                        await storage.sadd('pending:family:deletes', family.id.toString());
                     }
                 }
             }
@@ -223,10 +222,10 @@ async function processDailyFamilyEvents(pool, calendarService, serviceInstance, 
             currentDate = calendarService.getCurrentDate();
         }
 
-        // Use Redis-based fertile family set for faster pregnancy processing
-        const candidateCount = parseInt(await redis.scard('eligible:pregnancy:families'), 10) || 0;
+        // Use storage-based fertile family set for faster pregnancy processing
+        const candidateCount = parseInt(await storage.scard('eligible:pregnancy:families'), 10) || 0;
         const sampleCount = Math.min(candidateCount, 60); // sample up to 60 and process up to 30
-        const sampled = sampleCount > 0 ? await redis.srandmember('eligible:pregnancy:families', sampleCount) : [];
+        const sampled = sampleCount > 0 ? (await storage.smembers('eligible:pregnancy:families')).sort(() => 0.5 - Math.random()).slice(0, sampleCount) : [];
 
         let newPregnancies = 0;
         for (const fid of sampled) {

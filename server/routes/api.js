@@ -13,7 +13,7 @@ const http = require('http');
 const pool = require('../config/database');
 const villageSeeder = require('../services/villageSeeder');
 const StateManager = require('../services/stateManager');
-const redis = require('../config/redis');
+const storage = require('../services/storage');
 
 // Use route modules
 router.use('/population', populationRoutes);
@@ -88,13 +88,13 @@ router.get('/metrics', async (req, res) => {
             'stats:pregnancy:attempts', 'stats:pregnancy:started', 'stats:pregnancy:aged_out', 'stats:pregnancy:eligible_added', 'stats:pregnancy:eligible_removed', 'stats:pregnancy:contention',
             'stats:deliveries:count', 'stats:deliveries:contention'
         ];
-        const pipeline = redis.pipeline();
+        const pipeline = storage.pipeline();
         for (const k of keys) pipeline.get(k);
         const results = await pipeline.exec();
         const metrics = {};
         for (let i = 0; i < keys.length; i++) metrics[keys[i]] = parseInt(results[i][1] || '0', 10) || 0;
         // Also include approximate fertile set size
-        try { metrics['eligible:pregnancy:set_size'] = parseInt(await redis.scard('eligible:pregnancy:families') || 0, 10); } catch (_) { metrics['eligible:pregnancy:set_size'] = 0; }
+        try { metrics['eligible:pregnancy:set_size'] = parseInt(await storage.scard('eligible:pregnancy:families') || 0, 10); } catch (_) { metrics['eligible:pregnancy:set_size'] = 0; }
         return res.json({ success: true, metrics });
     } catch (err) {
         console.error('[API /api/metrics] Failed:', err);
@@ -237,18 +237,18 @@ router.post('/worldrestart', async (req, res) => {
         }
         console.log(`⏱️ [worldrestart] Population initialization: ${Date.now() - stepStart}ms`);
 
-        // Seed villages using Redis-first approach (non-fatal)
+        // Seed villages using storage-first approach (non-fatal)
         let seedResult = null;
         stepStart = Date.now();
         try {
-            // Use Redis-first seeding - reads from Redis, writes to Redis
-            seedResult = await villageSeeder.seedVillagesRedisFirst();
-            console.log(`⏱️ [worldrestart] Village seeding (Redis-first): ${Date.now() - stepStart}ms`);
+            // Use storage-first seeding - reads from storage, writes to storage
+            seedResult = await villageSeeder.seedVillagesStorageFirst();
+            console.log(`⏱️ [worldrestart] Village seeding (storage-first): ${Date.now() - stepStart}ms`);
         } catch (seedErr) {
             console.warn('[API /api/worldrestart] Village seeding failed:', seedErr.message || seedErr);
         }
 
-        // Broadcast villages to clients from Redis
+        // Broadcast villages to clients from storage
         try {
             const villages = await StateManager.getAllVillages();
             if (req.app.locals.io && villages.length > 0) {

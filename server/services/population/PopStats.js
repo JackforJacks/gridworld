@@ -1,5 +1,5 @@
 // Population Statistics and Reporting - Handles all population statistics and reporting functionality
-const { isRedisAvailable } = require('../../config/redis');
+const storage = require('../storage');
 const PopulationState = require('../populationState');
 
 // ==================== UTILITY FUNCTIONS ====================
@@ -53,7 +53,7 @@ function getCalendarCutoffs(calendarService) {
 
 /**
  * Gets comprehensive population statistics with demographics and rates
- * Now reads from Redis as the primary source, falls back to Postgres if Redis unavailable
+ * Now reads from storage as the primary source, falls back to Postgres if storage is unavailable
  */
 async function getPopulationStats(pool, calendarService, populationServiceInstance) {
     try {
@@ -63,16 +63,15 @@ async function getPopulationStats(pool, calendarService, populationServiceInstan
         let stats;
         let villagesCount = 0;
 
-        // Try Redis first
-        if (isRedisAvailable()) {
-            const redisStats = await PopulationState.getDemographicStats(currentDateStr);
-            if (redisStats) {
-                stats = redisStats;
-                // Get villages count from Redis
-                const redis = require('../../config/redis');
+        // Try storage first
+        if (storage.isAvailable()) {
+            const storageStats = await PopulationState.getDemographicStats(currentDateStr);
+            if (storageStats) {
+                stats = storageStats;
+                // Get villages count from storage ('village' hash)
                 try {
-                    const villageData = await redis.hgetall('village');
-                    villagesCount = Object.keys(villageData).length;
+                    const villageData = await storage.hgetall('village');
+                    villagesCount = villageData ? Object.keys(villageData).length : 0;
                 } catch (e) {
                     // Fall back to Postgres for villages count
                     const vres = await pool.query('SELECT COUNT(*)::int AS cnt FROM villages');
@@ -171,23 +170,23 @@ async function getDemographicStats(pool, calendarService) {
 
 /**
  * Gets all population data including statistics (consolidated data function)
- * Uses Redis as primary source for tile populations, falls back to Postgres
+ * Uses storage as primary source for tile populations, falls back to Postgres
  */
 async function getAllPopulationData(pool, calendarService, populationServiceInstance) {
     const { loadPopulationData, formatPopulationData } = require('./dataOperations.js');
     const PopulationState = require('../populationState');
 
-    // Try Redis first for tile populations (hot data after restart)
+    // Try storage first for tile populations (hot data after restart)
     let populations = {};
-    if (isRedisAvailable()) {
+    if (storage.isAvailable()) {
         try {
             populations = await PopulationState.getAllTilePopulations();
         } catch (e) {
-            console.warn('[getAllPopulationData] Redis getAllTilePopulations failed, falling back to Postgres:', e.message);
+            console.warn('[getAllPopulationData] storage.getAllTilePopulations failed, falling back to Postgres:', e.message);
         }
     }
 
-    // If Redis didn't have data, fall back to Postgres
+    // If storage didn't have data, fall back to Postgres
     if (Object.keys(populations).length === 0) {
         populations = await loadPopulationData(pool);
     }

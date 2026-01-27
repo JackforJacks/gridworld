@@ -104,27 +104,30 @@ class GridWorldServer {
             console.log('🔄 Services already initialized, skipping initialization...');
         }
 
-        // Load state from PostgreSQL to Redis
-        console.log('🔧 Initializing State Manager (Redis)...');
+        // Load state from PostgreSQL into storage
+        console.log('🔧 Initializing State Manager (storage)...');
         try {
             StateManager.setIo(this.io);
             StateManager.setCalendarService(calendarServiceInstance);
             await StateManager.loadFromDatabase();
-            console.log('🔴 State Manager initialized (Redis mode)');
+            console.log('🔴 State Manager initialized (storage mode)');
 
-            // If Redis reconnects later, re-sync automatically
+            // If storage reconnects later, re-sync automatically
             try {
-                const redis = require('./config/redis');
-                redis.on && redis.on('ready', async () => {
-                    try {
-                        console.log('🔁 Redis reconnected, reloading state to Redis from Postgres...');
-                        await StateManager.loadFromDatabase();
-                    } catch (e) {
-                        console.warn('⚠️ Failed to reload state after Redis reconnect:', e.message);
-                    }
-                });
+                const storage = require('./services/storage');
+                // Attach to storage events emitted when adapter becomes ready
+                if (typeof storage.on === 'function') {
+                    storage.on('ready', async () => {
+                        try {
+                            console.log('🔁 Storage adapter ready, reloading state from Postgres...');
+                            await StateManager.loadFromDatabase();
+                        } catch (e) {
+                            console.warn('⚠️ Failed to reload state after storage reconnect:', e.message);
+                        }
+                    });
+                }
             } catch (e) {
-                console.warn('⚠️ Could not attach Redis reconnect handler:', e.message);
+                console.warn('⚠️ Could not attach storage reconnect handler:', e.message);
             }
         } catch (err) {
             console.error('❌ Failed to initialize Redis state, falling back to PostgreSQL:', err.message);
@@ -194,40 +197,57 @@ class GridWorldServer {
             console.log(`🚀 GridWorld server running at http://localhost:${this.port}`);
             console.log(`📊 API available at http://localhost:${this.port}/api/`);
             console.log(`🔌 WebSocket server ready for real-time updates`);
-        });        // Graceful shutdown
+        });
+
+        // Graceful shutdown
         process.on('SIGINT', async () => {
+            await this.shutdown();
+            process.exit(0);
+        });
+    }
+
+    /**
+     * Shutdown server and cleanup resources. Safe to call multiple times.
+     */
+    async shutdown() {
+        try {
             console.log('\n🛑 Shutting down server...');
 
             // Stop food update timer
-            const VillageService = require('./services/villageService');
-            VillageService.stopFoodUpdateTimer();
+            try {
+                const VillageService = require('./services/villageService');
+                VillageService.stopFoodUpdateTimer();
+            } catch (e) { /* ignore */ }
 
             if (populationServiceInstance) {
-                await populationServiceInstance.shutdown();
+                try { await populationServiceInstance.shutdown(); } catch (e) { /* ignore */ }
             }
 
-            // Stop calendar service
             if (calendarServiceInstance) {
-                calendarServiceInstance.stop();
-                console.log('📅 Calendar service stopped');
+                try { calendarServiceInstance.stop(); console.log('📅 Calendar service stopped'); } catch (e) { /* ignore */ }
             }
 
-            // Stop statistics service
             if (statisticsServiceInstance) {
-                statisticsServiceInstance.shutdown();
-                console.log('📈 Statistics service stopped');
+                try { statisticsServiceInstance.shutdown(); console.log('📈 Statistics service stopped'); } catch (e) { /* ignore */ }
             }
 
-            this.server.close(() => {
-                console.log('👋 Server closed gracefully');
-                process.exit(0);
-            });
-        });
+            // Close http server if listening
+            try { this.server && this.server.close(); } catch (e) { /* ignore */ }
+
+            // Close socket.io if present
+            try { this.io && this.io.close(); } catch (e) { /* ignore */ }
+
+            console.log('👋 Server closed gracefully');
+        } catch (err) {
+            console.error('Error during shutdown:', err && err.message ? err.message : err);
+        }
     }
 }
 
-// Start the server
-const server = new GridWorldServer();
-server.start().catch(console.error);
+// Start the server when invoked directly (prevents auto-start during tests)
+if (require.main === module) {
+    const server = new GridWorldServer();
+    server.start().catch(console.error);
+}
 
 module.exports = GridWorldServer;

@@ -10,19 +10,19 @@
  * - Demographic statistics
  */
 
-const { isRedisAvailable, getRedis, getPool } = require('./redisHelpers');
+const storage = require('../storage');
+const pool = require('../../config/database');
 
 class PeopleState {
     static nextTempId = -1;
 
     /**
-     * Get a new temporary ID for a person created in Redis-only mode
+     * Get a new temporary ID for a person created in storage-only mode
      */
     static async getNextTempId() {
-        const redis = getRedis();
-        if (!isRedisAvailable()) return this.nextTempId--;
+        if (!storage.isAvailable()) return this.nextTempId--;
         try {
-            const id = await redis.hincrby('counts:global', 'nextTempId', -1);
+            const id = await storage.hincrby('counts:global', 'nextTempId', -1);
             return id;
         } catch (err) {
             return this.nextTempId--;
@@ -35,8 +35,7 @@ class PeopleState {
      * @param {boolean} isNew - If true, track as pending insert
      */
     static async addPerson(person, isNew = false) {
-        const redis = getRedis();
-        if (!isRedisAvailable()) return false;
+        if (!storage.isAvailable()) return false;
         try {
             const id = person.id.toString();
             const p = {
@@ -49,18 +48,18 @@ class PeopleState {
                 family_id: person.family_id || null,
                 _isNew: isNew
             };
-            await redis.hset('person', id, JSON.stringify(p));
+            await storage.hset('person', id, JSON.stringify(p));
             // Add to tile's village population set
             if (p.tile_id && p.residency !== null && p.residency !== undefined) {
-                await redis.sadd(`village:${p.tile_id}:${p.residency}:people`, id);
+                await storage.sadd(`village:${p.tile_id}:${p.residency}:people`, id);
             }
             // Update global counts
-            await redis.hincrby('counts:global', 'total', 1);
-            if (p.sex === true) await redis.hincrby('counts:global', 'male', 1);
-            else if (p.sex === false) await redis.hincrby('counts:global', 'female', 1);
+            await storage.hincrby('counts:global', 'total', 1);
+            if (p.sex === true) await storage.hincrby('counts:global', 'male', 1);
+            else if (p.sex === false) await storage.hincrby('counts:global', 'female', 1);
 
             if (isNew) {
-                await redis.sadd('pending:person:inserts', id);
+                await storage.sadd('pending:person:inserts', id);
             }
             return true;
         } catch (err) {
@@ -75,35 +74,34 @@ class PeopleState {
      * @param {boolean} markDeleted - If true, track for Postgres deletion
      */
     static async removePerson(personId, markDeleted = false) {
-        const redis = getRedis();
-        if (!isRedisAvailable()) return false;
+        if (!storage.isAvailable()) return false;
         try {
-            const json = await redis.hget('person', personId.toString());
+            const json = await storage.hget('person', personId.toString());
             if (!json) return false;
             const p = JSON.parse(json);
 
             // Remove from tile's village population set
             if (p.tile_id && p.residency !== null && p.residency !== undefined) {
-                await redis.srem(`village:${p.tile_id}:${p.residency}:people`, personId.toString());
+                await storage.srem(`village:${p.tile_id}:${p.residency}:people`, personId.toString());
             }
 
             // Decrement global counts
-            await redis.hincrby('counts:global', 'total', -1);
-            if (p.sex === true) await redis.hincrby('counts:global', 'male', -1);
-            else if (p.sex === false) await redis.hincrby('counts:global', 'female', -1);
+            await storage.hincrby('counts:global', 'total', -1);
+            if (p.sex === true) await storage.hincrby('counts:global', 'male', -1);
+            else if (p.sex === false) await storage.hincrby('counts:global', 'female', -1);
 
             // Remove from eligible sets if present
             await this.removeEligiblePerson(personId);
 
-            await redis.hdel('person', personId.toString());
+            await storage.hdel('person', personId.toString());
 
             if (markDeleted && personId > 0) {
                 // Only mark positive IDs for Postgres deletion
-                await redis.sadd('pending:person:deletes', personId.toString());
+                await storage.sadd('pending:person:deletes', personId.toString());
             }
             // If it's a temp ID, remove from pending inserts
             if (personId < 0) {
-                await redis.srem('pending:person:inserts', personId.toString());
+                await storage.srem('pending:person:inserts', personId.toString());
             }
 
             return true;
@@ -117,9 +115,8 @@ class PeopleState {
      * Get a person from Redis
      */
     static async getPerson(personId) {
-        const redis = getRedis();
-        if (!isRedisAvailable()) return null;
-        const json = await redis.hget('person', personId.toString());
+        if (!storage.isAvailable()) return null;
+        const json = await storage.hget('person', personId.toString());
         return json ? JSON.parse(json) : null;
     }
 
@@ -127,8 +124,7 @@ class PeopleState {
      * Update a person in Redis
      */
     static async updatePerson(personId, updates) {
-        const redis = getRedis();
-        if (!isRedisAvailable()) return false;
+        if (!storage.isAvailable()) return false;
         try {
             const person = await this.getPerson(personId);
             if (!person) return false;
@@ -137,26 +133,26 @@ class PeopleState {
             const oldResidency = person.residency;
 
             const updated = { ...person, ...updates };
-            await redis.hset('person', personId.toString(), JSON.stringify(updated));
+            await storage.hset('person', personId.toString(), JSON.stringify(updated));
 
             // Handle tile/residency change: update village sets
             if ((updates.tile_id !== undefined && updates.tile_id !== oldTileId) ||
                 (updates.residency !== undefined && updates.residency !== oldResidency)) {
                 // Remove from old set
                 if (oldTileId && oldResidency !== null && oldResidency !== undefined) {
-                    await redis.srem(`village:${oldTileId}:${oldResidency}:people`, personId.toString());
+                    await storage.srem(`village:${oldTileId}:${oldResidency}:people`, personId.toString());
                 }
                 // Add to new set
                 const newTile = updates.tile_id !== undefined ? updates.tile_id : oldTileId;
                 const newRes = updates.residency !== undefined ? updates.residency : oldResidency;
                 if (newTile && newRes !== null && newRes !== undefined) {
-                    await redis.sadd(`village:${newTile}:${newRes}:people`, personId.toString());
+                    await storage.sadd(`village:${newTile}:${newRes}:people`, personId.toString());
                 }
             }
 
             // Track modified people for batch update (only for existing Postgres records)
             if (personId > 0 && !person._isNew) {
-                await redis.sadd('pending:person:updates', personId.toString());
+                await storage.sadd('pending:person:updates', personId.toString());
             }
             return true;
         } catch (err) {
@@ -169,9 +165,8 @@ class PeopleState {
      * Get all people from Redis
      */
     static async getAllPeople() {
-        const redis = getRedis();
-        if (!isRedisAvailable()) return [];
-        const data = await redis.hgetall('person');
+        if (!storage.isAvailable()) return [];
+        const data = await storage.hgetall('person');
         return Object.values(data).map(json => JSON.parse(json));
     }
 
@@ -179,14 +174,13 @@ class PeopleState {
      * Get people by tile and residency (village)
      */
     static async getTilePopulation(tileId, residency) {
-        const redis = getRedis();
-        if (!isRedisAvailable()) return [];
+        if (!storage.isAvailable()) return [];
         try {
-            const ids = await redis.smembers(`village:${tileId}:${residency}:people`);
+            const ids = await storage.smembers(`village:${tileId}:${residency}:people`);
             if (ids.length === 0) return [];
 
             // Use pipeline for batch reads
-            const pipeline = redis.pipeline();
+            const pipeline = storage.pipeline();
             for (const id of ids) {
                 pipeline.hget('person', id);
             }
@@ -211,9 +205,8 @@ class PeopleState {
      * Get global counts from Redis
      */
     static async getGlobalCounts() {
-        const redis = getRedis();
-        if (!isRedisAvailable()) return { total: 0, male: 0, female: 0 };
-        const counts = await redis.hgetall('counts:global');
+        if (!storage.isAvailable()) return { total: 0, male: 0, female: 0 };
+        const counts = await storage.hgetall('counts:global');
         return {
             total: parseInt(counts.total || '0', 10),
             male: parseInt(counts.male || '0', 10),
@@ -238,11 +231,10 @@ class PeopleState {
      * @param {number} tileId
      */
     static async addEligiblePerson(personId, isMale, tileId) {
-        const redis = getRedis();
-        if (!isRedisAvailable()) return false;
+        if (!storage.isAvailable()) return false;
         try {
             const sex = isMale ? 'male' : 'female';
-            await redis.sadd(`eligible:${sex}:${tileId}`, personId.toString());
+            await storage.sadd(`eligible:${sex}:${tileId}`, personId.toString());
             return true;
         } catch (err) {
             console.warn('[PeopleState] addEligiblePerson failed:', err.message);
@@ -254,15 +246,14 @@ class PeopleState {
      * Remove person from all eligible sets
      */
     static async removeEligiblePerson(personId) {
-        const redis = getRedis();
-        if (!isRedisAvailable()) return false;
+        if (!storage.isAvailable()) return false;
         try {
             // We need to find and remove from eligible sets
             // Scan for keys matching eligible:*:*
-            const stream = redis.scanStream({ match: 'eligible:*:*', count: 100 });
+            const stream = storage.scanStream({ match: 'eligible:*:*', count: 100 });
             for await (const keys of stream) {
                 for (const key of keys) {
-                    await redis.srem(key, personId.toString());
+                    await storage.srem(key, personId.toString());
                 }
             }
             return true;
@@ -276,10 +267,9 @@ class PeopleState {
      * Get all eligible people for a sex and tile
      */
     static async getEligiblePeople(isMale, tileId) {
-        const redis = getRedis();
-        if (!isRedisAvailable()) return [];
+        if (!storage.isAvailable()) return [];
         const sex = isMale ? 'male' : 'female';
-        return redis.smembers(`eligible:${sex}:${tileId}`);
+        return storage.smembers(`eligible:${sex}:${tileId}`);
     }
 
     // =========== PENDING OPERATIONS ===========
@@ -288,14 +278,13 @@ class PeopleState {
      * Get pending person inserts (people with temp IDs)
      */
     static async getPendingInserts() {
-        const redis = getRedis();
-        if (!isRedisAvailable()) return [];
+        if (!storage.isAvailable()) return [];
         try {
-            const ids = await redis.smembers('pending:person:inserts');
+            const ids = await storage.smembers('pending:person:inserts');
             if (ids.length === 0) return [];
 
             // Use pipeline for batch reads
-            const pipeline = redis.pipeline();
+            const pipeline = storage.pipeline();
             for (const id of ids) {
                 pipeline.hget('person', id.toString());
             }
@@ -320,14 +309,13 @@ class PeopleState {
      * Get pending person updates (people that were modified)
      */
     static async getPendingUpdates() {
-        const redis = getRedis();
-        if (!isRedisAvailable()) return [];
+        if (!storage.isAvailable()) return [];
         try {
-            const ids = await redis.smembers('pending:person:updates');
+            const ids = await storage.smembers('pending:person:updates');
             if (ids.length === 0) return [];
 
             // Use pipeline for batch reads
-            const pipeline = redis.pipeline();
+            const pipeline = storage.pipeline();
             for (const id of ids) {
                 pipeline.hget('person', id.toString());
             }
@@ -352,10 +340,9 @@ class PeopleState {
      * Get pending person deletes
      */
     static async getPendingDeletes() {
-        const redis = getRedis();
-        if (!isRedisAvailable()) return [];
+        if (!storage.isAvailable()) return [];
         try {
-            const ids = await redis.smembers('pending:person:deletes');
+            const ids = await storage.smembers('pending:person:deletes');
             return ids.map(id => parseInt(id));
         } catch (err) {
             console.warn('[PeopleState] getPendingDeletes failed:', err.message);
@@ -367,12 +354,11 @@ class PeopleState {
      * Clear pending person operations
      */
     static async clearPendingOperations() {
-        const redis = getRedis();
-        if (!isRedisAvailable()) return;
+        if (!storage.isAvailable()) return;
         try {
-            await redis.del('pending:person:inserts');
-            await redis.del('pending:person:updates');
-            await redis.del('pending:person:deletes');
+            await storage.del('pending:person:inserts');
+            await storage.del('pending:person:updates');
+            await storage.del('pending:person:deletes');
         } catch (err) {
             console.warn('[PeopleState] clearPendingOperations failed:', err.message);
         }
@@ -383,18 +369,17 @@ class PeopleState {
      * @param {Array} mappings - Array of { tempId, newId }
      */
     static async reassignIds(mappings) {
-        const redis = getRedis();
-        if (!isRedisAvailable()) return;
+        if (!storage.isAvailable()) return;
         try {
             // First, batch-read all temp people using pipeline
-            const readPipeline = redis.pipeline();
+            const readPipeline = storage.pipeline();
             for (const { tempId } of mappings) {
                 readPipeline.hget('person', tempId.toString());
             }
             const readResults = await readPipeline.exec();
 
             // Parse results and prepare write operations
-            const writePipeline = redis.pipeline();
+            const writePipeline = storage.pipeline();
             for (let i = 0; i < mappings.length; i++) {
                 const { tempId, newId } = mappings[i];
                 const [err, json] = readResults[i];
@@ -428,7 +413,7 @@ class PeopleState {
             await writePipeline.exec();
 
             // Clear the pending inserts we just processed
-            const delPipeline = redis.pipeline();
+            const delPipeline = storage.pipeline();
             for (const { tempId } of mappings) {
                 delPipeline.srem('pending:person:inserts', tempId.toString());
             }
@@ -444,17 +429,16 @@ class PeopleState {
      * Get all populations by tile (for statistics)
      */
     static async getAllTilePopulations() {
-        const redis = getRedis();
-        if (!isRedisAvailable()) return {};
+        if (!storage.isAvailable()) return {};
         try {
             const result = {};
-            const stream = redis.scanStream({ match: 'village:*:*:people', count: 100 });
+            const stream = storage.scanStream({ match: 'village:*:*:people', count: 100 });
             for await (const keys of stream) {
                 for (const key of keys) {
                     const parts = key.split(':');
                     if (parts.length === 4) {
                         const tileId = parseInt(parts[1]);
-                        const count = await redis.scard(key);
+                        const count = await storage.scard(key);
                         result[tileId] = (result[tileId] || 0) + count;
                     }
                 }
@@ -471,8 +455,7 @@ class PeopleState {
      * @param {Object} currentDate - { year, month, day }
      */
     static async getDemographicStats(currentDate) {
-        const redis = getRedis();
-        if (!isRedisAvailable()) return null;
+        if (!storage.isAvailable()) return null;
         try {
             const people = await this.getAllPeople();
             const { year: currentYear, month: currentMonth, day: currentDay } = currentDate;
@@ -545,23 +528,21 @@ class PeopleState {
      * Full sync from Postgres: refill Redis person hash and village sets
      */
     static async syncFromPostgres() {
-        const redis = getRedis();
-        const pool = getPool();
-        if (!isRedisAvailable()) return { skipped: true, reason: 'Redis not available' };
+        if (!storage.isAvailable()) return { skipped: true, reason: 'storage not available' };
         try {
-            console.log('[PeopleState] Syncing population from Postgres to Redis...');
+            console.log('[PeopleState] Syncing population from Postgres to storage...');
             // Clear person hash and all village sets keys that match our pattern
             try {
-                await redis.del('person');
+                await storage.del('person');
                 // Clear all village:*:people sets by scanning keys
-                const stream = redis.scanStream({ match: 'village:*:*:people', count: 1000 });
+                const stream = storage.scanStream({ match: 'village:*:*:people', count: 1000 });
                 const keys = [];
                 for await (const resultKeys of stream) {
                     for (const key of resultKeys) keys.push(key);
                 }
-                if (keys.length > 0) await redis.del(...keys);
-                await redis.del('counts:global');
-                console.log('[PeopleState] Cleared Redis population keys');
+                if (keys.length > 0) await storage.del(...keys);
+                await storage.del('counts:global');
+                console.log('[PeopleState] Cleared storage population keys');
             } catch (e) {
                 console.warn('[PeopleState] Failed to clear Redis population keys:', e.message);
             }
@@ -575,7 +556,7 @@ class PeopleState {
             while (true) {
                 const res = await pool.query('SELECT id, tile_id, residency, sex, date_of_birth, family_id FROM people ORDER BY id LIMIT $1 OFFSET $2', [batchSize, offset]);
                 if (!res.rows || res.rows.length === 0) break;
-                const pipeline = redis.pipeline();
+                const pipeline = storage.pipeline();
                 for (const p of res.rows) {
                     const id = p.id.toString();
                     const personObj = {
@@ -601,11 +582,11 @@ class PeopleState {
             }
 
             // Set demographic counters
-            await redis.hset('counts:global', 'total', total.toString());
-            await redis.hset('counts:global', 'male', maleCount.toString());
-            await redis.hset('counts:global', 'female', femaleCount.toString());
+            await storage.hset('counts:global', 'total', total.toString());
+            await storage.hset('counts:global', 'male', maleCount.toString());
+            await storage.hset('counts:global', 'female', femaleCount.toString());
 
-            console.log(`[PeopleState] Synced ${total} people to Redis (${maleCount} male, ${femaleCount} female)`);
+                console.log(`[PeopleState] Synced ${total} people to storage (${maleCount} male, ${femaleCount} female)`);
             return { success: true, total, male: maleCount, female: femaleCount };
         } catch (err) {
             console.error('[PeopleState] syncFromPostgres failed:', err.message);

@@ -70,6 +70,20 @@ curl http://localhost:8080/api/population/reset
 - `npm run prod` - Build and start production server
 - `npm run clean` - Clean build artifacts
 
+### Testing ✅
+- Run all tests: `npm test`
+- Run unit tests only: `npm run test:unit`
+- Run integration tests only: `npm run test:integration`
+- Run coverage (unit): `npm run test:coverage`
+- Run a single test file: `npm run test:file -- path/to/test/file.test.js` or `npx jest path/to/test/file.test.js`
+- Run tests by name: `npx jest -t "partial name of test"` (useful for focused checks)
+- Watch mode (fast feedback): `npm run test:watch` or `npm run test:unit:watch`
+
+Tips:
+- Keep tests small and focused: test one unit of behavior at a time (function/module).
+- Prefer the `MemoryAdapter` for storage-related unit tests to avoid external dependencies.
+- Use `describe.only` / `test.only` locally to focus on a single test while developing.
+
 ### Project Structure
 
 ```
