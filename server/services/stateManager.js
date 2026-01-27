@@ -133,7 +133,7 @@ class StateManager {
         await pipeline.exec();
         this.initialized = true;
         console.log(`✅ Loaded ${villages.length} villages, ${people.length} people (${maleCount} male, ${femaleCount} female), ${families.length} families to Redis`);
-        
+
         return { villages: villages.length, people: people.length, families: families.length, male: maleCount, female: femaleCount };
     }
 
@@ -158,22 +158,22 @@ class StateManager {
             console.log('💾 [1/8] Saving Redis state to PostgreSQL...');
             const startTime = Date.now();
             const PopulationState = require('./populationState');
-        
-        // Save villages
-        console.log('💾 [2/8] Getting village data...');
-        const villageData = await redis.hgetall('village');
-        const villageCount = Object.keys(villageData).length;
-        console.log(`💾 [2/8] Got ${villageCount} villages`);
-        
-        if (villageCount > 0) {
-            const villageValues = [];
-            for (const [id, json] of Object.entries(villageData)) {
-                const v = JSON.parse(json);
-                villageValues.push(`(${v.id}, ${v.food_stores}, ${v.food_production_rate})`);
-            }
-            
-            console.log('💾 [2/8] Updating villages in Postgres...');
-            await pool.query(`
+
+            // Save villages
+            console.log('💾 [2/8] Getting village data...');
+            const villageData = await redis.hgetall('village');
+            const villageCount = Object.keys(villageData).length;
+            console.log(`💾 [2/8] Got ${villageCount} villages`);
+
+            if (villageCount > 0) {
+                const villageValues = [];
+                for (const [id, json] of Object.entries(villageData)) {
+                    const v = JSON.parse(json);
+                    villageValues.push(`(${v.id}, ${v.food_stores}, ${v.food_production_rate})`);
+                }
+
+                console.log('💾 [2/8] Updating villages in Postgres...');
+                await pool.query(`
                 UPDATE villages AS v SET
                     food_stores = c.food_stores,
                     food_production_rate = c.food_production_rate,
@@ -181,195 +181,195 @@ class StateManager {
                 FROM (VALUES ${villageValues.join(',')}) AS c(id, food_stores, food_production_rate)
                 WHERE v.id = c.id
             `);
-            console.log('💾 [2/8] Villages updated');
-        }
+                console.log('💾 [2/8] Villages updated');
+            }
 
-        // 1a. Process pending family deletes (families where a spouse died)
-        console.log('💾 [3/8] Getting pending family deletes...');
-        const pendingFamilyDeletes = await PopulationState.getPendingFamilyDeletes();
-        console.log(`💾 [3/8] Found ${pendingFamilyDeletes.length} family deletes`);
-        let familiesDeleted = 0;
-        if (pendingFamilyDeletes.length > 0) {
-            console.log(`🗑️ Deleting ${pendingFamilyDeletes.length} families from PostgreSQL...`);
-            // First clear family_id references in people table
-            const famPlaceholders = pendingFamilyDeletes.map((_, idx) => `$${idx + 1}`).join(',');
-            await pool.query(`UPDATE people SET family_id = NULL WHERE family_id IN (${famPlaceholders})`, pendingFamilyDeletes);
-            // Then delete the families
-            await pool.query(`DELETE FROM family WHERE id IN (${famPlaceholders})`, pendingFamilyDeletes);
-            familiesDeleted = pendingFamilyDeletes.length;
-        }
+            // 1a. Process pending family deletes (families where a spouse died)
+            console.log('💾 [3/8] Getting pending family deletes...');
+            const pendingFamilyDeletes = await PopulationState.getPendingFamilyDeletes();
+            console.log(`💾 [3/8] Found ${pendingFamilyDeletes.length} family deletes`);
+            let familiesDeleted = 0;
+            if (pendingFamilyDeletes.length > 0) {
+                console.log(`🗑️ Deleting ${pendingFamilyDeletes.length} families from PostgreSQL...`);
+                // First clear family_id references in people table
+                const famPlaceholders = pendingFamilyDeletes.map((_, idx) => `$${idx + 1}`).join(',');
+                await pool.query(`UPDATE people SET family_id = NULL WHERE family_id IN (${famPlaceholders})`, pendingFamilyDeletes);
+                // Then delete the families
+                await pool.query(`DELETE FROM family WHERE id IN (${famPlaceholders})`, pendingFamilyDeletes);
+                familiesDeleted = pendingFamilyDeletes.length;
+            }
 
-        // 1b. Process pending deletes (people who died)
-        const pendingDeletes = await PopulationState.getPendingDeletes();
-        let deletedCount = 0;
-        if (pendingDeletes.length > 0) {
-            console.log(`🗑️ Deleting ${pendingDeletes.length} people from PostgreSQL...`);
-            const placeholders = pendingDeletes.map((_, idx) => `$${idx + 1}`).join(',');
-            await pool.query(`DELETE FROM people WHERE id IN (${placeholders})`, pendingDeletes);
-            deletedCount = pendingDeletes.length;
-        }
+            // 1b. Process pending deletes (people who died)
+            const pendingDeletes = await PopulationState.getPendingDeletes();
+            let deletedCount = 0;
+            if (pendingDeletes.length > 0) {
+                console.log(`🗑️ Deleting ${pendingDeletes.length} people from PostgreSQL...`);
+                const placeholders = pendingDeletes.map((_, idx) => `$${idx + 1}`).join(',');
+                await pool.query(`DELETE FROM people WHERE id IN (${placeholders})`, pendingDeletes);
+                deletedCount = pendingDeletes.length;
+            }
 
-        // 2. Process pending FAMILY inserts FIRST (before people, so family_ids are valid)
-        console.log('💾 [5/8] Getting pending family inserts...');
-        const pendingFamilyInserts = await PopulationState.getPendingFamilyInserts();
-        console.log(`💾 [5/8] Found ${pendingFamilyInserts.length} family inserts`);
-        let familiesInserted = 0;
-        const familyIdMappings = [];
-        
-        if (pendingFamilyInserts.length > 0) {
-            console.log(`👨‍👩‍👧 Inserting ${pendingFamilyInserts.length} new families into PostgreSQL...`);
-            
-            for (const f of pendingFamilyInserts) {
-                // Insert family with NULL for husband/wife IDs that are temp (negative)
-                // We'll update them after people are inserted
-                const husbandId = f.husband_id > 0 ? f.husband_id : null;
-                const wifeId = f.wife_id > 0 ? f.wife_id : null;
-                
-                const insertResult = await pool.query(`
+            // 2. Process pending FAMILY inserts FIRST (before people, so family_ids are valid)
+            console.log('💾 [5/8] Getting pending family inserts...');
+            const pendingFamilyInserts = await PopulationState.getPendingFamilyInserts();
+            console.log(`💾 [5/8] Found ${pendingFamilyInserts.length} family inserts`);
+            let familiesInserted = 0;
+            const familyIdMappings = [];
+
+            if (pendingFamilyInserts.length > 0) {
+                console.log(`👨‍👩‍👧 Inserting ${pendingFamilyInserts.length} new families into PostgreSQL...`);
+
+                for (const f of pendingFamilyInserts) {
+                    // Insert family with NULL for husband/wife IDs that are temp (negative)
+                    // We'll update them after people are inserted
+                    const husbandId = f.husband_id > 0 ? f.husband_id : null;
+                    const wifeId = f.wife_id > 0 ? f.wife_id : null;
+
+                    const insertResult = await pool.query(`
                     INSERT INTO family (husband_id, wife_id, tile_id, pregnancy, delivery_date, children_ids)
                     VALUES ($1, $2, $3, $4, $5, $6)
                     RETURNING id
                 `, [husbandId, wifeId, f.tile_id, f.pregnancy, f.delivery_date, f.children_ids || []]);
-                
-                const newFamilyId = insertResult.rows[0].id;
-                familyIdMappings.push({ tempId: f.id, newId: newFamilyId });
-                familiesInserted++;
-            }
-            
-            console.log('💾 [5/8] Reassigning family IDs in Redis...');
-            // Reassign family IDs in Redis
-            if (familyIdMappings.length > 0) {
-                await PopulationState.reassignFamilyIds(familyIdMappings);
-            }
-            console.log('💾 [5/8] Family IDs reassigned');
-        }
 
-        // 3. Process pending people inserts (new people - births, etc.)
-        console.log('💾 [6/8] Getting pending people inserts...');
-        const pendingInserts = await PopulationState.getPendingInserts();
-        let insertedCount = 0;
-        const idMappings = [];
-        
-        if (pendingInserts.length > 0) {
-            console.log(`📥 Inserting ${pendingInserts.length} new people into PostgreSQL...`);
-            const batchSize = 100;
-            
-            for (let i = 0; i < pendingInserts.length; i += batchSize) {
-                const batch = pendingInserts.slice(i, i + batchSize);
-                console.log(`   Batch ${Math.floor(i/batchSize) + 1}/${Math.ceil(pendingInserts.length/batchSize)}: ${batch.length} people`);
-                const values = [];
-                const params = [];
-                let paramIdx = 1;
-                
-                for (const p of batch) {
-                    // Map temp family_id to real family_id if needed
-                    let realFamilyId = p.family_id;
-                    if (p.family_id && p.family_id < 0) {
-                        const mapping = familyIdMappings.find(m => m.tempId === p.family_id);
-                        if (mapping) realFamilyId = mapping.newId;
-                        else realFamilyId = null;
-                    }
-                    
-                    values.push(`($${paramIdx}, $${paramIdx + 1}, $${paramIdx + 2}, $${paramIdx + 3}, $${paramIdx + 4})`);
-                    params.push(
-                        p.tile_id,
-                        p.sex,
-                        p.date_of_birth,
-                        p.residency,
-                        realFamilyId
-                    );
-                    paramIdx += 5;
+                    const newFamilyId = insertResult.rows[0].id;
+                    familyIdMappings.push({ tempId: f.id, newId: newFamilyId });
+                    familiesInserted++;
                 }
-                
-                try {
-                    const insertResult = await pool.query(`
+
+                console.log('💾 [5/8] Reassigning family IDs in Redis...');
+                // Reassign family IDs in Redis
+                if (familyIdMappings.length > 0) {
+                    await PopulationState.reassignFamilyIds(familyIdMappings);
+                }
+                console.log('💾 [5/8] Family IDs reassigned');
+            }
+
+            // 3. Process pending people inserts (new people - births, etc.)
+            console.log('💾 [6/8] Getting pending people inserts...');
+            const pendingInserts = await PopulationState.getPendingInserts();
+            let insertedCount = 0;
+            const idMappings = [];
+
+            if (pendingInserts.length > 0) {
+                console.log(`📥 Inserting ${pendingInserts.length} new people into PostgreSQL...`);
+                const batchSize = 100;
+
+                for (let i = 0; i < pendingInserts.length; i += batchSize) {
+                    const batch = pendingInserts.slice(i, i + batchSize);
+                    console.log(`   Batch ${Math.floor(i / batchSize) + 1}/${Math.ceil(pendingInserts.length / batchSize)}: ${batch.length} people`);
+                    const values = [];
+                    const params = [];
+                    let paramIdx = 1;
+
+                    for (const p of batch) {
+                        // Map temp family_id to real family_id if needed
+                        let realFamilyId = p.family_id;
+                        if (p.family_id && p.family_id < 0) {
+                            const mapping = familyIdMappings.find(m => m.tempId === p.family_id);
+                            if (mapping) realFamilyId = mapping.newId;
+                            else realFamilyId = null;
+                        }
+
+                        values.push(`($${paramIdx}, $${paramIdx + 1}, $${paramIdx + 2}, $${paramIdx + 3}, $${paramIdx + 4})`);
+                        params.push(
+                            p.tile_id,
+                            p.sex,
+                            p.date_of_birth,
+                            p.residency,
+                            realFamilyId
+                        );
+                        paramIdx += 5;
+                    }
+
+                    try {
+                        const insertResult = await pool.query(`
                         INSERT INTO people (tile_id, sex, date_of_birth, residency, family_id)
                         VALUES ${values.join(',')}
                         RETURNING id
                     `, params);
-                    
-                    // Map temp IDs to new Postgres IDs
-                    for (let j = 0; j < batch.length; j++) {
-                        const tempId = batch[j].id;
-                        const newId = insertResult.rows[j].id;
-                        idMappings.push({ tempId, newId });
+
+                        // Map temp IDs to new Postgres IDs
+                        for (let j = 0; j < batch.length; j++) {
+                            const tempId = batch[j].id;
+                            const newId = insertResult.rows[j].id;
+                            idMappings.push({ tempId, newId });
+                        }
+                        insertedCount += batch.length;
+                        console.log(`   Batch insert complete: ${insertedCount}/${pendingInserts.length}`);
+                    } catch (insertErr) {
+                        console.error(`❌ Batch insert failed:`, insertErr.message);
+                        console.error(`   First person in batch:`, JSON.stringify(batch[0]));
+                        throw insertErr;
                     }
-                    insertedCount += batch.length;
-                    console.log(`   Batch insert complete: ${insertedCount}/${pendingInserts.length}`);
-                } catch (insertErr) {
-                    console.error(`❌ Batch insert failed:`, insertErr.message);
-                    console.error(`   First person in batch:`, JSON.stringify(batch[0]));
-                    throw insertErr;
+                }
+
+                // Reassign person IDs in Redis
+                console.log(`💾 [6/8] Reassigning ${idMappings.length} IDs in Redis...`);
+                if (idMappings.length > 0) {
+                    await PopulationState.reassignIds(idMappings);
                 }
             }
-            
-            // Reassign person IDs in Redis
-            console.log(`💾 [6/8] Reassigning ${idMappings.length} IDs in Redis...`);
-            if (idMappings.length > 0) {
-                await PopulationState.reassignIds(idMappings);
-            }
-        }
 
-        // 4. Update families with correct husband/wife IDs (if they were temp IDs)
-        if (familyIdMappings.length > 0 && idMappings.length > 0) {
-            console.log(`🔗 Updating family member references...`);
-            for (const familyMapping of familyIdMappings) {
-                const family = await PopulationState.getFamily(familyMapping.newId);
-                if (family) {
-                    let updateNeeded = false;
-                    let newHusbandId = family.husband_id;
-                    let newWifeId = family.wife_id;
-                    
-                    // Check if husband_id needs mapping
-                    const husbandMapping = idMappings.find(m => m.tempId === family.husband_id);
-                    if (husbandMapping) {
-                        newHusbandId = husbandMapping.newId;
-                        updateNeeded = true;
-                    }
-                    
-                    // Check if wife_id needs mapping
-                    const wifeMapping = idMappings.find(m => m.tempId === family.wife_id);
-                    if (wifeMapping) {
-                        newWifeId = wifeMapping.newId;
-                        updateNeeded = true;
-                    }
-                    
-                    if (updateNeeded) {
-                        await pool.query(`
+            // 4. Update families with correct husband/wife IDs (if they were temp IDs)
+            if (familyIdMappings.length > 0 && idMappings.length > 0) {
+                console.log(`🔗 Updating family member references...`);
+                for (const familyMapping of familyIdMappings) {
+                    const family = await PopulationState.getFamily(familyMapping.newId);
+                    if (family) {
+                        let updateNeeded = false;
+                        let newHusbandId = family.husband_id;
+                        let newWifeId = family.wife_id;
+
+                        // Check if husband_id needs mapping
+                        const husbandMapping = idMappings.find(m => m.tempId === family.husband_id);
+                        if (husbandMapping) {
+                            newHusbandId = husbandMapping.newId;
+                            updateNeeded = true;
+                        }
+
+                        // Check if wife_id needs mapping
+                        const wifeMapping = idMappings.find(m => m.tempId === family.wife_id);
+                        if (wifeMapping) {
+                            newWifeId = wifeMapping.newId;
+                            updateNeeded = true;
+                        }
+
+                        if (updateNeeded) {
+                            await pool.query(`
                             UPDATE family SET husband_id = $1, wife_id = $2, updated_at = CURRENT_TIMESTAMP
                             WHERE id = $3
                         `, [newHusbandId, newWifeId, familyMapping.newId]);
-                    }
-                    
-                    // Also update children_ids if any are temp IDs
-                    const childrenIds = family.children_ids || [];
-                    const newChildrenIds = childrenIds.map(cid => {
-                        const mapping = idMappings.find(m => m.tempId === cid);
-                        return mapping ? mapping.newId : cid;
-                    });
-                    if (JSON.stringify(childrenIds) !== JSON.stringify(newChildrenIds)) {
-                        await pool.query(`
+                        }
+
+                        // Also update children_ids if any are temp IDs
+                        const childrenIds = family.children_ids || [];
+                        const newChildrenIds = childrenIds.map(cid => {
+                            const mapping = idMappings.find(m => m.tempId === cid);
+                            return mapping ? mapping.newId : cid;
+                        });
+                        if (JSON.stringify(childrenIds) !== JSON.stringify(newChildrenIds)) {
+                            await pool.query(`
                             UPDATE family SET children_ids = $1, updated_at = CURRENT_TIMESTAMP
                             WHERE id = $2
                         `, [newChildrenIds, familyMapping.newId]);
+                        }
                     }
                 }
             }
-        }
 
-        // 5. Update existing families that were modified (pregnancy status, etc.)
-        console.log('💾 [7/8] Getting pending family updates...');
-        const pendingFamilyUpdates = await PopulationState.getPendingFamilyUpdates();
-        let familiesUpdated = 0;
-        if (pendingFamilyUpdates.length > 0) {
-            console.log(`📝 Updating ${pendingFamilyUpdates.length} families in PostgreSQL...`);
-            // Filter out families with temp IDs (they were just inserted above)
-            const existingFamilies = pendingFamilyUpdates.filter(f => f.id > 0);
-            console.log(`   ${existingFamilies.length} families have positive IDs to update`);
-            
-            for (const f of existingFamilies) {
-                try {
-                    await pool.query(`
+            // 5. Update existing families that were modified (pregnancy status, etc.)
+            console.log('💾 [7/8] Getting pending family updates...');
+            const pendingFamilyUpdates = await PopulationState.getPendingFamilyUpdates();
+            let familiesUpdated = 0;
+            if (pendingFamilyUpdates.length > 0) {
+                console.log(`📝 Updating ${pendingFamilyUpdates.length} families in PostgreSQL...`);
+                // Filter out families with temp IDs (they were just inserted above)
+                const existingFamilies = pendingFamilyUpdates.filter(f => f.id > 0);
+                console.log(`   ${existingFamilies.length} families have positive IDs to update`);
+
+                for (const f of existingFamilies) {
+                    try {
+                        await pool.query(`
                         UPDATE family SET 
                             pregnancy = $1, 
                             delivery_date = $2, 
@@ -377,61 +377,85 @@ class StateManager {
                             updated_at = CURRENT_TIMESTAMP
                         WHERE id = $4
                     `, [f.pregnancy, f.delivery_date, f.children_ids || [], f.id]);
-                    familiesUpdated++;
-                } catch (err) {
-                    console.error(`❌ Failed to update family ${f.id}:`, err.message);
+                        familiesUpdated++;
+                    } catch (err) {
+                        console.error(`❌ Failed to update family ${f.id}:`, err.message);
+                    }
                 }
+                console.log(`   Family updates complete: ${familiesUpdated}`);
             }
-            console.log(`   Family updates complete: ${familiesUpdated}`);
-        }
 
-        // 6. Update existing people (health, family_id for positive IDs only)
-        console.log('💾 [8/8] Updating existing people...');
-        const personData = await redis.hgetall('person');
-        const existingPeople = Object.values(personData)
-            .map(json => JSON.parse(json))
-            .filter(p => p.id > 0 && !p._isNew); // Only update existing Postgres records
-        
-        console.log(`   Found ${existingPeople.length} existing people to update`);
-        let updatedCount = 0;
-        if (existingPeople.length > 0) {
-            try {
-                // Only update family_id for people with TEMP family IDs (negative) that need remapping
-                const peopleWithTempFamilyIds = existingPeople.filter(p => p.family_id && p.family_id < 0);
-                console.log(`   ${peopleWithTempFamilyIds.length} people have temp family_id to remap`);
-                if (peopleWithTempFamilyIds.length > 0) {
-                    for (const p of peopleWithTempFamilyIds) {
-                        // Map temp family_id to real one
-                        const mapping = familyIdMappings.find(m => m.tempId === p.family_id);
-                        if (mapping) {
-                            await pool.query(`
+            // 6. Update existing people (health, family_id for positive IDs only)
+            console.log('💾 [8/8] Updating existing people...');
+            const personData = await redis.hgetall('person');
+            const existingPeople = Object.values(personData)
+                .map(json => JSON.parse(json))
+                .filter(p => p.id > 0 && !p._isNew); // Only update existing Postgres records
+
+            console.log(`   Found ${existingPeople.length} existing people to update`);
+            let updatedCount = 0;
+            if (existingPeople.length > 0) {
+                try {
+                    // Only update family_id for people with TEMP family IDs (negative) that need remapping
+                    const peopleWithTempFamilyIds = existingPeople.filter(p => p.family_id && p.family_id < 0);
+                    console.log(`   ${peopleWithTempFamilyIds.length} people have temp family_id to remap`);
+                    if (peopleWithTempFamilyIds.length > 0) {
+                        for (const p of peopleWithTempFamilyIds) {
+                            // Map temp family_id to real one
+                            const mapping = familyIdMappings.find(m => m.tempId === p.family_id);
+                            if (mapping) {
+                                await pool.query(`
                                 UPDATE people SET family_id = $1, updated_at = CURRENT_TIMESTAMP WHERE id = $2
                             `, [mapping.newId, p.id]);
+                            }
                         }
+                        console.log(`   Family_id remapping complete`);
                     }
-                    console.log(`   Family_id remapping complete`);
+
+                    // Skip health update for now - health values are all 100 and don't change yet
+                    // When health actually changes, we'll need to track which people's health changed
+                    // and only update those (similar to pending:inserts tracking)
+                    updatedCount = 0;
+                } catch (err) {
+                    console.warn('⚠️ Could not update people:', err.message);
                 }
-                
-                // Skip health update for now - health values are all 100 and don't change yet
-                // When health actually changes, we'll need to track which people's health changed
-                // and only update those (similar to pending:inserts tracking)
-                updatedCount = 0;
-            } catch (err) {
-                console.warn('⚠️ Could not update people:', err.message);
             }
-        }
 
-        // Clear pending operations after successful save
-        await PopulationState.clearPendingOperations();
-        await PopulationState.clearPendingFamilyOperations();
+            // Clear pending operations after successful save
+            await PopulationState.clearPendingOperations();
+            await PopulationState.clearPendingFamilyOperations();
 
-        const elapsed = Date.now() - startTime;
-        console.log(`✅ Saved to PostgreSQL in ${elapsed}ms: ${villageCount} villages, ${insertedCount} people inserts, ${deletedCount} people deletes, ${updatedCount} people updates, ${familiesInserted} families inserted, ${familiesUpdated} families updated, ${familiesDeleted} families deleted`);
-        
-        if (this.io) {
-            this.io.emit('gameSaved', { 
-                timestamp: new Date().toISOString(),
+            const elapsed = Date.now() - startTime;
+            console.log(`✅ Saved to PostgreSQL in ${elapsed}ms: ${villageCount} villages, ${insertedCount} people inserts, ${deletedCount} people deletes, ${updatedCount} people updates, ${familiesInserted} families inserted, ${familiesUpdated} families updated, ${familiesDeleted} families deleted`);
+
+            if (this.io) {
+                this.io.emit('gameSaved', {
+                    timestamp: new Date().toISOString(),
+                    villages: villageCount,
+                    inserted: insertedCount,
+                    deleted: deletedCount,
+                    updated: updatedCount,
+                    familiesInserted,
+                    familiesUpdated,
+                    familiesDeleted,
+                    elapsed
+                });
+            }
+
+            // After saving to DB, refresh population stats and emit to clients so UI reflects DB truth
+            try {
+                const { getAllPopulationData } = require('./population/PopStats');
+                const populationData = await getAllPopulationData(pool, null, null);
+                if (this.io) {
+                    this.io.emit('populationUpdate', populationData);
+                }
+            } catch (err) {
+                console.warn('⚠️ Could not emit populationUpdate after save:', err.message);
+            }
+
+            return {
                 villages: villageCount,
+                people: insertedCount,
                 inserted: insertedCount,
                 deleted: deletedCount,
                 updated: updatedCount,
@@ -439,31 +463,7 @@ class StateManager {
                 familiesUpdated,
                 familiesDeleted,
                 elapsed
-            });
-        }
-
-        // After saving to DB, refresh population stats and emit to clients so UI reflects DB truth
-        try {
-            const { getAllPopulationData } = require('./population/PopStats');
-            const populationData = await getAllPopulationData(pool, null, null);
-            if (this.io) {
-                this.io.emit('populationUpdate', populationData);
-            }
-        } catch (err) {
-            console.warn('⚠️ Could not emit populationUpdate after save:', err.message);
-        }
-
-        return { 
-            villages: villageCount, 
-            people: insertedCount, 
-            inserted: insertedCount, 
-            deleted: deletedCount, 
-            updated: updatedCount, 
-            familiesInserted,
-            familiesUpdated,
-            familiesDeleted,
-            elapsed 
-        };
+            };
         } finally {
             // Resume calendar ticks after save completes (or fails)
             if (wasRunning && this.calendarService) {
@@ -487,7 +487,7 @@ class StateManager {
     static async updateVillage(villageId, updates) {
         const village = await this.getVillage(villageId);
         if (!village) return null;
-        
+
         const updated = { ...village, ...updates };
         await redis.hset('village', villageId.toString(), JSON.stringify(updated));
         return updated;
@@ -515,7 +515,7 @@ class StateManager {
     static async updatePerson(personId, updates) {
         const person = await this.getPerson(personId);
         if (!person) return null;
-        
+
         const updated = { ...person, ...updates };
         await redis.hset('person', personId.toString(), JSON.stringify(updated));
         return updated;

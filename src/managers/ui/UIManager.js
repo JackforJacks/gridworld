@@ -199,7 +199,7 @@ class UIManager {
 
         // Prevent double-clicking
         if (saveButton.disabled) return;
-        
+
         const originalText = saveButton.innerHTML;
         saveButton.disabled = true;
         saveButton.classList.add('saving');
@@ -214,7 +214,7 @@ class UIManager {
                 saveButton.classList.add('saved');
                 saveButton.innerHTML = '✅ Saved!';
                 console.log(`💾 Game saved: ${result.villages} villages, ${result.people} people in ${result.elapsed}ms`);
-                
+
                 setTimeout(() => {
                     saveButton.innerHTML = originalText;
                     saveButton.classList.remove('saved');
@@ -227,7 +227,7 @@ class UIManager {
             console.error('❌ Save failed:', error);
             saveButton.classList.remove('saving');
             saveButton.innerHTML = '❌ Failed';
-            
+
             setTimeout(() => {
                 saveButton.innerHTML = originalText;
                 saveButton.disabled = false;

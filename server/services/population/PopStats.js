@@ -109,7 +109,7 @@ async function getPopulationStats(pool, calendarService, populationServiceInstan
                 elderly: parseInt(row.elderly, 10) || 0,
                 bachelors: parseInt(row.bachelors, 10) || 0
             };
-            
+
             // Get villages count from Postgres
             try {
                 const vres = await pool.query('SELECT COUNT(*)::int AS cnt FROM villages');

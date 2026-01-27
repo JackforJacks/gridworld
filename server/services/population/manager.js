@@ -17,7 +17,7 @@ const config = require('../../config/server.js');
 async function addPeopleToTile(pool, tileId, count, currentYear, currentMonth, currentDay, populationServiceInstance, doTrackBirths = false) {
     const PopulationState = require('../populationState');
     const { isRedisAvailable } = require('../../config/redis');
-    
+
     if (!isRedisAvailable()) {
         console.warn('⚠️ Redis not available - cannot add people to tile');
         return;
@@ -27,10 +27,10 @@ async function addPeopleToTile(pool, tileId, count, currentYear, currentMonth, c
         const sex = getRandomSex();
         const age = getRandomAge();
         const birthDate = getRandomBirthDate(currentYear, currentMonth, currentDay, age);
-        
+
         // Get a temporary ID for Redis-only storage
         const tempId = await PopulationState.getNextTempId();
-        
+
         const personObj = {
             id: tempId,
             tile_id: tileId,
@@ -40,7 +40,7 @@ async function addPeopleToTile(pool, tileId, count, currentYear, currentMonth, c
             health: 100,
             family_id: null
         };
-        
+
         // Add to Redis with isNew=true to track for batch Postgres insert
         await PopulationState.addPerson(personObj, true);
     }
@@ -63,7 +63,7 @@ async function removePeopleFromTile(pool, tileId, count, populationServiceInstan
 
     const PopulationState = require('../populationState');
     const { isRedisAvailable } = require('../../config/redis');
-    
+
     if (!isRedisAvailable()) {
         console.warn('⚠️ Redis not available - cannot remove people from tile');
         return;
@@ -72,11 +72,11 @@ async function removePeopleFromTile(pool, tileId, count, populationServiceInstan
     // Get all people from Redis and filter by tile
     const allPeople = await PopulationState.getAllPeople();
     const tilePopulation = allPeople.filter(p => p.tile_id === tileId);
-    
+
     // Randomly select people to remove
     const shuffled = tilePopulation.sort(() => Math.random() - 0.5);
     const toRemove = shuffled.slice(0, Math.min(count, shuffled.length));
-    
+
     for (const person of toRemove) {
         // Remove from Redis and track for batch Postgres delete
         await PopulationState.removePerson(person.id, true);

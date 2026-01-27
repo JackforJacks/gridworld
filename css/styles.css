@@ -520,8 +520,13 @@ kbd {
 }
 
 @keyframes pulse {
-    from { opacity: 1; }
-    to { opacity: 0.7; }
+    from {
+        opacity: 1;
+    }
+
+    to {
+        opacity: 0.7;
+    }
 }
 
 .dashboard-toggle-help {

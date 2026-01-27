@@ -10,7 +10,7 @@ async function clearRedisPopulation() {
     try {
         const { isRedisAvailable } = require('../../config/redis');
         if (!isRedisAvailable()) return;
-        
+
         const redis = require('../../config/redis');
         // Clear person hash
         await redis.del('person');

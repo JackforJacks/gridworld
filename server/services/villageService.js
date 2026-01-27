@@ -27,7 +27,7 @@ class VillageService {
         this.calendarService = calendarService;
         const redisMode = this.useRedis && isRedisAvailable();
         console.log(`🍖 Setting up tick-based food updates [Redis mode: ${redisMode}]`);
-        
+
         calendarService.on('tick', async (tickData) => {
             try {
                 // Update food on each calendar tick
@@ -54,7 +54,7 @@ class VillageService {
 
         const redisMode = this.useRedis && isRedisAvailable();
         console.log(`🍖 Starting food update timer (${intervalMs}ms intervals) [Redis mode: ${redisMode}]`);
-        
+
         this.foodUpdateTimer = setInterval(async () => {
             try {
                 // Check Redis availability each tick in case it reconnects
@@ -407,16 +407,16 @@ class VillageService {
             for (const village of villages) {
                 // Get fertility from Redis
                 const fertility = await StateManager.getTileFertility(village.tile_id);
-                
+
                 // Get cleared land count from Redis
                 const clearedCnt = await StateManager.getVillageClearedLand(village.id);
-                
+
                 // Get population count from Redis index
                 const population = await StateManager.getVillagePopulation(village.tile_id, village.land_chunk_index);
 
                 // Calculate production rate
                 const productionRate = this.calculateFoodProduction(fertility, clearedCnt, population);
-                
+
                 // Update food stores (add 1 second of production)
                 const newFoodStores = Math.min(
                     village.food_capacity || 1000,

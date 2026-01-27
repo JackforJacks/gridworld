@@ -95,7 +95,7 @@ class PopulationState {
                     await redis.srem(`village:${p.tile_id}:${p.residency}:people`, id);
                 }
                 await redis.hdel('person', id);
-                
+
                 // Track for batch delete if it was a Postgres record (positive ID)
                 // Don't track negative IDs (temp records never saved to Postgres)
                 if (trackForBatch && personId > 0) {
@@ -103,7 +103,7 @@ class PopulationState {
                 }
                 // If it was a pending insert, remove from that set
                 await redis.srem('pending:inserts', id);
-                
+
                 // Update demographic counters
                 const pipeline = redis.pipeline();
                 pipeline.hincrby('counts:global', 'total', -1);
@@ -155,14 +155,14 @@ class PopulationState {
         try {
             const ids = await redis.smembers('pending:inserts');
             if (ids.length === 0) return [];
-            
+
             // Use pipeline to batch all reads
             const pipeline = redis.pipeline();
             for (const id of ids) {
                 pipeline.hget('person', id);
             }
             const results = await pipeline.exec();
-            
+
             const people = [];
             for (const [err, json] of results) {
                 if (!err && json) {
@@ -216,23 +216,23 @@ class PopulationState {
                 readPipeline.hget('person', tempId.toString());
             }
             const readResults = await readPipeline.exec();
-            
+
             // Parse results and prepare write operations
             const writePipeline = redis.pipeline();
             for (let i = 0; i < mappings.length; i++) {
                 const { tempId, newId } = mappings[i];
                 const [err, json] = readResults[i];
                 if (err || !json) continue;
-                
+
                 let person;
                 try { person = JSON.parse(json); } catch { continue; }
-                
+
                 // Remove old entry
                 writePipeline.hdel('person', tempId.toString());
                 if (person.tile_id && person.residency !== null) {
                     writePipeline.srem(`village:${person.tile_id}:${person.residency}:people`, tempId.toString());
                 }
-                
+
                 // Add with new ID
                 person.id = newId;
                 delete person._isNew;
@@ -241,7 +241,7 @@ class PopulationState {
                     writePipeline.sadd(`village:${person.tile_id}:${person.residency}:people`, newId.toString());
                 }
             }
-            
+
             await writePipeline.exec();
         } catch (err) {
             console.warn('[PopulationState] reassignIds failed:', err.message);
@@ -341,7 +341,7 @@ class PopulationState {
     }
 
     // =========== FAMILY MANAGEMENT (Redis-only) ===========
-    
+
     static nextFamilyTempId = -1;
 
     /**
@@ -434,14 +434,14 @@ class PopulationState {
         try {
             const ids = await redis.smembers('pending:family:inserts');
             if (ids.length === 0) return [];
-            
+
             // Use pipeline for batch reads
             const pipeline = redis.pipeline();
             for (const id of ids) {
                 pipeline.hget('family', id.toString());
             }
             const results = await pipeline.exec();
-            
+
             const families = [];
             for (const [err, json] of results) {
                 if (!err && json) {
@@ -465,14 +465,14 @@ class PopulationState {
         try {
             const ids = await redis.smembers('pending:family:updates');
             if (ids.length === 0) return [];
-            
+
             // Use pipeline for batch reads
             const pipeline = redis.pipeline();
             for (const id of ids) {
                 pipeline.hget('family', id.toString());
             }
             const results = await pipeline.exec();
-            
+
             const families = [];
             for (const [err, json] of results) {
                 if (!err && json) {
@@ -529,25 +529,25 @@ class PopulationState {
                 readPipeline.hget('family', tempId.toString());
             }
             const readResults = await readPipeline.exec();
-            
+
             // Parse results and prepare family write operations
             const writePipeline = redis.pipeline();
             const personUpdates = []; // Collect person updates to batch later
-            
+
             for (let i = 0; i < mappings.length; i++) {
                 const { tempId, newId } = mappings[i];
                 const [err, json] = readResults[i];
                 if (err || !json) continue;
-                
+
                 let family;
                 try { family = JSON.parse(json); } catch { continue; }
-                
+
                 // Remove old entry, add with new ID
                 writePipeline.hdel('family', tempId.toString());
                 family.id = newId;
                 delete family._isNew;
                 writePipeline.hset('family', newId.toString(), JSON.stringify(family));
-                
+
                 // Collect person IDs that need family_id update
                 if (family.husband_id) personUpdates.push({ personId: family.husband_id, newFamilyId: newId });
                 if (family.wife_id) personUpdates.push({ personId: family.wife_id, newFamilyId: newId });
@@ -555,9 +555,9 @@ class PopulationState {
                     personUpdates.push({ personId: childId, newFamilyId: newId });
                 }
             }
-            
+
             await writePipeline.exec();
-            
+
             // Now batch-update person family_ids
             if (personUpdates.length > 0) {
                 // Read all affected people
@@ -566,17 +566,17 @@ class PopulationState {
                     personReadPipeline.hget('person', personId.toString());
                 }
                 const personReadResults = await personReadPipeline.exec();
-                
+
                 // Update and write back
                 const personWritePipeline = redis.pipeline();
                 for (let i = 0; i < personUpdates.length; i++) {
                     const { personId, newFamilyId } = personUpdates[i];
                     const [err, json] = personReadResults[i];
                     if (err || !json) continue;
-                    
+
                     let person;
                     try { person = JSON.parse(json); } catch { continue; }
-                    
+
                     person.family_id = newFamilyId;
                     personWritePipeline.hset('person', personId.toString(), JSON.stringify(person));
                 }
@@ -615,18 +615,18 @@ class PopulationState {
             let offset = 0;
             let total = 0;
             let maleCount = 0, femaleCount = 0;
-            
+
             while (true) {
                 const res = await pool.query('SELECT id, tile_id, residency, sex, date_of_birth, family_id FROM people ORDER BY id LIMIT $1 OFFSET $2', [batchSize, offset]);
                 if (!res.rows || res.rows.length === 0) break;
                 const pipeline = redis.pipeline();
                 for (const p of res.rows) {
                     const id = p.id.toString();
-                    const personObj = { 
-                        id: p.id, 
-                        tile_id: p.tile_id, 
-                        residency: p.residency, 
-                        sex: p.sex, 
+                    const personObj = {
+                        id: p.id,
+                        tile_id: p.tile_id,
+                        residency: p.residency,
+                        sex: p.sex,
                         health: 100,
                         date_of_birth: p.date_of_birth,
                         family_id: p.family_id
@@ -648,7 +648,7 @@ class PopulationState {
             await redis.hset('counts:global', 'total', total.toString());
             await redis.hset('counts:global', 'male', maleCount.toString());
             await redis.hset('counts:global', 'female', femaleCount.toString());
-            
+
             console.log(`[PopulationState] Synced ${total} people to Redis (${maleCount} male, ${femaleCount} female)`);
             return { success: true, total, male: maleCount, female: femaleCount };
         } catch (err) {

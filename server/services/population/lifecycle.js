@@ -107,7 +107,7 @@ async function applySenescence(pool, calendarService, populationServiceInstance)
     try {
         const PopulationState = require('../populationState');
         const { isRedisAvailable } = require('../../config/redis');
-        
+
         if (!isRedisAvailable()) {
             console.warn('⚠️ Redis not available - cannot process senescence');
             return 0;
@@ -135,7 +135,7 @@ async function applySenescence(pool, calendarService, populationServiceInstance)
 
         for (const person of allPeople) {
             if (!person.date_of_birth) continue;
-            
+
             const age = calculateAge(person.date_of_birth, currentYear, currentMonth, currentDay);
             if (age >= 60) {
                 const monthlyDeathChance = (age - 59) * 0.0005;
@@ -149,12 +149,12 @@ async function applySenescence(pool, calendarService, populationServiceInstance)
             // Handle family cleanup (now using Redis for families)
             const deathIds = new Set(deaths);
             const allFamilies = await PopulationState.getAllFamilies();
-            
+
             for (const family of allFamilies) {
                 // Check if husband or wife died
                 const husbandDied = deathIds.has(family.husband_id);
                 const wifeDied = deathIds.has(family.wife_id);
-                
+
                 if (husbandDied || wifeDied) {
                     // Clear family_id from all family members in Redis
                     await PopulationState.updatePerson(family.husband_id, { family_id: null });
@@ -170,12 +170,12 @@ async function applySenescence(pool, calendarService, populationServiceInstance)
                     }
                 }
             }
-            
+
             // Remove from Redis (this tracks for batch Postgres delete)
             for (const personId of deaths) {
                 await PopulationState.removePerson(personId, true);
             }
-            
+
             if (populationServiceInstance && typeof populationServiceInstance.trackDeaths === 'function') {
                 populationServiceInstance.trackDeaths(deaths.length);
             }
@@ -212,7 +212,7 @@ async function processDailyFamilyEvents(pool, calendarService, serviceInstance) 
 
         // Get eligible families from Redis (not pregnant, less than 5 children)
         const allFamilies = await PopulationState.getAllFamilies();
-        const eligibleFamilies = allFamilies.filter(f => 
+        const eligibleFamilies = allFamilies.filter(f =>
             !f.pregnancy && (!f.children_ids || f.children_ids.length < 5)
         );
         // Shuffle and take up to 30
@@ -223,7 +223,7 @@ async function processDailyFamilyEvents(pool, calendarService, serviceInstance) 
             // Check wife's age from Redis
             const wife = await PopulationState.getPerson(family.wife_id);
             if (!wife || !wife.date_of_birth) continue;
-            
+
             const wifeAge = calculateAge(wife.date_of_birth, currentDate.year, currentDate.month, currentDate.day);
             if (wifeAge > 33) continue; // Wife too old
 

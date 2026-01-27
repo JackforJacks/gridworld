@@ -27,12 +27,12 @@ try {
         console.log('🔴 Redis connected');
         redisAvailable = true;
     });
-    
+
     redis.on('ready', () => {
         console.log('🔴 Redis ready');
         redisAvailable = true;
     });
-    
+
     redis.on('error', (err) => {
         if (err.code === 'ECONNREFUSED') {
             console.warn('⚠️ Redis connection refused - running in PostgreSQL-only mode');
@@ -41,7 +41,7 @@ try {
         }
         redisAvailable = false;
     });
-    
+
     redis.on('close', () => {
         console.log('🔴 Redis connection closed');
         redisAvailable = false;

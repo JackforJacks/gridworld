@@ -12,7 +12,7 @@ const { calculateAge } = require('./calculator.js');
 async function createFamily(pool, husbandId, wifeId, tileId) {
     try {
         const PopulationState = require('../populationState');
-        
+
         // Verify both people exist in Redis
         const husband = await PopulationState.getPerson(husbandId);
         const wife = await PopulationState.getPerson(wifeId);
@@ -148,7 +148,7 @@ async function deliverBaby(pool, calendarService, populationServiceInstance, fam
     try {
         const PopulationState = require('../populationState');
         const { isRedisAvailable } = require('../../config/redis');
-        
+
         if (!isRedisAvailable()) {
             throw new Error('Redis not available - cannot deliver baby');
         }
@@ -243,7 +243,7 @@ async function getFamiliesOnTile(pool, tileId) {
 async function processDeliveries(pool, calendarService, populationServiceInstance) {
     try {
         const PopulationState = require('../populationState');
-        
+
         // Get current calendar date
         let currentDate = { year: 1, month: 1, day: 1 };
         if (calendarService && typeof calendarService.getCurrentDate === 'function') {
@@ -303,7 +303,7 @@ async function getFamilyStats(pool) {
     try {
         const PopulationState = require('../populationState');
         const allFamilies = await PopulationState.getAllFamilies();
-        
+
         const totalFamilies = allFamilies.length;
         const pregnantFamilies = allFamilies.filter(f => f.pregnancy).length;
         const totalChildren = allFamilies.reduce((sum, f) => sum + (f.children_ids?.length || 0), 0);
@@ -345,7 +345,7 @@ async function formNewFamilies(pool, calendarService) {
 
         // Get all people from Redis
         const allPeople = await PopulationState.getAllPeople();
-        
+
         // Filter eligible bachelors from Redis data
         const eligibleMales = [];
         const eligibleFemales = [];
@@ -371,7 +371,7 @@ async function formNewFamilies(pool, calendarService) {
         if (eligibleMales.length === 0 || eligibleFemales.length === 0) {
             return 0;
         }
-        
+
         // Group people by tile to only allow same-tile marriages
         const malesByTile = {};
         const femalesByTile = {};
