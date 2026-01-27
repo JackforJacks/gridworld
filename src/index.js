@@ -247,6 +247,15 @@ class GridWorldApp {
                         console.warn('Error handling villagesUpdated:', e);
                     }
                 });
+
+                // Listen for auto-save completion and log timing
+                this.socket.on('autoSaveComplete', (data) => {
+                    if (data.success) {
+                        console.log(`💾 Auto-save completed in ${data.elapsed}ms`);
+                    } else {
+                        console.warn(`💾 Auto-save failed in ${data.elapsed}ms: ${data.error}`);
+                    }
+                });
             });
         } catch (error) {
             console.error('Failed to initialize socket:', error);

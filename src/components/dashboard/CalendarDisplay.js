@@ -14,6 +14,10 @@ class CalendarDisplay {
         this.monthStepRadius = 44; // px
         this.monthDotSize = 8; // px
 
+        // Event handler references (for cleanup)
+        this.stateChangedHandler = null;
+        this.tickHandler = null;
+
         // Initialize the component
         this.init();
     }
@@ -199,15 +203,20 @@ class CalendarDisplay {
     setupEventListeners() {
         if (!this.calendarManager) return;
 
-        // Listen for calendar state changes
-        this.calendarManager.on('stateChanged', (state) => {
+        // Store handlers so we can remove them later in destroy()
+        this.stateChangedHandler = (state) => {
             this.updateDateDisplay(state);
-        });
+        };
+
+        this.tickHandler = (state) => {
+            this.updateDateDisplay(state);
+        };
+
+        // Listen for calendar state changes
+        this.calendarManager.on('stateChanged', this.stateChangedHandler);
 
         // Listen for calendar tick events
-        this.calendarManager.on('tick', (state) => {
-            this.updateDateDisplay(state);
-        });
+        this.calendarManager.on('tick', this.tickHandler);
     }
 
     /**
@@ -301,6 +310,31 @@ class CalendarDisplay {
         if (dateLabel) {
             dateLabel.textContent = '';
         }
+    }
+
+    /**
+     * Clean up event listeners and resources
+     */
+    destroy() {
+        if (this.calendarManager) {
+            if (this.stateChangedHandler) {
+                this.calendarManager.off('stateChanged', this.stateChangedHandler);
+                this.stateChangedHandler = null;
+            }
+            if (this.tickHandler) {
+                this.calendarManager.off('tick', this.tickHandler);
+                this.tickHandler = null;
+            }
+        }
+
+        // Remove DOM element if present
+        if (this.dateElement && this.dateElement.parentNode) {
+            this.dateElement.parentNode.removeChild(this.dateElement);
+        }
+
+        // Clear references
+        this.calendarManager = null;
+        this.dateElement = null;
     }
 }
 

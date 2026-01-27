@@ -5,6 +5,9 @@ const pool = require('../config/database');
 class PopulationState {
     // Track next ID for new people created in Redis (not yet in Postgres)
     static nextTempId = -1; // Negative IDs indicate new records not yet in Postgres
+    
+    // Global flag to indicate restart/clear in progress - tick handlers should check this
+    static isRestarting = false;
 
     /**
      * Get a new temporary ID for a person created in Redis-only mode
@@ -62,12 +65,13 @@ class PopulationState {
             if (isNew) {
                 await redis.sadd('pending:inserts', id);
             }
-            // Update demographic counters
+            // Update demographic counters - normalize sex to boolean first
+            const isMale = p.sex === true || p.sex === 'true' || p.sex === 1;
             const pipeline = redis.pipeline();
             pipeline.hincrby('counts:global', 'total', 1);
-            if (p.sex === true) {
+            if (isMale) {
                 pipeline.hincrby('counts:global', 'male', 1);
-            } else if (p.sex === false) {
+            } else {
                 pipeline.hincrby('counts:global', 'female', 1);
             }
             await pipeline.exec();
@@ -104,6 +108,17 @@ class PopulationState {
                 // If it was a pending insert, remove from that set
                 await redis.srem('pending:inserts', id);
 
+                // Defensive: remove from eligible sets if present
+                try { await this.removeEligiblePerson(personId, p.tile_id, p.sex === true ? 'male' : 'female'); } catch (_) { }
+
+                // Also remove from fertile family sets if needed (wife died)
+                try {
+                    // If this person was a wife linked to a family, remove that family from fertile set
+                    if (p.family_id) {
+                        await this.removeFertileFamily(p.family_id);
+                    }
+                } catch (_) { }
+
                 // Update demographic counters
                 const pipeline = redis.pipeline();
                 pipeline.hincrby('counts:global', 'total', -1);
@@ -139,6 +154,40 @@ class PopulationState {
             if (!person) return false;
             const updated = { ...person, ...updates };
             await redis.hset('person', personId.toString(), JSON.stringify(updated));
+
+            // If the person's tile or family assignment changed, update eligible sets defensively
+            try {
+                const oldTile = person.tile_id;
+                const newTile = updated.tile_id;
+                const oldFamily = person.family_id;
+                const newFamily = updated.family_id;
+                const sexStr = person.sex === true ? 'male' : (person.sex === false ? 'female' : null);
+
+                if (oldTile && newTile && oldTile !== newTile) {
+                    // Remove from old tile eligible sets (defensive)
+                    await this.removeEligiblePerson(personId, oldTile, sexStr);
+                }
+
+                // If person was assigned a family, remove from eligible sets
+                if (!oldFamily && newFamily) {
+                    await this.removeEligiblePerson(personId, newTile || oldTile, sexStr);
+                }
+
+                // If person was released from a family (family_id became null), attempt to add to eligible sets
+                if (oldFamily && !newFamily) {
+                    // Use a conservative current date (from calendar if available)
+                    let currentYear = 4000, currentMonth = 1, currentDay = 1;
+                    try {
+                        const CalendarService = require('../calendarService');
+                        // Only attempt if there's a calendar global (may not be required)
+                        // Skip if CalendarService isn't configured
+                    } catch (_) { }
+                    try {
+                        await this.addEligiblePerson(updated, currentYear, currentMonth, currentDay);
+                    } catch (_) { }
+                }
+            } catch (_) { /* ignore */ }
+
             return true;
         } catch (err) {
             console.warn('[PopulationState] updatePerson failed:', err.message);
@@ -198,6 +247,7 @@ class PopulationState {
         try {
             await redis.del('pending:inserts');
             await redis.del('pending:deletes');
+            await redis.del('pending:village:inserts');
         } catch (err) {
             console.warn('[PopulationState] clearPendingOperations failed:', err.message);
         }
@@ -265,6 +315,220 @@ class PopulationState {
         const parsed = { total: 0, male: 0, female: 0 };
         for (const [k, v] of Object.entries(all)) parsed[k] = parseInt(v, 10) || 0;
         return parsed;
+    }
+
+    /**
+     * Get total population count from Redis
+     */
+    static async getTotalPopulation() {
+        if (!isRedisAvailable()) return 0;
+        const counts = await this.getGlobalCounts();
+        return counts.total;
+    }
+
+    /**
+     * Add a family to the fertile family set if wife is of fertile age and family is eligible
+     * @param {number} familyId
+     * @param {number} currentYear
+     * @param {number} currentMonth
+     * @param {number} currentDay
+     */
+    static async addFertileFamily(familyId, currentYear = 4000, currentMonth = 1, currentDay = 1) {
+        if (!isRedisAvailable()) return false;
+        try {
+            const fJson = await redis.hget('family', familyId.toString());
+            if (!fJson) return false;
+            const family = JSON.parse(fJson);
+
+            if (family.pregnancy) return false;
+            const childrenCount = (family.children_ids || []).length;
+            if (childrenCount >= 5) return false;
+
+            // Get wife and check age
+            if (!family.wife_id) return false;
+            const wifeJson = await redis.hget('person', family.wife_id.toString());
+            if (!wifeJson) return false;
+            const wife = JSON.parse(wifeJson);
+            if (!wife.date_of_birth) return false;
+
+            // Compute age
+            let birthYear, birthMonth, birthDay;
+            if (typeof wife.date_of_birth === 'string') {
+                const datePart = wife.date_of_birth.split('T')[0];
+                [birthYear, birthMonth, birthDay] = datePart.split('-').map(Number);
+            } else if (wife.date_of_birth instanceof Date) {
+                birthYear = wife.date_of_birth.getFullYear();
+                birthMonth = wife.date_of_birth.getMonth() + 1;
+                birthDay = wife.date_of_birth.getDate();
+            } else {
+                const dateStr = String(wife.date_of_birth);
+                [birthYear, birthMonth, birthDay] = dateStr.split('-').map(Number);
+            }
+
+            let age = currentYear - birthYear;
+            if (currentMonth < birthMonth || (currentMonth === birthMonth && currentDay < birthDay)) age--;
+
+            // fertile age defined as <=33 and >=16
+            if (age >= 16 && age <= 33) {
+                await redis.sadd('eligible:pregnancy:families', familyId.toString());
+                try { await redis.incr('stats:pregnancy:eligible_added'); } catch (_) { }
+                return true;
+            }
+
+            return false;
+        } catch (err) {
+            console.warn('[PopulationState] addFertileFamily failed:', err.message);
+            return false;
+        }
+    }
+
+    /**
+     * Remove family from fertile set
+     * @param {number} familyId
+     */
+    static async removeFertileFamily(familyId) {
+        if (!isRedisAvailable()) return false;
+        try {
+            await redis.srem('eligible:pregnancy:families', familyId.toString());
+            try { await redis.incr('stats:pregnancy:eligible_removed'); } catch (_) { }
+            return true;
+        } catch (err) {
+            console.warn('[PopulationState] removeFertileFamily failed:', err.message);
+            return false;
+        }
+    }
+
+    // =========== ELIGIBLE MATCHMAKING HELPERS ===========
+
+    /**
+     * Add a person to eligible sets if they meet criteria (age & no family).
+     * Requires current date components to calculate age properly.
+     * @param {Object} person - person object from Redis
+     * @param {number} currentYear
+     * @param {number} currentMonth
+     * @param {number} currentDay
+     */
+    static async addEligiblePerson(person, currentYear, currentMonth, currentDay) {
+        if (!isRedisAvailable() || !person) return false;
+        try {
+            // Only singles are eligible
+            if (person.family_id) return false;
+            if (!person.date_of_birth) return false;
+
+            // Parse birth date
+            let birthYear, birthMonth, birthDay;
+            if (typeof person.date_of_birth === 'string') {
+                const datePart = person.date_of_birth.split('T')[0];
+                [birthYear, birthMonth, birthDay] = datePart.split('-').map(Number);
+            } else if (person.date_of_birth instanceof Date) {
+                birthYear = person.date_of_birth.getFullYear();
+                birthMonth = person.date_of_birth.getMonth() + 1;
+                birthDay = person.date_of_birth.getDate();
+            } else {
+                const dateStr = String(person.date_of_birth);
+                [birthYear, birthMonth, birthDay] = dateStr.split('-').map(Number);
+            }
+
+            // Calculate age
+            let age = currentYear - birthYear;
+            if (currentMonth < birthMonth || (currentMonth === birthMonth && currentDay < birthDay)) {
+                age--;
+            }
+
+            const isMale = person.sex === true || person.sex === 'true' || person.sex === 1;
+            const isFemale = person.sex === false || person.sex === 'false' || person.sex === 0;
+
+            if (isMale && age >= 16 && age <= 45) {
+                const tileId = person.tile_id || 0;
+                await redis.sadd(`eligible:males:tile:${tileId}`, person.id.toString());
+                await redis.sadd('tiles_with_eligible_males', tileId.toString());
+                return true;
+            }
+
+            if (isFemale && age >= 16 && age <= 30) {
+                const tileId = person.tile_id || 0;
+                await redis.sadd(`eligible:females:tile:${tileId}`, person.id.toString());
+                await redis.sadd('tiles_with_eligible_females', tileId.toString());
+                return true;
+            }
+
+            return false;
+        } catch (err) {
+            console.warn('[PopulationState] addEligiblePerson failed:', err.message);
+            return false;
+        }
+    }
+
+    /**
+     * Remove a person from eligible sets (defensive cleanup)
+     * @param {number} personId
+     * @param {number|string} tileId
+     * @param {string} sex - 'male'|'female' (optional, will attempt both if omitted)
+     */
+    static async removeEligiblePerson(personId, tileId = null, sex = null) {
+        if (!isRedisAvailable()) return false;
+        try {
+            const idStr = personId.toString();
+            // If tileId is known, remove directly
+            if (tileId !== null && tileId !== undefined) {
+                if (!sex || sex === 'male') {
+                    await redis.srem(`eligible:males:tile:${tileId}`, idStr);
+                }
+                if (!sex || sex === 'female') {
+                    await redis.srem(`eligible:females:tile:${tileId}`, idStr);
+                }
+                return true;
+            }
+
+            // If tile unknown, attempt to remove from both sets across all candidate tiles (best-effort)
+            // This is more expensive but rarely needed
+            try {
+                const maleTiles = await redis.smembers('tiles_with_eligible_males');
+                for (const t of maleTiles) await redis.srem(`eligible:males:tile:${t}`, idStr);
+            } catch (_) { /* ignore */ }
+            try {
+                const femaleTiles = await redis.smembers('tiles_with_eligible_females');
+                for (const t of femaleTiles) await redis.srem(`eligible:females:tile:${t}`, idStr);
+            } catch (_) { /* ignore */ }
+
+            // Also remove any family fertility record if this person was a wife
+            try {
+                // Best-effort: read person's family and remove family from fertile set
+                const person = await this.getPerson(personId);
+                if (person && person.family_id) {
+                    await this.removeFertileFamily(person.family_id);
+                }
+            } catch (_) { /* ignore */ }
+            return true;
+        } catch (err) {
+            console.warn('[PopulationState] removeEligiblePerson failed:', err.message);
+            return false;
+        }
+    }
+
+    /**
+     * Get population data for all tiles (format compatible with formatPopulationData)
+     * Returns an object with tile_id as key and population count as value
+     */
+    static async getAllTilePopulations() {
+        if (!isRedisAvailable()) return {};
+        try {
+            const people = await this.getAllPeople();
+            const tilePopulations = {};
+            for (const person of people) {
+                const tileId = person.tile_id;
+                // Skip people without a valid tile_id
+                if (tileId === null || tileId === undefined) continue;
+                if (!tilePopulations[tileId]) {
+                    tilePopulations[tileId] = 0;
+                }
+                tilePopulations[tileId]++;
+            }
+            return tilePopulations;
+        } catch (err) {
+            console.error('[PopulationState] getAllTilePopulations failed:', err.message);
+            return {};
+        }
     }
 
     /**
@@ -584,6 +848,62 @@ class PopulationState {
             }
         } catch (err) {
             console.warn('[PopulationState] reassignFamilyIds failed:', err.message);
+        }
+    }
+
+    /**
+     * Get pending village inserts (temp IDs)
+     */
+    static async getPendingVillageInserts() {
+        if (!isRedisAvailable()) return [];
+        try {
+            const ids = await redis.smembers('pending:village:inserts');
+            return ids.map(id => parseInt(id, 10));
+        } catch (err) {
+            console.warn('[PopulationState] getPendingVillageInserts failed:', err.message);
+            return [];
+        }
+    }
+
+    /**
+     * Reassign temporary village IDs to Postgres IDs after batch insert
+     * @param {Array} mappings - Array of { tempId, newId }
+     */
+    static async reassignVillageIds(mappings) {
+        if (!isRedisAvailable()) return;
+        try {
+            const readPipeline = redis.pipeline();
+            for (const { tempId } of mappings) {
+                readPipeline.hget('village', tempId.toString());
+                readPipeline.hget('village:cleared', tempId.toString());
+            }
+            const readResults = await readPipeline.exec();
+
+            const writePipeline = redis.pipeline();
+            for (let i = 0; i < mappings.length; i++) {
+                const { tempId, newId } = mappings[i];
+                const [vErr, vJson] = readResults[i * 2] || [];
+                const [cErr, clearedVal] = readResults[i * 2 + 1] || [];
+
+                if (vErr || !vJson) continue;
+                let village;
+                try { village = JSON.parse(vJson); } catch { continue; }
+
+                // Remove old entry and add with new ID
+                writePipeline.hdel('village', tempId.toString());
+                village.id = newId;
+                delete village._isNew;
+                writePipeline.hset('village', newId.toString(), JSON.stringify(village));
+
+                // Move cleared land count if exists
+                if (clearedVal) {
+                    writePipeline.hset('village:cleared', newId.toString(), clearedVal);
+                    writePipeline.hdel('village:cleared', tempId.toString());
+                }
+            }
+            await writePipeline.exec();
+        } catch (err) {
+            console.warn('[PopulationState] reassignVillageIds failed:', err.message);
         }
     }
 

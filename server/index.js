@@ -84,6 +84,7 @@ class GridWorldServer {
         if (!calendarServiceInstance) {
             console.log('🔧 Initializing Calendar Service singleton...');
             calendarServiceInstance = new CalendarService(this.io);
+            await calendarServiceInstance.initialize(); // Wait for DB state to load
             console.log('📅 Calendar Service singleton initialized');
         }
 
@@ -106,9 +107,9 @@ class GridWorldServer {
         // Load state from PostgreSQL to Redis
         console.log('🔧 Initializing State Manager (Redis)...');
         try {
-            await StateManager.loadFromDatabase();
             StateManager.setIo(this.io);
             StateManager.setCalendarService(calendarServiceInstance);
+            await StateManager.loadFromDatabase();
             console.log('🔴 State Manager initialized (Redis mode)');
 
             // If Redis reconnects later, re-sync automatically

@@ -23,11 +23,11 @@ class DataService {
             if (await fs.pathExists(this.dataFile)) {
                 const fileData = await fs.readJson(this.dataFile);
                 this.data = { ...this.data, ...fileData };
-                console.log('📂 Population data loaded from file');
+                if (config.verboseLogs) console.log('📂 Population data loaded from file');
                 return this.data;
             } else {
                 await this.saveData();
-                console.log('📂 Created new population data file');
+                if (config.verboseLogs) console.log('📂 Created new population data file');
                 return this.data;
             }
         } catch (error) {

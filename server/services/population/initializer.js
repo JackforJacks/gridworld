@@ -67,7 +67,7 @@ async function ensureTableExists(pool) {
             ALTER TABLE people ADD COLUMN IF NOT EXISTS family_id INTEGER REFERENCES family(id);
         `);
 
-        console.log('✅ Tables and indexes created successfully.');
+        if (config.verboseLogs) console.log('✅ Tables and indexes created successfully.');
     } catch (error) {
         console.error('Error ensuring table exists:', error);
         // It might be critical, consider re-throwing or handling more gracefully
@@ -79,7 +79,7 @@ async function ensureTableExists(pool) {
 async function initializeDatabase(pool) {
     try {
         await pool.query('SELECT NOW()');
-        console.log('Database connected successfully');
+        if (config.verboseLogs) console.log('Database connected successfully');
     } catch (error) {
         console.error('Database connection error:', error);
         // It might be critical, consider re-throwing or handling more gracefully
@@ -93,18 +93,48 @@ function startAutoSave(serviceInstance) {
         clearInterval(serviceInstance.autoSaveInterval);
     }
     serviceInstance.autoSaveInterval = setInterval(async () => {
+        const startTime = Date.now();
         try {
-            // Assuming saveData is a method on serviceInstance that needs to be called
+            // Pause calendar during auto-save to prevent race conditions
+            const calendarService = serviceInstance.calendarService;
+            const wasRunning = calendarService?.state?.isRunning;
+            if (wasRunning && calendarService) {
+                calendarService.stop();
+            }
+
+            // Perform save
+            let saveResult = null;
             if (serviceInstance.saveData && typeof serviceInstance.saveData === 'function') {
-                await serviceInstance.saveData();
+                saveResult = await serviceInstance.saveData();
             } else {
                 console.warn('[initializer.js] serviceInstance.saveData is not a function or not available.');
             }
+
+            // Resume calendar if it was running
+            if (wasRunning && calendarService) {
+                calendarService.start();
+            }
+
+            // Emit auto-save timing to clients
+            const elapsed = Date.now() - startTime;
+            if (serviceInstance.io) {
+                serviceInstance.io.emit('autoSaveComplete', { elapsed, success: true, result: saveResult });
+            }
         } catch (error) {
             console.error('❌ Auto-save failed:', error);
+            // Emit failure to clients
+            const elapsed = Date.now() - startTime;
+            if (serviceInstance.io) {
+                serviceInstance.io.emit('autoSaveComplete', { elapsed, success: false, error: error.message });
+            }
+            // Try to resume calendar even on error
+            const calendarService = serviceInstance.calendarService;
+            if (calendarService?.state?.isRunning === false && calendarService) {
+                try { calendarService.start(); } catch (_) {}
+            }
         }
     }, config.autoSaveInterval); // Use config for interval
-    console.log(`💾 Auto-save started (every ${config.autoSaveInterval / 1000}s)`);
+    if (config.verboseLogs) console.log(`💾 Auto-save started (every ${config.autoSaveInterval / 1000}s)`);
 }
 
 async function initializePopulationService(serviceInstance, io, calendarService) {
@@ -112,23 +142,10 @@ async function initializePopulationService(serviceInstance, io, calendarService)
     serviceInstance.calendarService = calendarService;
 
     if (serviceInstance.calendarService) {
-        serviceInstance.calendarService.on('monthChanged', async (newMonth, oldMonth) => {
-            // Quiet: monthChanged triggered; applying senescence (log suppressed)
-            try {
-                const pool = serviceInstance.getPool ? serviceInstance.getPool() : serviceInstance._pool || serviceInstance['#pool'];
-                if (!pool) {
-                    console.error('Error applying monthly senescence: Database pool is not available on serviceInstance.');
-                    return;
-                }
-                const deaths = await applySenescence(pool, serviceInstance.calendarService, serviceInstance);
-                if (deaths > 0) {
-                    // Quiet: monthly senescence occurred (log suppressed)
-                    await serviceInstance.broadcastUpdate('monthlySenescence');
-                }
-            } catch (error) {
-                console.error('Error applying monthly senescence:', error);
-            }
-        });        // Add daily family events processing
+        // Note: Senescence now runs daily in the tick() method with daily-adjusted probability
+        // for demographic realism (deaths happen gradually throughout the year)
+
+        // Add daily family events processing
         serviceInstance.calendarService.on('dayChanged', async (newDay, oldDay) => {
             try {
                 const pool = serviceInstance.getPool ? serviceInstance.getPool() : serviceInstance._pool || serviceInstance['#pool'];
@@ -177,7 +194,7 @@ async function initializePopulationService(serviceInstance, io, calendarService)
     // Use the new helper function
     startAutoSave(serviceInstance);
     startRateTracking(serviceInstance); // Pass serviceInstance as context
-    console.log('🌱 Population service initialized (from initializer.js)');
+    if (config.verboseLogs) console.log('🌱 Population service initialized (from initializer.js)');
 }
 
 module.exports = { initializePopulationService, ensureTableExists, initializeDatabase, startAutoSave };

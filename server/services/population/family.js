@@ -117,7 +117,16 @@ async function createRandomFamilies(pool, tileId, calendarService = null) {
         // Create families with random pairing
         for (let i = 0; i < maxPairs && i < 5; i++) { // Limit to 5 new families per tile per update
             try {
-                await createFamily(pool, males[i].id, females[i].id, tileId);
+                const newFamily = await createFamily(pool, males[i].id, females[i].id, tileId);
+
+                // If calendarService available, register the family as fertile candidate if applicable
+                try {
+                    if (newFamily && calendarService && typeof calendarService.getCurrentDate === 'function') {
+                        const cd = calendarService.getCurrentDate();
+                        const PopulationState = require('../populationState');
+                        await PopulationState.addFertileFamily(newFamily.id, cd.year, cd.month, cd.day);
+                    }
+                } catch (_) { }
 
                 // 30% chance of immediate pregnancy for new families
                 if (Math.random() < 0.3) {

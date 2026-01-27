@@ -1,5 +1,7 @@
 // Family Management - Handles family creation, pregnancy, and child management
 const { calculateAge } = require('./calculator.js');
+const redis = require('../../config/redis');
+const serverConfig = require('../../config/server.js');
 
 /**
  * Creates a new family unit - Redis-only, batched to Postgres on Save
@@ -10,18 +12,45 @@ const { calculateAge } = require('./calculator.js');
  * @returns {Object} Created family record
  */
 async function createFamily(pool, husbandId, wifeId, tileId) {
+    const { acquireLock, releaseLock } = require('../../utils/redisLock');
+    const PopulationState = require('../populationState');
+    const coupleKeyParts = [husbandId, wifeId].map(id => Number(id)).sort((a, b) => a - b);
+    const lockKey = `lock:couple:${coupleKeyParts[0]}:${coupleKeyParts[1]}`;
+    let lockToken = null;
+
     try {
-        const PopulationState = require('../populationState');
+        // Skip if restart is in progress
+        if (PopulationState.isRestarting) {
+            return null;
+        }
+
+        // Acquire a lock for this couple to avoid duplicate family creation
+        lockToken = await acquireLock(lockKey, 3000, 1500, 40);
+        if (!lockToken) {
+            try { await redis.incr('stats:matchmaking:contention'); } catch (_) { }
+            console.warn(`[createFamily] Could not acquire couple lock for ${husbandId} & ${wifeId} - skipping`);
+            return null;
+        }
 
         // Verify both people exist in Redis
         const husband = await PopulationState.getPerson(husbandId);
         const wife = await PopulationState.getPerson(wifeId);
 
         if (!husband || !wife) {
-            throw new Error('Both husband and wife must exist');
+            // Silently return null during restart/clear operations instead of throwing
+            return null;
         }
 
-        if (husband.sex !== true || wife.sex !== false) {
+        // Ensure neither already belongs to a family (double-check under lock)
+        if (husband.family_id || wife.family_id) {
+            console.warn(`[createFamily] Husband ${husbandId} or wife ${wifeId} already in a family - skipping`);
+            return null;
+        }
+
+        // Use truthy comparison for sex field (handles string/boolean variants from Redis)
+        const husbandIsMale = husband.sex === true || husband.sex === 'true' || husband.sex === 1;
+        const wifeIsFemale = wife.sex === false || wife.sex === 'false' || wife.sex === 0;
+        if (!husbandIsMale || !wifeIsFemale) {
             throw new Error('Husband must be male and wife must be female');
         }
 
@@ -44,12 +73,24 @@ async function createFamily(pool, husbandId, wifeId, tileId) {
         await PopulationState.updatePerson(husbandId, { family_id: familyId });
         await PopulationState.updatePerson(wifeId, { family_id: familyId });
 
+        // Remove both partners from eligible matchmaking sets (defensive)
+        try {
+            await PopulationState.removeEligiblePerson(husbandId, tileId, 'male');
+        } catch (e) { console.warn('[createFamily] removeEligiblePerson failed for husband:', e && e.message ? e.message : e); }
+        try {
+            await PopulationState.removeEligiblePerson(wifeId, tileId, 'female');
+        } catch (e) { console.warn('[createFamily] removeEligiblePerson failed for wife:', e && e.message ? e.message : e); }
+
         return family;
     } catch (error) {
         console.error('Error creating family:', error);
         throw error;
+    } finally {
+        if (lockToken) {
+            try { await releaseLock(lockKey, lockToken); } catch (e) { console.warn('[createFamily] failed to release lock:', e && e.message ? e.message : e); }
+        }
     }
-}
+} 
 
 /**
  * Starts pregnancy for a family - Redis-only
@@ -60,7 +101,27 @@ async function createFamily(pool, husbandId, wifeId, tileId) {
  */
 async function startPregnancy(pool, calendarService, familyId) {
     const PopulationState = require('../populationState');
+    const { acquireLock, releaseLock } = require('../../utils/redisLock');
+    const lockKey = `lock:family:${familyId}`;
+    let lockToken = null;
+
     try {
+        // Record an attempt
+        try { await redis.incr('stats:pregnancy:attempts'); } catch (_) { }
+
+        // Skip if restart is in progress
+        if (PopulationState.isRestarting) {
+            return null;
+        }
+
+        // Try to acquire an atomic lock for this family to avoid concurrent pregnancies
+        lockToken = await acquireLock(lockKey, 5000, 2000, 50);
+        if (!lockToken) {
+            try { await redis.incr('stats:pregnancy:contention'); } catch (_) { }
+            console.warn(`[startPregnancy] Could not acquire lock for family ${familyId} - another operation in progress`);
+            return null;
+        }
+
         // Get current calendar date
         let currentDate = { year: 1, month: 1, day: 1 };
         if (calendarService && typeof calendarService.getCurrentDate === 'function') {
@@ -70,17 +131,21 @@ async function startPregnancy(pool, calendarService, familyId) {
         // Get family from Redis
         const family = await PopulationState.getFamily(familyId);
         if (!family) {
-            throw new Error(`Family ${familyId} not found`);
+            // Silently return null during restart/clear operations
+            return null;
         }
 
+        // Double-check pregnancy state under the lock (prevents races)
         if (family.pregnancy) {
-            throw new Error(`Family ${familyId} is already pregnant`);
+            console.warn(`Family ${familyId} is already pregnant - skipping startPregnancy`);
+            return null;
         }
 
         // Get wife from Redis
         const wife = await PopulationState.getPerson(family.wife_id);
         if (!wife || !wife.date_of_birth) {
-            throw new Error(`Wife ${family.wife_id} not found in Redis or missing birth date`);
+            // Silently return null during restart/clear operations
+            return null;
         }
 
         const wifeBirthDate = wife.date_of_birth;
@@ -128,11 +193,23 @@ async function startPregnancy(pool, calendarService, familyId) {
             delivery_date: deliveryDate
         });
 
+        // Remove family from fertile set so it is not considered for concurrent pregnancies
+        try { await PopulationState.removeFertileFamily(familyId); } catch (_) { }
+
         // Return updated family
         return { ...family, pregnancy: true, delivery_date: deliveryDate };
     } catch (error) {
         console.error(`Error starting pregnancy for family ${familyId}:`, error.message || error);
         throw error;
+    } finally {
+        // Release lock if it was acquired
+        if (lockToken) {
+            try {
+                await releaseLock(lockKey, lockToken);
+            } catch (e) {
+                console.warn(`[startPregnancy] Failed releasing lock for family ${familyId}:`, e && e.message ? e.message : e);
+            }
+        }
     }
 }
 
@@ -145,7 +222,18 @@ async function startPregnancy(pool, calendarService, familyId) {
  * @returns {Object} Result with baby and updated family
  */
 async function deliverBaby(pool, calendarService, populationServiceInstance, familyId) {
+    const { acquireLock, releaseLock } = require('../../utils/redisLock');
+    const lockKey = `lock:family:${familyId}`;
+    let lockToken = null;
+
     try {
+        // Acquire lock to ensure single delivery per family
+        lockToken = await acquireLock(lockKey, 5000, 2000, 50);
+        if (!lockToken) {
+            console.warn(`[deliverBaby] Could not acquire lock for family ${familyId} - skipping delivery`);
+            return null;
+        }
+
         const PopulationState = require('../populationState');
         const { isRedisAvailable } = require('../../config/redis');
 
@@ -206,6 +294,9 @@ async function deliverBaby(pool, calendarService, populationServiceInstance, fam
             populationServiceInstance.trackBirths(1);
         }
 
+        // Record delivery metric
+        try { await redis.incr('stats:deliveries:count'); } catch (_) { }
+
         return {
             baby: { id: babyId, sex: babySex, birthDate },
             family: { ...family, children_ids: updatedChildrenIds }
@@ -213,8 +304,12 @@ async function deliverBaby(pool, calendarService, populationServiceInstance, fam
     } catch (error) {
         console.error('Error delivering baby:', error);
         throw error;
+    } finally {
+        if (lockToken) {
+            try { await releaseLock(lockKey, lockToken); } catch (e) { console.warn('[deliverBaby] failed to release lock:', e && e.message ? e.message : e); }
+        }
     }
-}
+} 
 
 /**
  * Gets all families on a specific tile - from Redis
@@ -238,11 +333,17 @@ async function getFamiliesOnTile(pool, tileId) {
  * @param {Pool} pool - Database pool instance (kept for API compatibility)
  * @param {Object} calendarService - Calendar service instance
  * @param {PopulationService} populationServiceInstance - Population service instance
+ * @param {number} daysAdvanced - Number of days passed in this tick (for future use)
  * @returns {number} Number of babies born
  */
-async function processDeliveries(pool, calendarService, populationServiceInstance) {
+async function processDeliveries(pool, calendarService, populationServiceInstance, daysAdvanced = 1) {
     try {
         const PopulationState = require('../populationState');
+
+        // Skip if restart is in progress
+        if (PopulationState.isRestarting) {
+            return 0;
+        }
 
         // Get current calendar date
         let currentDate = { year: 1, month: 1, day: 1 };
@@ -264,21 +365,55 @@ async function processDeliveries(pool, calendarService, populationServiceInstanc
 
         let babiesDelivered = 0;
         for (const family of readyFamilies) {
+            const { acquireLock, releaseLock } = require('../../utils/redisLock');
+            const lockKey = `lock:family:${family.id}`;
+            let lockToken = null;
             try {
+                // Try to acquire a lock for this family to prevent concurrent deliveries
+                lockToken = await acquireLock(lockKey, 5000, 1500, 50);
+                if (!lockToken) {
+                    try { await redis.incr('stats:deliveries:contention'); } catch (_) { }
+                    console.warn(`[processDeliveries] Could not acquire lock for family ${family.id} - skipping delivery this cycle`);
+                    continue;
+                }
+
                 // Re-verify family still exists (may have been reassigned during save)
                 const currentFamily = await PopulationState.getFamily(family.id);
                 if (!currentFamily) {
                     // Family ID was likely reassigned during save, skip silently
                     continue;
                 }
-                // Clear pregnancy status in Redis before delivery
+
+                // Ensure the family is still marked as pregnant and due
+                if (!currentFamily.pregnancy || !currentFamily.delivery_date) {
+                    continue;
+                }
+
+                        // Clear pregnancy status in Redis before delivery
                 await PopulationState.updateFamily(family.id, { pregnancy: false, delivery_date: null });
-                await deliverBaby(pool, calendarService, populationServiceInstance, family.id);
+                const res = await deliverBaby(pool, calendarService, populationServiceInstance, family.id);
+                // After delivery, if still eligible, add back to fertile family set
+                try {
+                    if (res && res.family) {
+                        const f = res.family;
+                        // Check if wife still fertile and children < 5
+                        const wife = await PopulationState.getPerson(f.wife_id);
+                        if (wife && wife.date_of_birth) {
+                            // get current date
+                            const cd = calendarService && typeof calendarService.getCurrentDate === 'function' ? calendarService.getCurrentDate() : { year: 4000, month: 1, day: 1 };
+                            await PopulationState.addFertileFamily(f.id, cd.year, cd.month, cd.day);
+                        }
+                    }
+                } catch (e) { /* ignore */ }
                 babiesDelivered++;
             } catch (error) {
                 // Suppress "Family not found" errors (race condition with save)
                 if (!error.message.includes('Family not found')) {
                     console.error(`Error delivering baby for family ${family.id}:`, error);
+                }
+            } finally {
+                if (lockToken) {
+                    try { await releaseLock(lockKey, lockToken); } catch (e) { console.warn('[processDeliveries] failed to release lock:', e && e.message ? e.message : e); }
                 }
             }
         }
@@ -335,6 +470,11 @@ async function formNewFamilies(pool, calendarService) {
         const PopulationState = require('../populationState');
         const { calculateAge } = require('./calculator.js');
 
+        // Skip if restart is in progress
+        if (PopulationState.isRestarting) {
+            return 0;
+        }
+
         // Get current calendar date for age calculations
         let currentDate = { year: 1, month: 1, day: 1 };
         if (calendarService && typeof calendarService.getCurrentDate === 'function') {
@@ -343,99 +483,83 @@ async function formNewFamilies(pool, calendarService) {
 
         const { year, month, day } = currentDate;
 
-        // Get all people from Redis
-        const allPeople = await PopulationState.getAllPeople();
+// Use Redis-based eligible sets for faster matchmaking
+    // Collect tiles that have eligible males or females
+    const maleTiles = await redis.smembers('tiles_with_eligible_males');
+    const femaleTiles = await redis.smembers('tiles_with_eligible_females');
+    const tileSet = new Set([...maleTiles, ...femaleTiles]);
 
-        // Filter eligible bachelors from Redis data
-        const eligibleMales = [];
-        const eligibleFemales = [];
+    let newFamiliesCount = 0;
 
-        for (const person of allPeople) {
-            // Skip if already in a family
-            if (person.family_id) continue;
-            if (!person.date_of_birth) continue;
+    for (const tileId of tileSet) {
+        try {
+            const maleSetKey = `eligible:males:tile:${tileId}`;
+            const femaleSetKey = `eligible:females:tile:${tileId}`;
 
-            const age = calculateAge(person.date_of_birth, year, month, day);
+            // Check approximate counts
+            const maleCount = parseInt(await redis.scard(maleSetKey), 10) || 0;
+            const femaleCount = parseInt(await redis.scard(femaleSetKey), 10) || 0;
 
-            if (person.sex === true && age >= 16 && age <= 45) {
-                eligibleMales.push(person);
-            } else if (person.sex === false && age >= 16 && age <= 30) {
-                eligibleFemales.push(person);
-            }
-        }
-
-        // Shuffle for randomness
-        eligibleMales.sort(() => Math.random() - 0.5);
-        eligibleFemales.sort(() => Math.random() - 0.5);
-
-        if (eligibleMales.length === 0 || eligibleFemales.length === 0) {
-            return 0;
-        }
-
-        // Group people by tile to only allow same-tile marriages
-        const malesByTile = {};
-        const femalesByTile = {};
-
-        eligibleMales.forEach(male => {
-            if (!malesByTile[male.tile_id]) malesByTile[male.tile_id] = [];
-            malesByTile[male.tile_id].push(male);
-        });
-
-        eligibleFemales.forEach(female => {
-            if (!femalesByTile[female.tile_id]) femalesByTile[female.tile_id] = [];
-            femalesByTile[female.tile_id].push(female);
-        });
-
-        let newFamiliesCount = 0;
-        const usedMales = new Set();
-        const usedFemales = new Set();
-
-        // Only same-tile marriages: match people from the same tile only
-        for (const tileId of Object.keys(malesByTile)) {
-            const tiledMales = malesByTile[tileId];
-            const tiledFemales = femalesByTile[tileId] || [];
-
-            if (tiledFemales.length === 0) {
-                console.log(`   Tile ${tileId}: ${tiledMales.length} eligible males but no eligible females`);
+            if (maleCount === 0 || femaleCount === 0) {
+                // Nothing to do on this tile
                 continue;
             }
 
-            const pairs = Math.min(tiledMales.length, tiledFemales.length);
-            console.log(`   Tile ${tileId}: Forming ${pairs} families from ${tiledMales.length} males and ${tiledFemales.length} females`);
+            const pairs = Math.min(maleCount, femaleCount);
+            if (serverConfig.verboseLogs) console.log(`   Tile ${tileId}: Attempting up to ${pairs} pairings (${maleCount} males, ${femaleCount} females)`);
 
             for (let i = 0; i < pairs; i++) {
-                const male = tiledMales[i];
-                const female = tiledFemales[i];
+                // Record attempt
+                try { await redis.incr('stats:matchmaking:attempts'); } catch (_) { }
 
-                if (!usedMales.has(male.id) && !usedFemales.has(female.id)) {
-                    try {
-                        // createFamily now returns the family with its (temp) ID
-                        const newFamily = await createFamily(pool, male.id, female.id, parseInt(tileId));
-                        usedMales.add(male.id);
-                        usedFemales.add(female.id);
-                        newFamiliesCount++;
-
-                        // Higher chance to start immediate pregnancy (40% - increased to boost birth rates to 40 per 1000 per year)
-                        if (Math.random() < 0.40) {
-                            await startPregnancy(pool, calendarService, newFamily.id);
-                        }
-                    } catch (error) {
-                        console.error(`Error creating family between ${male.id} and ${female.id} on tile ${tileId}:`, error);
-                    }
+                // Pop one candidate from each set
+                const maleId = await redis.spop(maleSetKey);
+                if (!maleId) break; // no more males
+                const femaleId = await redis.spop(femaleSetKey);
+                if (!femaleId) {
+                    // Put male back and stop trying for this tile now
+                    await redis.sadd(maleSetKey, maleId);
+                    break;
                 }
+
+                // Attempt to create family
+                try {
+                    const newFamily = await createFamily(pool, parseInt(maleId), parseInt(femaleId), parseInt(tileId));
+                    if (!newFamily) {
+                        // Creation failed (race or restart) - return survivors to sets
+                        await redis.sadd(maleSetKey, maleId);
+                        await redis.sadd(femaleSetKey, femaleId);
+                        continue;
+                    }
+                    // Add family to fertile family set if wife is fertile
+                    try {
+                        await PopulationState.addFertileFamily(newFamily.id, year, month, day);
+                    } catch (_) { }
+
+                    newFamiliesCount++;
+
+                    // 40% chance to start immediate pregnancy
+                    if (Math.random() < 0.40) {
+                        try { await startPregnancy(pool, calendarService, newFamily.id); } catch (e) { /* ignore */ }
+                    }
+                } catch (err) {
+                    try { await redis.incr('stats:matchmaking:failures'); } catch (_) { }
+                    console.error(`Error creating family between ${maleId} and ${femaleId} on tile ${tileId}:`, err);
+                    // Return survivors to sets
+                    try { await redis.sadd(maleSetKey, maleId); } catch (_) { }
+                    try { await redis.sadd(femaleSetKey, femaleId); } catch (_) { }
+                }
+            }
+        } catch (err) {
+            console.warn('[formNewFamilies] Error processing tile:', tileId, err && err.message ? err.message : err);
             }
         }
 
-        // Report any remaining singles who couldn't find partners on their tile
-        const remainingMales = eligibleMales.filter(m => !usedMales.has(m.id));
-        const remainingFemales = eligibleFemales.filter(f => !usedFemales.has(f.id));
-
-        if (remainingMales.length > 0 || remainingFemales.length > 0) {
-            console.log(`   ⚠️  ${remainingMales.length} males and ${remainingFemales.length} females remain single (no eligible partners on their tile)`);
-        }
+        // Note: with Redis-based matchmaking we don't perform a full scan report of remaining singles here.
+        // Per-tile eligible sets may contain remaining members; monitor with metrics if needed.
 
         if (newFamiliesCount > 0) {
-            console.log(`💒 Formed ${newFamiliesCount} new families (same-tile marriages only)`);
+            if (serverConfig.verboseLogs) console.log(`💒 Formed ${newFamiliesCount} new families (same-tile marriages only)`);
         }
 
         return newFamiliesCount;

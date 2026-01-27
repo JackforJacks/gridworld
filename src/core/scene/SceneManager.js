@@ -291,16 +291,33 @@ class SceneManager {
 
     // Regenerate tiles with new terrain and habitability
     async regenerateTiles() {
+        // Require user confirmation before wiping all data
+        const confirmed = window.confirm(
+            '⚠️ WARNING: This will DELETE ALL POPULATION DATA permanently!\n\n' +
+            'All people, families, and villages will be wiped and regenerated.\n\n' +
+            'Are you absolutely sure you want to regenerate tiles?'
+        );
+        
+        if (!confirmed) {
+            console.log('🚫 Tile regeneration cancelled by user');
+            return;
+        }
+        
         try {
-            console.log('🌍 Regenerating tiles with new terrain...');
+            console.log('🌍 Regenerating tiles with new terrain (user confirmed)...');
 
             // First, restart the world to get a new seed
-            const restartResponse = await fetch('/api/tiles/restart', { method: 'POST' });
+            const restartResponse = await fetch('/api/worldrestart', { 
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ confirm: 'DELETE_ALL_DATA' })
+            });
             if (!restartResponse.ok) {
-                throw new Error(`Failed to restart world: ${restartResponse.status}`);
+                const errorData = await restartResponse.json().catch(() => ({}));
+                throw new Error(`Failed to restart world: ${restartResponse.status} - ${errorData.message || 'Unknown error'}`);
             }
             const restartData = await restartResponse.json();
-            console.log(`🎲 World restarted with new seed: ${restartData.newSeed}`);
+            console.log(`🎲 World restarted with new seed: ${restartData.newSeed} (took ${restartData.elapsed}ms)`);
 
             // Attempt to apply server calendar state to client. If restart response lacks it, fetch /api/calendar/state
             try {

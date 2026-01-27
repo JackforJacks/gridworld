@@ -33,9 +33,11 @@ async function updateDataAndBroadcast(io, saveDataFn, getAllDataFn, eventType = 
 function setupRealtimeListeners(io, serviceInstance) {
     if (!io) return;
 
+    const config = require('../../config/server.js');
+
     // Listen for client requests for population data
     io.on('connection', (socket) => {
-        console.log('Client connected for population updates');
+        if (config.verboseLogs) console.log('Client connected for population updates');
 
         // Send initial population data
         socket.on('requestPopulationData', async () => {
@@ -50,7 +52,7 @@ function setupRealtimeListeners(io, serviceInstance) {
 
         // Handle client disconnect
         socket.on('disconnect', () => {
-            console.log('Client disconnected from population updates');
+            if (config.verboseLogs) console.log('Client disconnected from population updates');
         });
     });
 }

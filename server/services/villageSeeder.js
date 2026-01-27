@@ -1,4 +1,6 @@
 const pool = require('../config/database');
+const redis = require('../config/redis');
+const { isRedisAvailable } = require('../config/redis');
 
 // Ensure tiles_lands has village_id column (older DBs may miss this column)
 let ensureVillageIdColumnPromise = null;
@@ -19,86 +21,164 @@ async function ensureVillageIdColumn() {
 
 async function seedRandomVillages(count = null) {
     await ensureVillageIdColumn();
-    const min = 3;
-    const max = 30;
-    const requested = Number.isInteger(count) ? count : null;
-    // Seed villages for each habitable tile: 3..30 villages per tile (or `count` per-tile if provided)
-    const perTileMin = min;
-    const perTileMax = max;
-    const useFixedPerTile = Number.isInteger(count) && count > 0;
+    const perTileMax = 30;
+    const housingCapacity = 1000;
 
     await pool.query('BEGIN');
     try {
-        // Get tiles that currently have people (only seed where population exists)
+        // Get tiles with population count in a single query
         const { rows: populatedTiles } = await pool.query(`
-            SELECT DISTINCT tile_id FROM people WHERE tile_id IS NOT NULL
+            SELECT tile_id, COUNT(*)::int AS population
+            FROM people 
+            WHERE tile_id IS NOT NULL
+            GROUP BY tile_id
         `);
+        
         if (!populatedTiles || populatedTiles.length === 0) {
             await pool.query('ROLLBACK');
             return { created: 0, villages: [] };
         }
 
-        const inserted = [];
+        // Delete all existing villages for populated tiles at once
+        const tileIds = populatedTiles.map(t => t.tile_id);
+        await pool.query(`DELETE FROM villages WHERE tile_id = ANY($1)`, [tileIds]);
+
+        // Get all available cleared chunks for all tiles at once
+        const { rows: allChunks } = await pool.query(`
+            SELECT tl.tile_id, tl.chunk_index
+            FROM tiles_lands tl
+            WHERE tl.tile_id = ANY($1) AND tl.land_type = 'cleared'
+            ORDER BY tl.tile_id, RANDOM()
+        `, [tileIds]);
+
+        // Group chunks by tile_id
+        const chunksByTile = {};
+        for (const chunk of allChunks) {
+            if (!chunksByTile[chunk.tile_id]) chunksByTile[chunk.tile_id] = [];
+            chunksByTile[chunk.tile_id].push(chunk.chunk_index);
+        }
+
+        // Build batch insert for villages
+        const villageValues = [];
+        const villageParams = [];
+        let paramIndex = 1;
+        const villageMap = []; // Track tile_id and chunk_index for each village
 
         for (const t of populatedTiles) {
             const tileId = t.tile_id;
-            // Get current population on the tile
-            const { rows: peopleCountRows } = await pool.query(`SELECT COUNT(*)::int AS cnt FROM people WHERE tile_id = $1`, [tileId]);
-            const tilePopulation = (peopleCountRows && peopleCountRows[0]) ? Number(peopleCountRows[0].cnt) : 0;
-            // Determine number of villages based on tile population.
-            const housingCapacity = 1000;
+            const tilePopulation = t.population;
             let desiredVillages = Math.ceil(tilePopulation / housingCapacity);
-            desiredVillages = Math.max(1, desiredVillages);
-            desiredVillages = Math.min(perTileMax, desiredVillages);
+            desiredVillages = Math.max(1, Math.min(perTileMax, desiredVillages));
 
-            // Clear existing villages on this tile to ensure only the right amount
-            await pool.query(`DELETE FROM villages WHERE tile_id = $1`, [tileId]);
+            const availableChunks = chunksByTile[tileId] || [];
+            const chunksToUse = availableChunks.slice(0, desiredVillages);
 
-            // Fetch available cleared chunks for this tile (now all should be available)
-            const { rows: available } = await pool.query(`
-                SELECT tl.chunk_index
-                FROM tiles_lands tl
-                LEFT JOIN villages v ON v.tile_id = tl.tile_id AND v.land_chunk_index = tl.chunk_index
-                WHERE tl.tile_id = $1 AND tl.land_type = 'cleared' AND v.id IS NULL
-                ORDER BY random()
-                LIMIT $2
-            `, [tileId, desiredVillages]);
-
-            if (!available || available.length === 0) {
-                continue; // nothing to place here
+            for (const chunkIndex of chunksToUse) {
+                const name = `Village ${tileId}-${chunkIndex}`;
+                villageValues.push(`($${paramIndex}, $${paramIndex+1}, $${paramIndex+2}, $${paramIndex+3}, $${paramIndex+4})`);
+                villageParams.push(tileId, chunkIndex, name, JSON.stringify([]), housingCapacity);
+                villageMap.push({ tile_id: tileId, chunk_index: chunkIndex });
+                paramIndex += 5;
             }
+        }
 
-            for (const r of available) {
-                const name = `Village ${tileId}-${r.chunk_index}`;
-                const housingSlots = JSON.stringify([]); // currently empty list of assigned family ids
-                // Each village has fixed capacity 1000
-                const housingCapacity = 1000;
-                const { rows } = await pool.query(`
-                    INSERT INTO villages (tile_id, land_chunk_index, name, housing_slots, housing_capacity)
-                    VALUES ($1, $2, $3, $4, $5)
-                    RETURNING *
-                `, [tileId, r.chunk_index, name, housingSlots, housingCapacity]);
-                const village = rows[0];
-                inserted.push(village);
+        let insertedCount = 0;
+        if (villageValues.length > 0) {
+            // Batch insert all villages
+            const { rows: insertedVillages } = await pool.query(`
+                INSERT INTO villages (tile_id, land_chunk_index, name, housing_slots, housing_capacity)
+                VALUES ${villageValues.join(', ')}
+                RETURNING id, tile_id, land_chunk_index
+            `, villageParams);
+            insertedCount = insertedVillages.length;
+
+            // Batch update tiles_lands with village_ids
+            if (insertedVillages.length > 0) {
+                const updateCases = insertedVillages.map(v => 
+                    `WHEN tile_id = ${v.tile_id} AND chunk_index = ${v.land_chunk_index} THEN ${v.id}`
+                ).join(' ');
+                const wherePairs = insertedVillages.map(v => 
+                    `(tile_id = ${v.tile_id} AND chunk_index = ${v.land_chunk_index})`
+                ).join(' OR ');
+                
                 try {
                     await pool.query(`
-                        UPDATE tiles_lands SET village_id = $1
-                        WHERE tile_id = $2 AND chunk_index = $3
-                    `, [village.id, tileId, r.chunk_index]);
+                        UPDATE tiles_lands SET village_id = CASE ${updateCases} END
+                        WHERE ${wherePairs}
+                    `);
                 } catch (e) {
-                    // ignore if `village_id` column does not exist or update fails
-                    console.warn('[villageSeeder] could not update tiles_lands.village_id - skipping:', e.message);
+                    console.warn('[villageSeeder] could not batch update tiles_lands.village_id:', e.message);
                 }
             }
         }
 
-        // Assign residency for all seeded tiles
-        for (const t of populatedTiles) {
-            await assignResidencyForTile(t.tile_id);
+        // Batch assign residency - get all villages grouped by tile
+        const { rows: allVillages } = await pool.query(`
+            SELECT id, tile_id, land_chunk_index, housing_slots, housing_capacity
+            FROM villages WHERE tile_id = ANY($1)
+            ORDER BY tile_id, id
+        `, [tileIds]);
+
+        // Get all unassigned people in a single query
+        const { rows: unassignedPeople } = await pool.query(`
+            SELECT id, tile_id FROM people
+            WHERE tile_id = ANY($1) AND (residency IS NULL OR residency = 0)
+            ORDER BY tile_id, RANDOM()
+        `, [tileIds]);
+
+        // Group people by tile
+        const peopleByTile = {};
+        for (const person of unassignedPeople) {
+            if (!peopleByTile[person.tile_id]) peopleByTile[person.tile_id] = [];
+            peopleByTile[person.tile_id].push(person.id);
+        }
+
+        // Group villages by tile
+        const villagesByTile = {};
+        for (const v of allVillages) {
+            if (!villagesByTile[v.tile_id]) villagesByTile[v.tile_id] = [];
+            villagesByTile[v.tile_id].push(v);
+        }
+
+        // Build batch updates for residency and housing_slots
+        const residencyUpdates = []; // { residency, personIds }
+        const housingUpdates = [];   // { villageId, slots }
+
+        for (const tileId of tileIds) {
+            const villages = villagesByTile[tileId] || [];
+            const people = peopleByTile[tileId] || [];
+            let peopleIndex = 0;
+
+            for (const village of villages) {
+                const currentSlots = village.housing_slots || [];
+                const available = village.housing_capacity - currentSlots.length;
+                if (available <= 0 || peopleIndex >= people.length) continue;
+
+                const toAssign = Math.min(available, people.length - peopleIndex);
+                const assignedIds = people.slice(peopleIndex, peopleIndex + toAssign);
+
+                residencyUpdates.push({ residency: village.land_chunk_index, personIds: assignedIds });
+                housingUpdates.push({ villageId: village.id, slots: [...currentSlots, ...assignedIds] });
+
+                peopleIndex += toAssign;
+            }
+        }
+
+        // Execute residency updates in batches
+        for (const update of residencyUpdates) {
+            await pool.query(`UPDATE people SET residency = $1 WHERE id = ANY($2)`, 
+                [update.residency, update.personIds]);
+        }
+
+        // Execute housing_slots updates in batches
+        for (const update of housingUpdates) {
+            await pool.query(`UPDATE villages SET housing_slots = $1 WHERE id = $2`,
+                [JSON.stringify(update.slots), update.villageId]);
         }
 
         await pool.query('COMMIT');
-        return { created: inserted.length, villages: inserted };
+        console.log(`[villageSeeder] Created ${insertedCount} villages, assigned residency for ${unassignedPeople.length} people`);
+        return { created: insertedCount, villages: [] };
     } catch (err) {
         await pool.query('ROLLBACK');
         throw err;
@@ -114,7 +194,193 @@ async function seedIfNoVillages() {
     return { created: 0, villages: [] };
 }
 
-module.exports = { seedRandomVillages, seedIfNoVillages, assignResidencyForTile };
+// Note: module.exports is at the end of the file
+
+/**
+ * Redis-first village seeding - reads population from Redis, writes villages to Redis
+ * @returns {Promise<Object>} Result with created count and villages
+ */
+async function seedVillagesRedisFirst() {
+    if (!isRedisAvailable()) {
+        console.warn('[villageSeeder] Redis not available - falling back to Postgres seeding');
+        return seedRandomVillages();
+    }
+
+    await ensureVillageIdColumn();
+    const perTileMax = 30;
+    const housingCapacity = 1000;
+
+    try {
+        const PopulationState = require('./populationState');
+        const StateManager = require('./stateManager');
+
+        // Get population counts per tile from Redis
+        const tilePopulations = await PopulationState.getAllTilePopulations();
+        const populatedTileIds = Object.keys(tilePopulations).filter(id => tilePopulations[id] > 0);
+
+        if (populatedTileIds.length === 0) {
+            console.log('[villageSeeder] No populated tiles in Redis');
+            return { created: 0, villages: [] };
+        }
+
+        console.log(`[villageSeeder] Found ${populatedTileIds.length} populated tiles in Redis`);
+
+        // Clear existing villages in Redis
+        await redis.del('village');
+
+        // Get cleared chunks from Postgres (tiles_lands stays in Postgres)
+        const { rows: allChunks } = await pool.query(`
+            SELECT tl.tile_id, tl.chunk_index
+            FROM tiles_lands tl
+            WHERE tl.tile_id = ANY($1) AND tl.land_type = 'cleared'
+            ORDER BY tl.tile_id, RANDOM()
+        `, [populatedTileIds.map(id => parseInt(id))]);
+
+        // Group chunks by tile_id
+        const chunksByTile = {};
+        for (const chunk of allChunks) {
+            if (!chunksByTile[chunk.tile_id]) chunksByTile[chunk.tile_id] = [];
+            chunksByTile[chunk.tile_id].push(chunk.chunk_index);
+        }
+
+        // Generate villages in memory
+        const allVillages = [];
+        // Use the PopulationState temp ID generator to get unique negative IDs
+
+        for (const tileIdStr of populatedTileIds) {
+            const tileId = parseInt(tileIdStr);
+            const tilePopulation = tilePopulations[tileIdStr];
+            let desiredVillages = Math.ceil(tilePopulation / housingCapacity);
+            desiredVillages = Math.max(1, Math.min(perTileMax, desiredVillages));
+
+            const availableChunks = chunksByTile[tileId] || [];
+            const chunksToUse = availableChunks.slice(0, desiredVillages);
+
+            for (const chunkIndex of chunksToUse) {
+                // Acquire a temporary negative ID for the village
+                const tempId = await PopulationState.getNextTempId();
+                const village = {
+                    id: tempId,
+                    tile_id: tileId,
+                    land_chunk_index: chunkIndex,
+                    name: `Village ${tileId}-${chunkIndex}`,
+                    housing_slots: [],
+                    housing_capacity: housingCapacity,
+                    food_stores: 100,
+                    food_capacity: 1000,
+                    food_production_rate: 0.5
+                };
+                allVillages.push(village);
+            }
+        }
+
+        // Write all villages to Redis
+        const pipeline = redis.pipeline();
+        for (const village of allVillages) {
+            pipeline.hset('village', village.id.toString(), JSON.stringify(village));
+        }
+        // Track for pending inserts to Postgres
+        for (const village of allVillages) {
+            pipeline.sadd('pending:village:inserts', village.id.toString());
+        }
+        await pipeline.exec();
+
+        console.log(`[villageSeeder] Created ${allVillages.length} villages in Redis (pending Postgres save)`);
+
+        // Assign residency to people in Redis
+        await assignResidencyRedis(populatedTileIds, allVillages);
+
+        return { created: allVillages.length, villages: allVillages };
+    } catch (err) {
+        console.error('[villageSeeder] Redis-first seeding failed:', err);
+        throw err;
+    }
+}
+
+/**
+ * Assign residency to people in Redis
+ */
+async function assignResidencyRedis(populatedTileIds, allVillages) {
+    try {
+        const PopulationState = require('./populationState');
+
+        // Group villages by tile
+        const villagesByTile = {};
+        for (const v of allVillages) {
+            if (!villagesByTile[v.tile_id]) villagesByTile[v.tile_id] = [];
+            villagesByTile[v.tile_id].push(v);
+        }
+
+        // Get all people from Redis
+        const allPeople = await PopulationState.getAllPeople();
+
+        // Group people by tile (include those with existing residency so we can reset and reassign)
+        const peopleByTile = {};
+        for (const p of allPeople) {
+            if (p.tile_id) {
+                if (!peopleByTile[p.tile_id]) peopleByTile[p.tile_id] = [];
+                peopleByTile[p.tile_id].push(p);
+            }
+        }
+
+        // Assign people to villages
+        for (const tileIdStr of populatedTileIds) {
+            const tileId = parseInt(tileIdStr);
+            const villages = villagesByTile[tileId] || [];
+            const people = peopleByTile[tileId] || [];
+
+            // First, clear existing residency for all people on this tile to avoid stale assignments
+            const clearPipeline = redis.pipeline();
+            for (const p of people) {
+                if (p.residency !== null && p.residency !== undefined) {
+                    clearPipeline.srem(`village:${p.tile_id}:${p.residency}:people`, p.id.toString());
+                    // Update person residency to null
+                    await PopulationState.updatePerson(p.id, { residency: null });
+                }
+            }
+            await clearPipeline.exec();
+
+            // Shuffle people for random distribution
+            for (let i = people.length - 1; i > 0; i--) {
+                const j = Math.floor(Math.random() * (i + 1));
+                [people[i], people[j]] = [people[j], people[i]];
+            }
+
+            let peopleIndex = 0;
+            for (const village of villages) {
+                const available = village.housing_capacity - (village.housing_slots ? village.housing_slots.length : 0);
+                if (available <= 0 || peopleIndex >= people.length) continue;
+
+                const toAssign = Math.min(available, people.length - peopleIndex);
+                const assignedPeople = people.slice(peopleIndex, peopleIndex + toAssign);
+
+                // Update people with residency in Redis and maintain village membership sets
+                const personWritePipeline = redis.pipeline();
+                for (const person of assignedPeople) {
+                    const pid = person.id;
+
+                    // Update residency on person
+                    await PopulationState.updatePerson(pid, { residency: village.land_chunk_index });
+
+                    // Add to new village set
+                    personWritePipeline.sadd(`village:${village.tile_id}:${village.land_chunk_index}:people`, pid.toString());
+
+                    village.housing_slots.push(pid);
+                }
+                await personWritePipeline.exec();
+
+                // Update village housing_slots in Redis
+                await redis.hset('village', village.id.toString(), JSON.stringify(village));
+
+                peopleIndex += toAssign;
+            }
+        }
+
+        console.log(`[villageSeeder] Assigned residency to people in Redis`);
+    } catch (err) {
+        console.error('[villageSeeder] Failed to assign residency in Redis:', err);
+    }
+}
 
 async function seedVillagesForTile(tileId) {
     await ensureVillageIdColumn();
@@ -185,7 +451,7 @@ async function seedVillagesForTile(tileId) {
     }
 }
 
-module.exports.seedVillagesForTile = seedVillagesForTile;
+// seedVillagesForTile is exported at the end of the file
 
 async function assignResidencyForTile(tileId) {
     await pool.query('BEGIN');
@@ -313,15 +579,23 @@ async function seedIfNoVillages() {
                 const tileId = habitableTiles[0].id;
                 console.log(`[villageSeeder] Creating initial population on tile ${tileId}`);
 
-                // Create some initial people
-                const initialPopulation = 50;
+                // Create initial people - enough for a viable starting population
+                // This is a fallback that should rarely trigger
+                console.warn('⚠️ [villageSeeder] Creating fallback initial population - this should only happen on first run!');
+                const initialPopulation = 2500;
                 // Batch insert and RETURNING to sync to Redis
                 const values = [];
                 const params = [];
                 for (let i = 0; i < initialPopulation; i++) {
                     const pIndex = i * 3;
                     values.push(`($${pIndex + 1}, $${pIndex + 2}, $${pIndex + 3})`);
-                    params.push(tileId, Math.random() > 0.5, '4000-01-01');
+                    // Create people born 16-50 years ago so they're adults
+                    const age = 16 + Math.floor(Math.random() * 35);
+                    const birthYear = 4000 - age;
+                    const birthMonth = 1 + Math.floor(Math.random() * 12);
+                    const birthDay = 1 + Math.floor(Math.random() * 8);
+                    const birthDate = `${birthYear}-${String(birthMonth).padStart(2, '0')}-${String(birthDay).padStart(2, '0')}`;
+                    params.push(tileId, Math.random() > 0.5, birthDate);
                 }
                 if (values.length > 0) {
                     const res = await pool.query(`INSERT INTO people (tile_id, sex, date_of_birth) VALUES ${values.join(',')} RETURNING id, tile_id, residency, sex, date_of_birth`, params);
@@ -336,7 +610,7 @@ async function seedIfNoVillages() {
                     }
                 }
 
-                console.log(`[villageSeeder] Created ${initialPopulation} initial people on tile ${tileId}`);
+                console.log(`[villageSeeder] Created ${initialPopulation} initial people on tile ${tileId} (adults aged 16-50)`);
             }
         }
 
@@ -354,5 +628,8 @@ async function seedIfNoVillages() {
 
 module.exports = {
     seedRandomVillages,
-    seedIfNoVillages
+    seedIfNoVillages,
+    assignResidencyForTile,
+    seedVillagesRedisFirst,
+    seedVillagesForTile
 };

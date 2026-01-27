@@ -1,13 +1,28 @@
 // Population Data Operations - Handles data loading, saving, and formatting
 const { getTotalPopulation } = require('./PopStats.js');
+const { isRedisAvailable } = require('../../config/redis');
 
 /**
- * Loads population data from database
+ * Loads population data - tries Redis first (hot data), falls back to Postgres
  * @param {Pool} pool - Database pool instance
  * @returns {Object} Population data by tile ID
  */
 async function loadPopulationData(pool) {
     try {
+        // Try Redis first for tile populations (hot data after restart)
+        if (isRedisAvailable()) {
+            try {
+                const PopulationState = require('../populationState');
+                const populations = await PopulationState.getAllTilePopulations();
+                if (Object.keys(populations).length > 0) {
+                    return populations;
+                }
+            } catch (e) {
+                console.warn('[loadPopulationData] Redis failed, falling back to Postgres:', e.message);
+            }
+        }
+        
+        // Fall back to Postgres
         const result = await pool.query('SELECT tile_id, COUNT(*) as population FROM people GROUP BY tile_id');
         const populations = {};
         result.rows.forEach(row => {
@@ -21,13 +36,18 @@ async function loadPopulationData(pool) {
 }
 
 /**
- * Saves population data (placeholder for future implementation)
- * @returns {boolean} Always returns true for now
+ * Saves population data from Redis to Postgres
+ * @returns {Object} Save result with counts
  */
 async function savePopulationData() {
-    // Placeholder for data saving logic
-    // Could implement batch saves, data validation, etc.
-    return true;
+    try {
+        const StateManager = require('../stateManager');
+        const result = await StateManager.saveToDatabase();
+        return result;
+    } catch (error) {
+        console.error('[dataOperations] savePopulationData failed:', error.message);
+        return { success: false, error: error.message };
+    }
 }
 
 /**

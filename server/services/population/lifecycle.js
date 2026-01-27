@@ -101,9 +101,10 @@ async function updateGrowthRate(serviceInstance, rate) {
  * @param {Pool} pool - Database pool instance (used for family queries only)
  * @param {Object} calendarService - Calendar service instance
  * @param {PopulationService} populationServiceInstance - Population service instance
+ * @param {number} daysAdvanced - Number of days that passed in this tick (default 1)
  * @returns {number} Number of deaths
  */
-async function applySenescence(pool, calendarService, populationServiceInstance) {
+async function applySenescence(pool, calendarService, populationServiceInstance, daysAdvanced = 1) {
     try {
         const PopulationState = require('../populationState');
         const { isRedisAvailable } = require('../../config/redis');
@@ -132,14 +133,20 @@ async function applySenescence(pool, calendarService, populationServiceInstance)
         const { calculateAge } = require('./calculator.js');
 
         const deaths = [];
+        const DAYS_PER_YEAR = 96; // 8 days/month * 12 months
 
         for (const person of allPeople) {
             if (!person.date_of_birth) continue;
 
             const age = calculateAge(person.date_of_birth, currentYear, currentMonth, currentDay);
             if (age >= 60) {
-                const monthlyDeathChance = (age - 59) * 0.0005;
-                if (Math.random() < monthlyDeathChance) {
+                // Annual death probability: starts at 1% at age 60, increases by 2% per year
+                const annualDeathChance = 0.01 + (age - 60) * 0.02;
+                // Daily probability
+                const dailyDeathChance = annualDeathChance / DAYS_PER_YEAR;
+                // Probability of dying at least once in N days: 1 - (1 - p)^N
+                const multiDayDeathChance = 1 - Math.pow(1 - dailyDeathChance, daysAdvanced);
+                if (Math.random() < multiDayDeathChance) {
                     deaths.push(person.id);
                 }
             }
@@ -189,20 +196,26 @@ async function applySenescence(pool, calendarService, populationServiceInstance)
 }
 
 /**
- * Processes daily family events (pregnancies, births)
+ * Processes family events (pregnancies, births) for the tick
  * @param {Pool} pool - Database pool instance
  * @param {Object} calendarService - Calendar service instance
  * @param {PopulationService} serviceInstance - Population service instance
- * @returns {Object} Daily family events summary
+ * @param {number} daysAdvanced - Number of days that passed in this tick (default 1)
+ * @returns {Object} Family events summary
  */
-async function processDailyFamilyEvents(pool, calendarService, serviceInstance) {
+async function processDailyFamilyEvents(pool, calendarService, serviceInstance, daysAdvanced = 1) {
     try {
         const { processDeliveries, startPregnancy } = require('./familyManager.js');
         const PopulationState = require('../populationState');
         const { calculateAge } = require('./calculator.js');
 
-        // Process deliveries for families ready to give birth
-        const deliveries = await processDeliveries(pool, calendarService, serviceInstance);
+        // Skip if restart is in progress
+        if (PopulationState.isRestarting) {
+            return { deliveries: 0, newPregnancies: 0 };
+        }
+
+        // Process deliveries for families ready to give birth (pass daysAdvanced for delivery timing)
+        const deliveries = await processDeliveries(pool, calendarService, serviceInstance, daysAdvanced);
 
         // Get current calendar date for age calculations
         let currentDate = { year: 1, month: 1, day: 1 };
@@ -210,32 +223,44 @@ async function processDailyFamilyEvents(pool, calendarService, serviceInstance) 
             currentDate = calendarService.getCurrentDate();
         }
 
-        // Get eligible families from Redis (not pregnant, less than 5 children)
-        const allFamilies = await PopulationState.getAllFamilies();
-        const eligibleFamilies = allFamilies.filter(f =>
-            !f.pregnancy && (!f.children_ids || f.children_ids.length < 5)
-        );
-        // Shuffle and take up to 30
-        const shuffledFamilies = eligibleFamilies.sort(() => Math.random() - 0.5).slice(0, 30);
+        // Use Redis-based fertile family set for faster pregnancy processing
+        const candidateCount = parseInt(await redis.scard('eligible:pregnancy:families'), 10) || 0;
+        const sampleCount = Math.min(candidateCount, 60); // sample up to 60 and process up to 30
+        const sampled = sampleCount > 0 ? await redis.srandmember('eligible:pregnancy:families', sampleCount) : [];
 
         let newPregnancies = 0;
-        for (const family of shuffledFamilies) {
-            // Check wife's age from Redis
-            const wife = await PopulationState.getPerson(family.wife_id);
-            if (!wife || !wife.date_of_birth) continue;
+        for (const fid of sampled) {
+            const familyId = parseInt(fid);
+            try {
+                const family = await PopulationState.getFamily(familyId);
+                if (!family) continue;
+                // Ensure family is still eligible
+                if (family.pregnancy) continue;
+                if ((family.children_ids || []).length >= 5) continue;
 
-            const wifeAge = calculateAge(wife.date_of_birth, currentDate.year, currentDate.month, currentDate.day);
-            if (wifeAge > 33) continue; // Wife too old
-
-            // 25% daily chance of pregnancy for eligible families
-            if (Math.random() < 0.25) {
-                try {
-                    await startPregnancy(pool, calendarService, family.id);
-                    newPregnancies++;
-                } catch (error) {
-                    // Log a concise warning and continue processing other families
-                    console.warn(`[lifecycle.processDailyFamilyEvents] Could not start pregnancy for family ${family.id}: ${error.message || error}`);
+                const wife = await PopulationState.getPerson(family.wife_id);
+                if (!wife || !wife.date_of_birth) continue;
+                const wifeAge = calculateAge(wife.date_of_birth, currentDate.year, currentDate.month, currentDate.day);
+                if (wifeAge > 33) {
+                    // Remove from fertile set if aged out
+                    try { await PopulationState.removeFertileFamily(familyId); } catch (_) { }
+                    continue;
                 }
+
+                // 25% daily chance of pregnancy, adjusted for multiple days
+                // Probability of pregnancy in N days: 1 - (1 - 0.25)^N
+                const dailyPregnancyChance = 0.25;
+                const multiDayPregnancyChance = 1 - Math.pow(1 - dailyPregnancyChance, daysAdvanced);
+                if (Math.random() < multiDayPregnancyChance) {
+                    try {
+                        const started = await startPregnancy(pool, calendarService, familyId);
+                        if (started) newPregnancies++;
+                    } catch (error) {
+                        console.warn(`[lifecycle.processDailyFamilyEvents] Could not start pregnancy for family ${familyId}: ${error.message || error}`);
+                    }
+                }
+            } catch (err) {
+                console.warn('[processDailyFamilyEvents] error processing candidate family:', fid, err && err.message ? err.message : err);
             }
         }
 
@@ -254,6 +279,14 @@ async function processDailyFamilyEvents(pool, calendarService, serviceInstance) 
                             // Also remove from children_ids
                             const newChildrenIds = (family.children_ids || []).filter(cid => cid !== person.id);
                             await PopulationState.updateFamily(family.id, { children_ids: newChildrenIds });
+
+                            // Add newly released adult to eligible matchmaking sets
+                            try {
+                                await PopulationState.addEligiblePerson(person, currentDate.year, currentDate.month, currentDate.day);
+                            } catch (e) {
+                                console.warn('[lifecycle] addEligiblePerson failed for released adult:', e && e.message ? e.message : e);
+                            }
+
                             releasedAdults++;
                         }
                     }

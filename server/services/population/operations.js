@@ -2,6 +2,7 @@
 const { addPeopleToTile, removePeopleFromTile } = require('./manager.js');
 const { ensureTableExists } = require('./initializer.js');
 const { Procreation } = require('./family.js');
+const serverConfig = require('../../config/server');
 
 /**
  * Clears all population data from Redis
@@ -23,7 +24,7 @@ async function clearRedisPopulation() {
         if (keys.length > 0) await redis.del(...keys);
         // Reset counts
         await redis.del('counts:global');
-        console.log('[clearRedisPopulation] Cleared Redis population data');
+        if (serverConfig.verboseLogs) console.log('[clearRedisPopulation] Cleared Redis population data');
     } catch (err) {
         console.warn('[clearRedisPopulation] Failed to clear Redis:', err.message);
     }
@@ -73,34 +74,34 @@ async function resetAllPopulation(pool, serviceInstance) {
  * @returns {Object} Formatted population data
  */
 async function initializeTilePopulations(pool, calendarService, serviceInstance, tileIds) {
-    console.log('[PopulationOperations] initializeTilePopulations called with tileIds:', tileIds);
+    if (serverConfig.verboseLogs) console.log('[PopulationOperations] initializeTilePopulations called with tileIds:', tileIds);
+    const startTime = Date.now();
 
-    try {        // Import validation and data operations
+    try {
+        // Import validation and data operations
         const { validateTileIds } = require('./validation.js');
-        const { loadPopulationData, formatPopulationData } = require('./dataOperations.js');
+        const { formatPopulationData } = require('./dataOperations.js');
+        const PopulationState = require('../populationState.js');
 
         validateTileIds(tileIds);
 
-        // Check if population already exists - if so, don't reinitialize
-        const existingPeopleResult = await pool.query('SELECT COUNT(*) as count FROM people');
-        const existingPeopleCount = parseInt(existingPeopleResult.rows[0].count);
-
-        if (existingPeopleCount > 0) {
-            console.log(`[PopulationOperations] Found ${existingPeopleCount} existing people. Using existing population instead of reinitializing.`);
-            const populations = await loadPopulationData(pool);
+        // Check if population already exists in Redis - if so, don't reinitialize
+        const existingCount = await PopulationState.getTotalPopulation();
+        if (existingCount > 0) {
+            if (serverConfig.verboseLogs) console.log(`[PopulationOperations] Found ${existingCount} existing people in Redis. Using existing population.`);
+            const populations = await PopulationState.getAllTilePopulations();
             return {
                 success: true,
-                message: `Using existing population data (${existingPeopleCount} people)`,
+                message: `Using existing population data (${existingCount} people)`,
                 isExisting: true,
                 ...formatPopulationData(populations)
             };
         }
-        console.log('[PopulationOperations] No existing population found. Proceeding with initialization...');
+        if (serverConfig.verboseLogs) console.log('[PopulationOperations] No existing population found. Proceeding with Redis-first initialization...');
 
-        // Fetch habitable tiles from the database to ensure we only initialize on tiles marked habitable
+        // Fetch habitable tiles from the database
         const habitableResult = await pool.query(`SELECT id FROM tiles WHERE is_habitable = TRUE`);
         const habitableFromDb = habitableResult.rows.map(r => r.id);
-        // Intersect with provided tileIds if provided, otherwise use DB list
         const candidateTiles = Array.isArray(tileIds) && tileIds.length > 0
             ? tileIds.filter(id => habitableFromDb.includes(id))
             : habitableFromDb;
@@ -108,7 +109,7 @@ async function initializeTilePopulations(pool, calendarService, serviceInstance,
         // Select only up to 10 random tiles for initialization
         const shuffled = candidateTiles.sort(() => 0.5 - Math.random());
         const selectedTiles = shuffled.slice(0, 10);
-        console.log(`[PopulationOperations] Selected ${selectedTiles.length} random tiles for initialization (from DB habitable list):`, selectedTiles);
+        if (serverConfig.verboseLogs) console.log(`[PopulationOperations] Selected ${selectedTiles.length} random tiles for initialization:`, selectedTiles);
 
         if (selectedTiles.length === 0) {
             console.warn('[PopulationOperations] initializeTilePopulations: No tiles selected.');
@@ -122,9 +123,11 @@ async function initializeTilePopulations(pool, calendarService, serviceInstance,
             };
         }
 
-        // Clear Redis population data first
+        // Clear Redis population data and Postgres tables
+        console.log('⏱️ [initPop] Clearing data...');
         await clearRedisPopulation();
         await pool.query('TRUNCATE TABLE family, people RESTART IDENTITY CASCADE');
+        console.log(`⏱️ [initPop] Clear done in ${Date.now() - startTime}ms`);
 
         // Get current date from calendar service
         let currentDate;
@@ -135,140 +138,177 @@ async function initializeTilePopulations(pool, calendarService, serviceInstance,
             currentDate = { year: 1, month: 1, day: 1 };
         }
         const { year: currentYear, month: currentMonth, day: currentDay } = currentDate;
+        const { getRandomSex, getRandomAge, getRandomBirthDate } = require('./calculator.js');
+
+        // ========== REDIS-FIRST: Generate all people in memory ==========
+        const step1Start = Date.now();
+        if (serverConfig.verboseLogs) console.log('⏱️ [initPop] Step 1: Generating people data in memory...');
+        
+        let personIdCounter = 1;
+        const allPeople = []; // Array of person objects with temp IDs
+        const tilePopulationMap = {}; // tile_id -> array of person objects
 
         for (const tile_id of selectedTiles) {
-            // Generate population around 3000 people per tile (2500-3500 range)
             const tilePopulation = Math.floor(2500 + Math.random() * 1001);
-            const minBachelorsPerSex = Math.floor(tilePopulation * 0.15); // 15% of population are eligible bachelors of each sex
-            const people = [];
+            tilePopulationMap[tile_id] = [];
+            const minBachelorsPerSex = Math.floor(tilePopulation * 0.15);
+            
             // Add guaranteed eligible males (16-45)
             for (let i = 0; i < minBachelorsPerSex; i++) {
-                const age = 16 + Math.floor(Math.random() * 30); // 16-45
-                const sex = true; // male
-                const birthDate = require('./calculator.js').getRandomBirthDate(currentYear, currentMonth, currentDay, age);
-                people.push([tile_id, sex, birthDate]);
+                const age = 16 + Math.floor(Math.random() * 30);
+                const birthDate = getRandomBirthDate(currentYear, currentMonth, currentDay, age);
+                const person = {
+                    id: personIdCounter++,
+                    tile_id,
+                    sex: true,
+                    date_of_birth: birthDate,
+                    family_id: null
+                };
+                allPeople.push(person);
+                tilePopulationMap[tile_id].push(person);
             }
             // Add guaranteed eligible females (16-30)
             for (let i = 0; i < minBachelorsPerSex; i++) {
-                const age = 16 + Math.floor(Math.random() * 15); // 16-30
-                const sex = false; // female
-                const birthDate = require('./calculator.js').getRandomBirthDate(currentYear, currentMonth, currentDay, age);
-                people.push([tile_id, sex, birthDate]);
+                const age = 16 + Math.floor(Math.random() * 15);
+                const birthDate = getRandomBirthDate(currentYear, currentMonth, currentDay, age);
+                const person = {
+                    id: personIdCounter++,
+                    tile_id,
+                    sex: false,
+                    date_of_birth: birthDate,
+                    family_id: null
+                };
+                allPeople.push(person);
+                tilePopulationMap[tile_id].push(person);
             }
-            // Fill the rest of the population randomly
-            const remaining = tilePopulation - people.length;
-            const { getRandomSex, getRandomAge, getRandomBirthDate } = require('./calculator.js');
+            // Fill the rest randomly
+            const remaining = tilePopulation - (minBachelorsPerSex * 2);
             for (let i = 0; i < remaining; i++) {
                 const sex = getRandomSex();
                 const age = getRandomAge();
                 const birthDate = getRandomBirthDate(currentYear, currentMonth, currentDay, age);
-                people.push([tile_id, sex, birthDate]);
-            }
-            // Batch insert all people for this tile, explicitly setting family_id to NULL
-            if (people.length > 0) {
-                const client = await pool.connect();
-                try {
-                    await client.query('BEGIN');
-                    const batchSize = 100;
-                    for (let i = 0; i < people.length; i += batchSize) {
-                        const batch = people.slice(i, i + batchSize).map(p => [...p, null]); // add null for family_id
-                        const values = batch.map((person, index) => `($${index * 4 + 1}, $${index * 4 + 2}, $${index * 4 + 3}, $${index * 4 + 4})`).join(',');
-                        const flatBatch = batch.flat();
-                        await client.query(`INSERT INTO people (tile_id, sex, date_of_birth, family_id) VALUES ${values}`, flatBatch);
-                    }
-                    await client.query('COMMIT');
-                } catch (error) {
-                    await client.query('ROLLBACK');
-                    throw error;
-                } finally {
-                    client.release();
-                }
-            }
-            // Log inserted people for this tile
-            // const inserted = await pool.query(`SELECT id, sex, date_of_birth, family_id FROM people WHERE tile_id = $1`, [tile_id]);
-            // Debug: print actual ages of all inserted people
-            // const debugAges = inserted.rows.map(p => {
-            //     const birthYear = p.date_of_birth instanceof Date
-            //         ? p.date_of_birth.getFullYear()
-            //         : parseInt(String(p.date_of_birth).split('-')[0], 10);
-            //     const age = currentYear - birthYear;
-            //     return { id: p.id, sex: p.sex ? 'M' : 'F', age, family_id: p.family_id };
-            // });
-            // console.log(`[Tile ${tile_id}] Inserted people ages:`, debugAges);
-            // const allMales = inserted.rows.filter(p => p.sex === true);
-            // const eligibleMales = allMales.filter(p => {
-            //     const birthYear = p.date_of_birth instanceof Date
-            //         ? p.date_of_birth.getFullYear()
-            //         : parseInt(String(p.date_of_birth).split('-')[0], 10);
-            //     const age = currentYear - birthYear;
-            //     return age >= 16 && age <= 45 && p.family_id === null;
-            // });
-            // const allFemales = inserted.rows.filter(p => p.sex === false);
-            // const eligibleFemales = allFemales.filter(p => {
-            //     const birthYear = p.date_of_birth instanceof Date
-            //         ? p.date_of_birth.getFullYear()
-            //         : parseInt(String(p.date_of_birth).split('-')[0], 10);
-            //     const age = currentYear - birthYear;
-            //     return age >= 16 && age <= 30 && p.family_id === null;
-            // });
-            // console.log(`[Tile ${tile_id}] Inserted: total=${inserted.rows.length}, eligible males=${eligibleMales.length}, eligible females=${eligibleFemales.length}`);
-
-            // --- NEW LOGIC: Pair 80% of bachelors and assign minors ---
-            // 1. Get eligible bachelors (men 16-45, women 16-30, not in a family)
-            const simDate = `${currentYear}-${String(currentMonth).padStart(2, '0')}-${String(currentDay).padStart(2, '0')}`;
-            const bachelorsResult = await pool.query(`
-                SELECT id, sex, date_of_birth FROM people
-                WHERE tile_id = $1
-                  AND ((sex = TRUE AND EXTRACT(YEAR FROM AGE($2::date, date_of_birth)) BETWEEN 16 AND 45)
-                       OR (sex = FALSE AND EXTRACT(YEAR FROM AGE($2::date, date_of_birth)) BETWEEN 16 AND 30))
-                  AND family_id IS NULL
-                ORDER BY RANDOM()
-            `, [tile_id, simDate]);
-            const bachelors = bachelorsResult.rows;
-            // Split by sex
-            const bachelorMales = bachelors.filter(b => b.sex === true);
-            const bachelorFemales = bachelors.filter(b => b.sex === false);
-            // Pair up as many as possible, up to 80% of the smaller group
-            const pairCount = Math.floor(Math.min(bachelorMales.length, bachelorFemales.length) * 0.8);
-            console.log(`[Tile ${tile_id}] Eligible bachelors: males=${bachelorMales.length}, females=${bachelorFemales.length}, pairs to create=${pairCount}`);
-            for (let i = 0; i < pairCount; i++) {
-                // Create a family for each pair in the 'family' table
-                const familyInsert = await pool.query(`
-                    INSERT INTO family (husband_id, wife_id, tile_id, pregnancy, children_ids)
-                    VALUES ($1, $2, $3, FALSE, '{}') RETURNING id
-                `, [bachelorMales[i].id, bachelorFemales[i].id, tile_id]);
-                const famId = familyInsert.rows[0].id;
-                // Update people.family_id for both husband and wife
-                await pool.query('UPDATE people SET family_id = $1 WHERE id = $2', [famId, bachelorMales[i].id]);
-                await pool.query('UPDATE people SET family_id = $1 WHERE id = $2', [famId, bachelorFemales[i].id]);
-                // console.log(`[Tile ${tile_id}] 🎉 New family created after initialization: id=${famId}, male=${bachelorMales[i].id}, female=${bachelorFemales[i].id}`);
-            }
-            // 2. Assign all minors to these new families (distribute evenly)
-            const minorsResult = await pool.query(`
-                SELECT id FROM people
-                WHERE tile_id = $1
-                  AND EXTRACT(YEAR FROM AGE(date_of_birth)) < 16
-                  AND family_id IS NULL
-            `, [tile_id]);
-            const minors = minorsResult.rows;
-            // Get the new families created on this tile
-            const newFamiliesResult = await pool.query(`
-                SELECT id FROM family WHERE id > (SELECT COALESCE(MIN(id),0) FROM family) ORDER BY id DESC LIMIT $1
-            `, [pairCount]);
-            const newFamilyIds = newFamiliesResult.rows.map(r => r.id);
-            // Distribute minors round-robin to families, only if there are families
-            if (newFamilyIds.length > 0) {
-                for (let i = 0; i < minors.length; i++) {
-                    const famId = newFamilyIds[i % newFamilyIds.length];
-                    await pool.query('UPDATE people SET family_id = $1 WHERE id = $2', [famId, minors[i].id]);
-                }
-                console.log(`[Tile ${tile_id}] Assigned ${minors.length} minors to ${newFamilyIds.length} new families.`);
-            } else {
-                console.log(`[Tile ${tile_id}] No new families created, minors not assigned.`);
+                const person = {
+                    id: personIdCounter++,
+                    tile_id,
+                    sex,
+                    date_of_birth: birthDate,
+                    family_id: null
+                };
+                allPeople.push(person);
+                tilePopulationMap[tile_id].push(person);
             }
         }
+        if (serverConfig.verboseLogs) console.log(`⏱️ [initPop] Step 1 done: ${allPeople.length} people generated in ${Date.now() - step1Start}ms`);
 
-        const populations = await loadPopulationData(pool);
+        // ========== Step 2: Create families in memory ==========
+        const step2Start = Date.now();
+        if (serverConfig.verboseLogs) console.log('⏱️ [initPop] Step 2: Creating families in memory...');
+        
+        let familyIdCounter = 1;
+        const allFamilies = [];
+        
+        // Calculate age for matching
+        const getAge = (birthDate) => {
+            const [year, month, day] = birthDate.split('-').map(Number);
+            let age = currentYear - year;
+            if (currentMonth < month || (currentMonth === month && currentDay < day)) {
+                age--;
+            }
+            return age;
+        };
+
+        for (const tile_id of selectedTiles) {
+            const tilePeople = tilePopulationMap[tile_id];
+            
+            // Find eligible bachelors
+            const eligibleMales = tilePeople.filter(p => {
+                if (!p.sex || p.family_id !== null) return false;
+                const age = getAge(p.date_of_birth);
+                return age >= 16 && age <= 45;
+            });
+            
+            const eligibleFemales = tilePeople.filter(p => {
+                if (p.sex || p.family_id !== null) return false;
+                const age = getAge(p.date_of_birth);
+                return age >= 16 && age <= 30;
+            });
+
+            // Shuffle for random pairing
+            eligibleMales.sort(() => Math.random() - 0.5);
+            eligibleFemales.sort(() => Math.random() - 0.5);
+
+            const pairCount = Math.floor(Math.min(eligibleMales.length, eligibleFemales.length) * 0.8);
+            if (serverConfig.verboseLogs) console.log(`[Tile ${tile_id}] Eligible: males=${eligibleMales.length}, females=${eligibleFemales.length}, pairs=${pairCount}`);
+
+            const tileFamilies = [];
+            for (let i = 0; i < pairCount; i++) {
+                const husband = eligibleMales[i];
+                const wife = eligibleFemales[i];
+                const familyId = familyIdCounter++;
+                
+                const family = {
+                    id: familyId,
+                    husband_id: husband.id,
+                    wife_id: wife.id,
+                    tile_id,
+                    pregnancy: false,
+                    delivery_date: null,
+                    children_ids: []
+                };
+                
+                // Update person family_ids in memory
+                husband.family_id = familyId;
+                wife.family_id = familyId;
+                
+                tileFamilies.push(family);
+                allFamilies.push(family);
+            }
+
+            // Assign minors to families
+            if (tileFamilies.length > 0) {
+                const minors = tilePeople.filter(p => {
+                    const age = getAge(p.date_of_birth);
+                    return age < 16 && p.family_id === null;
+                });
+                
+                for (let i = 0; i < minors.length; i++) {
+                    const family = tileFamilies[i % tileFamilies.length];
+                    minors[i].family_id = family.id;
+                    family.children_ids.push(minors[i].id);
+                }
+                if (serverConfig.verboseLogs) console.log(`[Tile ${tile_id}] Assigned ${minors.length} minors to ${tileFamilies.length} families.`);
+            }
+        }
+        if (serverConfig.verboseLogs) console.log(`⏱️ [initPop] Step 2 done: ${allFamilies.length} families created in ${Date.now() - step2Start}ms`);
+
+        // ========== Step 3: Write all data to Redis ==========
+        const step3Start = Date.now();
+        if (serverConfig.verboseLogs) console.log('⏱️ [initPop] Step 3: Writing to Redis...');
+        
+        // Use batch operations for Redis
+        const BATCH_SIZE = 500;
+        
+        // Add all people to Redis with isNew=true (marks as pending insert)
+        for (let i = 0; i < allPeople.length; i += BATCH_SIZE) {
+            const batch = allPeople.slice(i, i + BATCH_SIZE);
+            await Promise.all(batch.map(person => PopulationState.addPerson(person, true)));
+        }
+        if (serverConfig.verboseLogs) console.log(`⏱️ [initPop] Added ${allPeople.length} people to Redis`);
+        
+        // Add all families to Redis with isNew=true (marks as pending insert)
+        for (let i = 0; i < allFamilies.length; i += BATCH_SIZE) {
+            const batch = allFamilies.slice(i, i + BATCH_SIZE);
+            await Promise.all(batch.map(family => PopulationState.addFamily(family, true)));
+        }
+if (serverConfig.verboseLogs) console.log(`⏱️ [initPop] Added ${allFamilies.length} families to Redis`);
+        
+        if (serverConfig.verboseLogs) console.log(`⏱️ [initPop] Step 3 done: Redis write completed in ${Date.now() - step3Start}ms`);
+        
+        // ========== Return formatted result ==========
+        const totalTime = Date.now() - startTime;
+        if (serverConfig.verboseLogs) console.log(`✅ [initPop] COMPLETE: ${allPeople.length} people, ${allFamilies.length} families in ${totalTime}ms (Redis-only, pending Postgres save)`);
+        
+        const populations = await PopulationState.getAllTilePopulations();
         return formatPopulationData(populations);
     } catch (error) {
         console.error('[PopulationOperations] Critical error in initializeTilePopulations:', error);

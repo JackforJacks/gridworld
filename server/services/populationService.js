@@ -92,15 +92,12 @@ class PopulationService {
         // Listen to calendar tick events for daily population updates
         if (calendarService) {
             calendarService.on('tick', async (eventData) => {
-                // Only process daily ticks, not every tick (since some ticks advance multiple days)
+                // Process tick with the number of days advanced (not looping)
                 if (eventData.daysAdvanced > 0) {
-                    // Run tick for each day advanced
-                    for (let i = 0; i < eventData.daysAdvanced; i++) {
-                        await this.tick();
-                    }
+                    await this.tick(eventData.daysAdvanced);
                 }
             });
-            console.log('📅 Population service listening to calendar tick events');
+            if (config.verboseLogs) console.log('📅 Population service listening to calendar tick events');
         }
     }
 
@@ -161,7 +158,7 @@ class PopulationService {
                 totalFamiliesCreated += newFamilies;
 
                 if (newFamilies > 0) {
-                    console.log(`🏠 Created ${newFamilies} new families on tile ${tileId}`);
+                    if (config.verboseLogs) console.log(`🏠 Created ${newFamilies} new families on tile ${tileId}`);
                 }
             }
 
@@ -260,30 +257,31 @@ class PopulationService {
     }
 
     /**
-     * Tick method for daily updates - processes births, deaths, and family formation
+     * Tick method for population updates - processes births, deaths (senescence), and family formation
+     * @param {number} daysAdvanced - Number of days that passed in this tick (default 1)
      */
-    async tick() {
-        // Quiet: daily population tick started (log suppressed)
+    async tick(daysAdvanced = 1) {
+        // Quiet: population tick started (log suppressed)
 
         try {
-            // 1. Apply senescence (aging deaths)
+            // 1. Apply senescence (aging deaths) - probability adjusted for days passed
             const { applySenescence, processDailyFamilyEvents } = require('./population/lifecycle.js');
-            await applySenescence(this.#pool, this.calendarService, this);
+            await applySenescence(this.#pool, this.calendarService, this, daysAdvanced);
 
-            // 2. Form new families from bachelors
+            // 2. Form new families from bachelors (run once per tick, families form over time)
             const { formNewFamilies } = require('./population/familyManager.js');
             const newFamilies = await formNewFamilies(this.#pool, this.calendarService);
             if (newFamilies > 0) {
                 // Quiet: formed new families on tick (log suppressed)
             }
 
-            // 3. Process births and new pregnancies
-            await processDailyFamilyEvents(this.#pool, this.calendarService, this);
+            // 3. Process births and new pregnancies (adjusted for days passed)
+            await processDailyFamilyEvents(this.#pool, this.calendarService, this, daysAdvanced);
 
             // 4. Broadcast updated population data
             await this.broadcastUpdate('populationUpdate');
         } catch (error) {
-            console.error('Error during daily tick:', error);
+            console.error('Error during tick:', error);
         }
     }
 }

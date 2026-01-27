@@ -43,6 +43,13 @@ async function addPeopleToTile(pool, tileId, count, currentYear, currentMonth, c
 
         // Add to Redis with isNew=true to track for batch Postgres insert
         await PopulationState.addPerson(personObj, true);
+
+        // If the person is already adult and single, add to eligible matchmaking sets
+        try {
+            await PopulationState.addEligiblePerson(personObj, currentYear, currentMonth, currentDay);
+        } catch (e) {
+            console.warn('[addPeopleToTile] failed to add eligible person:', e && e.message ? e.message : e);
+        }
     }
 
     if (doTrackBirths && populationServiceInstance && typeof trackBirths === 'function') {

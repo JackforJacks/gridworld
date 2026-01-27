@@ -240,13 +240,31 @@ class UIManager {
             console.error("SceneManager not available in UIManager for reset.");
             return;
         }
+        
+        // Require user confirmation before wiping all data
+        const confirmed = window.confirm(
+            '⚠️ WARNING: This will DELETE ALL POPULATION DATA permanently!\n\n' +
+            'All people, families, and villages will be wiped and regenerated.\n\n' +
+            'Are you absolutely sure you want to restart the world?'
+        );
+        
+        if (!confirmed) {
+            console.log('🚫 World restart cancelled by user');
+            return;
+        }
+        
         try {
-            console.log("🔄 Resetting all data...");
+            console.log("🔄 Resetting all data (user confirmed)...");
             // Single fast-reset endpoint handles: regenerate tiles/lands, reset & reinit population, seed villages
+            // Must send confirmation token to prove intentional restart
             const fastResult = await this.fetchWithFallback([
-                'http://localhost:3000/api/reset/fast', // hit backend directly first to avoid proxy empty responses
-                '/api/reset/fast'
-            ], { method: 'POST' });
+                'http://localhost:3000/api/worldrestart', // hit backend directly first to avoid proxy empty responses
+                '/api/worldrestart'
+            ], { 
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ confirm: 'DELETE_ALL_DATA' })
+            });
             console.log('⚡ Fast reset result:', fastResult);
         } catch (error) {
             console.error("❌ Error during data reset:", error);

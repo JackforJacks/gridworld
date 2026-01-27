@@ -171,15 +171,31 @@ async function getDemographicStats(pool, calendarService) {
 
 /**
  * Gets all population data including statistics (consolidated data function)
+ * Uses Redis as primary source for tile populations, falls back to Postgres
  */
 async function getAllPopulationData(pool, calendarService, populationServiceInstance) {
     const { loadPopulationData, formatPopulationData } = require('./dataOperations.js');
+    const PopulationState = require('../populationState');
 
-    const populations = await loadPopulationData(pool);
+    // Try Redis first for tile populations (hot data after restart)
+    let populations = {};
+    if (isRedisAvailable()) {
+        try {
+            populations = await PopulationState.getAllTilePopulations();
+        } catch (e) {
+            console.warn('[getAllPopulationData] Redis getAllTilePopulations failed, falling back to Postgres:', e.message);
+        }
+    }
+    
+    // If Redis didn't have data, fall back to Postgres
+    if (Object.keys(populations).length === 0) {
+        populations = await loadPopulationData(pool);
+    }
+    
     const stats = await getPopulationStats(pool, calendarService, populationServiceInstance);
     const familyStats = await getFamilyStatistics(pool);
 
-    // Use stats.totalPopulation (from SQL) as the only source of truth
+    // Use stats.totalPopulation (from Redis/SQL) as the only source of truth
     const formatted = formatPopulationData(populations);
     formatted.totalPopulation = stats.totalPopulation;
 

@@ -9,6 +9,7 @@ const pool = require('../config/database');
 const villageSeeder = require('../services/villageSeeder');
 const villageService = require('../services/villageService');
 const http = require('http');
+const serverConfig = require('../config/server');
 
 // Helper: parse float with fallback
 function parseParam(val, fallback) {
@@ -21,13 +22,15 @@ let worldSeed = null;
 
 // Load world seed from environment variable or use default
 function loadWorldSeed() {
-    console.log(`[API /api/tiles] Environment WORLD_SEED: ${process.env.WORLD_SEED}`);
+    if (serverConfig.verboseLogs) {
+        console.log(`[API /api/tiles] Environment WORLD_SEED: ${process.env.WORLD_SEED}`);
+    }
     if (process.env.WORLD_SEED) {
         worldSeed = parseInt(process.env.WORLD_SEED);
-        console.log(`[API /api/tiles] Using world seed from environment: ${worldSeed}`);
+        if (serverConfig.verboseLogs) console.log(`[API /api/tiles] Using world seed from environment: ${worldSeed}`);
     } else {
         worldSeed = 12345; // Default seed
-        console.log(`[API /api/tiles] Using default world seed: ${worldSeed}`);
+        if (serverConfig.verboseLogs) console.log(`[API /api/tiles] Using default world seed: ${worldSeed}`);
     }
 }
 
@@ -138,45 +141,33 @@ router.get('/', async (req, res) => {
         const Hexasphere = HexasphereModule.default;
 
         if (isRegenerating) {
-            console.log(`[API /api/tiles] Generating tiles with seed: ${seed}`);
+            if (serverConfig.verboseLogs) console.log(`[API /api/tiles] Generating tiles with seed: ${seed}`);
         }
         const hexasphere = new Hexasphere(radius, subdivisions, tileWidthRatio);
 
         // If regenerating, always persist tiles and reinitialize lands
         if (isRegenerating) {
-            console.log('[API /api/tiles] No tiles in database, persisting generated tiles...');
+            const regenStartTime = Date.now();
+            if (serverConfig.verboseLogs) console.log('[API /api/tiles] Regenerating tiles and lands...');
 
             // Clear and populate tiles table
             await pool.query('TRUNCATE TABLE tiles RESTART IDENTITY CASCADE');
             await pool.query('TRUNCATE TABLE tiles_lands RESTART IDENTITY CASCADE');
 
+            // BATCH INSERT - prepare all tile data first
+            const tileValues = [];
+            const tileParams = [];
+            let paramIndex = 1;
+            
             for (const tile of hexasphere.tiles) {
                 const props = tile.getProperties ? tile.getProperties() : tile;
                 const centerPoint = tile.centerPoint ? { x: tile.centerPoint.x, y: tile.centerPoint.y, z: tile.centerPoint.z } : null;
-                // Only calculate a land biome when the tile is actually land
                 const biome = (centerPoint && props.isLand) ? calculateBiome(tile.centerPoint, props.terrainType, seededRandom) : null;
                 const fertility = calculateFertility(biome, props.terrainType, seededRandom);
-
-                // Determine explicit habitable flag: tiles on tundra, desert, or alpine should not be habitable
                 const isHabitableFlag = (props.Habitable === 'yes' && biome !== 'tundra' && biome !== 'desert' && biome !== 'alpine');
-                await pool.query(`
-                    INSERT INTO tiles (id, center_x, center_y, center_z, latitude, longitude, terrain_type, is_land, is_habitable, boundary_points, neighbor_ids, biome, fertility)
-                    VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)
-                    ON CONFLICT (id) DO UPDATE SET
-                        center_x = EXCLUDED.center_x,
-                        center_y = EXCLUDED.center_y,
-                        center_z = EXCLUDED.center_z,
-                        latitude = EXCLUDED.latitude,
-                        longitude = EXCLUDED.longitude,
-                        terrain_type = EXCLUDED.terrain_type,
-                        is_land = EXCLUDED.is_land,
-                        is_habitable = EXCLUDED.is_habitable,
-                        boundary_points = EXCLUDED.boundary_points,
-                        neighbor_ids = EXCLUDED.neighbor_ids,
-                        biome = EXCLUDED.biome,
-                        fertility = EXCLUDED.fertility,
-                        updated_at = CURRENT_TIMESTAMP
-                `, [
+                
+                tileValues.push(`($${paramIndex}, $${paramIndex+1}, $${paramIndex+2}, $${paramIndex+3}, $${paramIndex+4}, $${paramIndex+5}, $${paramIndex+6}, $${paramIndex+7}, $${paramIndex+8}, $${paramIndex+9}, $${paramIndex+10}, $${paramIndex+11}, $${paramIndex+12})`);
+                tileParams.push(
                     props.id,
                     centerPoint?.x || 0,
                     centerPoint?.y || 0,
@@ -190,12 +181,27 @@ router.get('/', async (req, res) => {
                     JSON.stringify(props.neighborIds || []),
                     biome,
                     fertility
-                ]);
+                );
+                paramIndex += 13;
             }
 
-            console.log(`[API /api/tiles] Persisted ${hexasphere.tiles.length} tiles to database`);
+            // Single batch insert for all tiles
+            if (tileValues.length > 0) {
+                await pool.query(`
+                    INSERT INTO tiles (id, center_x, center_y, center_z, latitude, longitude, terrain_type, is_land, is_habitable, boundary_points, neighbor_ids, biome, fertility)
+                    VALUES ${tileValues.join(', ')}
+                    ON CONFLICT (id) DO UPDATE SET
+                        center_x = EXCLUDED.center_x, center_y = EXCLUDED.center_y, center_z = EXCLUDED.center_z,
+                        latitude = EXCLUDED.latitude, longitude = EXCLUDED.longitude, terrain_type = EXCLUDED.terrain_type,
+                        is_land = EXCLUDED.is_land, is_habitable = EXCLUDED.is_habitable, boundary_points = EXCLUDED.boundary_points,
+                        neighbor_ids = EXCLUDED.neighbor_ids, biome = EXCLUDED.biome, fertility = EXCLUDED.fertility,
+                        updated_at = CURRENT_TIMESTAMP
+                `, tileParams);
+            }
 
-            // Now initialize tiles_lands for eligible tiles
+            if (serverConfig.verboseLogs) console.log(`[API /api/tiles] Persisted ${hexasphere.tiles.length} tiles to database (batch insert)`);
+
+            // Now initialize tiles_lands for eligible tiles - BATCH INSERT
             const eligibleTiles = await pool.query(`
                 SELECT id, biome, terrain_type FROM tiles
                 WHERE terrain_type NOT IN ('ocean', 'mountains')
@@ -222,6 +228,12 @@ router.get('/', async (req, res) => {
                 }
             }
 
+            // Build all land values in memory first, then batch insert
+            const landValues = [];
+            const landParams = [];
+            let landParamIndex = 1;
+            const BATCH_SIZE = 5000; // Insert in chunks to avoid query size limits
+
             for (const tile of eligibleTiles.rows) {
                 const rng = mulberry32(tile.id);
                 const dist = getLandTypeDistribution(rng);
@@ -236,14 +248,33 @@ router.get('/', async (req, res) => {
                 }
 
                 for (let chunk_index = 0; chunk_index < 100; chunk_index++) {
-                    await pool.query(
-                        `INSERT INTO tiles_lands (tile_id, chunk_index, land_type, cleared) VALUES ($1, $2, $3, $4) ON CONFLICT DO NOTHING`,
-                        [tile.id, chunk_index, landTypes[chunk_index], landTypes[chunk_index] === 'cleared']
-                    );
+                    landValues.push(`($${landParamIndex}, $${landParamIndex+1}, $${landParamIndex+2}, $${landParamIndex+3})`);
+                    landParams.push(tile.id, chunk_index, landTypes[chunk_index], landTypes[chunk_index] === 'cleared');
+                    landParamIndex += 4;
+                    
+                    // Insert in batches to avoid query size limits
+                    if (landValues.length >= BATCH_SIZE) {
+                        await pool.query(
+                            `INSERT INTO tiles_lands (tile_id, chunk_index, land_type, cleared) VALUES ${landValues.join(', ')} ON CONFLICT DO NOTHING`,
+                            landParams
+                        );
+                        landValues.length = 0;
+                        landParams.length = 0;
+                        landParamIndex = 1;
+                    }
                 }
             }
+            
+            // Insert remaining land values
+            if (landValues.length > 0) {
+                await pool.query(
+                    `INSERT INTO tiles_lands (tile_id, chunk_index, land_type, cleared) VALUES ${landValues.join(', ')} ON CONFLICT DO NOTHING`,
+                    landParams
+                );
+            }
 
-            console.log(`[API /api/tiles] Initialized tiles_lands for ${eligibleTiles.rows.length} eligible tiles`);
+            const regenElapsed = Date.now() - regenStartTime;
+            console.log(`⏱️ [API /api/tiles] Regenerated ${hexasphere.tiles.length} tiles + ${eligibleTiles.rows.length * 100} land chunks in ${regenElapsed}ms`);
 
             // Village seeding is now performed after population initialization (client-driven)
         }
@@ -433,183 +464,9 @@ router.get('/', async (req, res) => {
     }
 });
 
-// POST /api/tiles/restart - Generate a new world seed and reinitialize tiles_lands
+// POST /api/tiles/restart - DEPRECATED: use /api/worldrestart
 router.post('/restart', async (req, res) => {
-    const oldSeed = worldSeed;
-    worldSeed = Date.now();
-    process.env.WORLD_SEED = worldSeed.toString();
-    console.log(`[API /api/tiles/restart] World restarted - old seed: ${oldSeed}, new seed: ${worldSeed}`);
-
-    // Clear existing data - tiles persistence and lands initialization will happen 
-    // automatically when /api/tiles is called with the regenerate flag
-    try {
-        await pool.query('TRUNCATE TABLE tiles RESTART IDENTITY CASCADE');
-        await pool.query('TRUNCATE TABLE tiles_lands RESTART IDENTITY CASCADE');
-        console.log('[API /api/tiles/restart] Cleared existing tiles and lands data');
-    } catch (e) {
-        console.error('Failed to clear existing data:', e);
-        return res.status(500).json({ success: false, message: 'Failed to clear existing data', error: e.message });
-    }
-
-    // Trigger regeneration internally so tiles, lands and villages are initialized immediately
-    const port = process.env.PORT || 3000;
-    const regenPath = `/api/tiles?regenerate=true`;
-
-    try {
-        await new Promise((resolve, reject) => {
-            // Use explicit loopback IP to avoid hitting any dev-server proxy (webpack-dev-server)
-            const options = {
-                hostname: '127.0.0.1',
-                port: port,
-                path: regenPath,
-                method: 'GET',
-                timeout: 300000
-            };
-
-            const reqGet = http.request(options, (resp) => {
-                let data = '';
-                resp.on('data', (chunk) => { data += chunk; });
-                resp.on('end', () => {
-                    try {
-                        const parsed = JSON.parse(data || '{}');
-                        if (resp.statusCode >= 200 && resp.statusCode < 300) {
-                            resolve(parsed);
-                        } else {
-                            reject(new Error(`Regeneration failed: ${resp.statusCode}`));
-                        }
-                    } catch (err) {
-                        // Non-JSON response, treat as success if 2xx
-                        if (resp.statusCode >= 200 && resp.statusCode < 300) resolve({});
-                        else reject(err);
-                    }
-                });
-            });
-
-            reqGet.on('error', (err) => {
-                // Log and reject; ECONNRESET sometimes happens when a proxy closes the socket
-                console.warn('[tiles/restart] regen request error:', err && err.message ? err.message : err);
-                reject(err);
-            });
-            reqGet.on('timeout', () => { reqGet.destroy(new Error('Regeneration request timed out')); });
-            reqGet.end();
-        });
-
-        // After tiles/lands regeneration completes, attempt to seed villages based on current population
-        try {
-            const seeded = await villageSeeder.seedRandomVillages();
-            console.log(`[API /api/tiles/restart] Village seeding completed: ${seeded?.created || 0} villages created`);
-        } catch (seedErr) {
-            console.warn('[API /api/tiles/restart] Village seeding failed after regeneration:', seedErr.message);
-        }
-
-        // If a CalendarService is available on the app, set the calendar to Year 4000 (1-1-4000)
-        try {
-            const calendarService = req && req.app && req.app.locals && req.app.locals.calendarService;
-            if (calendarService && typeof calendarService.setDate === 'function') {
-                // Capture previous year for explicit year-change event
-                const prevState = calendarService.getState();
-                const prevYear = prevState && prevState.currentDate ? prevState.currentDate.year : (calendarService.currentDate ? calendarService.currentDate.year : null);
-
-                // Use day=1, month=1, year=4000
-                calendarService.setDate(1, 1, 4000);
-
-                // Also reset internal counters/timers to ensure the calendar shows the exact date
-                try {
-                    if (typeof calendarService.calculateTotalDays === 'function') {
-                        calendarService.state.totalDays = calendarService.calculateTotalDays(4000, 1, 1);
-                    } else {
-                        calendarService.state.totalDays = 0;
-                    }
-                    calendarService.state.totalTicks = 0;
-                    calendarService.state.startTime = Date.now();
-                    calendarService.state.lastTickTime = Date.now();
-                    console.log('[API /api/tiles/restart] Calendar internal counters reset after setDate');
-                } catch (e) {
-                    console.warn('[API /api/tiles/restart] Failed to reset calendar internal counters:', e && e.message ? e.message : e);
-                }
-
-                // Persist and broadcast new state so connected clients update immediately
-                if (typeof calendarService.saveStateToDB === 'function') {
-                    try { await calendarService.saveStateToDB(); } catch (saveErr) { console.warn('[tiles/restart] calendarService.saveStateToDB failed:', saveErr && saveErr.message ? saveErr.message : saveErr); }
-                }
-
-                const newState = calendarService.getState();
-
-                // Log the effective calendar state for debugging
-                console.log('[tiles/restart] calendarService state after setDate:', JSON.stringify(newState));
-
-                // Broadcast via multiple io APIs to maximize compatibility with socket.io versions
-                try {
-                    if (calendarService.io && typeof calendarService.io.emit === 'function') {
-                        calendarService.io.emit('calendarState', newState);
-                        calendarService.io.emit('calendarDateSet', newState);
-                    }
-                } catch (emitErr) {
-                    console.warn('[tiles/restart] io.emit failed:', emitErr && emitErr.message ? emitErr.message : emitErr);
-                }
-
-                try {
-                    if (calendarService.io && calendarService.io.sockets && typeof calendarService.io.sockets.emit === 'function') {
-                        calendarService.io.sockets.emit('calendarState', newState);
-                    }
-                } catch (emitErr2) {
-                    console.warn('[tiles/restart] io.sockets.emit failed:', emitErr2 && emitErr2.message ? emitErr2.message : emitErr2);
-                }
-
-                // Emit explicit year change if applicable
-                try {
-                    const newYear = newState && newState.currentDate ? newState.currentDate.year : null;
-                    if (newYear !== null && prevYear !== null && newYear !== prevYear) {
-                        if (calendarService.io && typeof calendarService.io.emit === 'function') {
-                            calendarService.io.emit('calendarYearChanged', { newYear, oldYear: prevYear });
-                        }
-                    }
-                } catch (yrErr) {
-                    console.warn('[tiles/restart] Failed emitting year change:', yrErr && yrErr.message ? yrErr.message : yrErr);
-                }
-
-                console.log('[API /api/tiles/restart] Calendar reset to Year 4000 (01-01-4000) and broadcasted');
-            }
-        } catch (calErr) {
-            console.warn('[API /api/tiles/restart] Failed to reset/calendar-broadcast to Year 4000:', calErr && calErr.message ? calErr.message : calErr);
-        }
-
-        // Include calendar state in response so clients can update inline if they initiated the restart
-        let calendarStateForResponse = null;
-        try {
-            const calendarService = req && req.app && req.app.locals && req.app.locals.calendarService;
-            if (calendarService && typeof calendarService.getState === 'function') {
-                calendarStateForResponse = calendarService.getState();
-            }
-        } catch (_) { /* ignore */ }
-
-        res.json({
-            success: true,
-            message: 'World restarted and regenerated successfully (tiles, lands, villages attempted).',
-            oldSeed: oldSeed,
-            newSeed: worldSeed,
-            calendarState: calendarStateForResponse
-        });
-    } catch (err) {
-        console.error('[API /api/tiles/restart] Regeneration request failed:', err && err.message ? err.message : err);
-        // Still return success for restart but inform client regeneration failed
-        let calendarStateForResponse = null;
-        try {
-            const calendarService = req && req.app && req.app.locals && req.app.locals.calendarService;
-            if (calendarService && typeof calendarService.getState === 'function') {
-                calendarStateForResponse = calendarService.getState();
-            }
-        } catch (_) { /* ignore */ }
-
-        res.json({
-            success: true,
-            message: 'World restarted, but automatic regeneration failed. Call /api/tiles?regenerate=true manually.',
-            oldSeed: oldSeed,
-            newSeed: worldSeed,
-            regenError: err && err.message ? err.message : String(err),
-            calendarState: calendarStateForResponse
-        });
-    }
+    res.status(410).json({ success: false, message: '/api/tiles/restart is deprecated - use /api/worldrestart' });
 });
 
 // GET /api/tiles/seed - Get current world seed

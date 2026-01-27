@@ -202,13 +202,13 @@ class PopulationService {
      * @returns {Object} Formatted population data
      */
     async initializeTilePopulations(tileIds) {
-        console.log('[PopulationService] initializeTilePopulations called with tileIds:', tileIds);
+        if (config.verboseLogs) console.log('[PopulationService] initializeTilePopulations called with tileIds:', tileIds);
 
         try {
             this.validateTileIds(tileIds);
 
             if (!Array.isArray(tileIds) || tileIds.length === 0) {
-                console.warn('[PopulationService] initializeTilePopulations: No tile IDs provided or empty array.');
+                if (config.verboseLogs) console.warn('[PopulationService] initializeTilePopulations: No tile IDs provided or empty array.');
                 return {
                     success: false,
                     message: 'No tile IDs provided',
@@ -501,7 +501,7 @@ class PopulationService {
         // Quiet: daily population tick started (log suppressed)
 
         try {
-            // 1. Apply senescence
+            // 1. Apply senescence (aging deaths) - runs daily with daily-adjusted probability
             const { applySenescence, processDailyFamilyEvents } = require('./population/lifecycle.js');
             await applySenescence(this.#pool, this.calendarService, this);
 
@@ -512,10 +512,10 @@ class PopulationService {
                 // Quiet: formed new families on tick (log suppressed)
             }
 
-            // 3. Process births and new pregnancies
+            // 2. Process births and new pregnancies
             await processDailyFamilyEvents(this.#pool, this.calendarService, this);
 
-            // 5. Broadcast updated population data
+            // 3. Broadcast updated population data
             await this.broadcastUpdate('populationUpdate');
         } catch (error) {
             console.error('Error during daily tick:', error);

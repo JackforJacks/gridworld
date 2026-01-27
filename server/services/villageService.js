@@ -1,6 +1,7 @@
 const pool = require('../config/database');
 const redis = require('../config/redis');
 const { isRedisAvailable } = require('../config/redis');
+const serverConfig = require('../config/server.js');
 const StateManager = require('./stateManager');
 
 class VillageService {
@@ -26,7 +27,7 @@ class VillageService {
     static setupTickBasedFoodUpdates(calendarService) {
         this.calendarService = calendarService;
         const redisMode = this.useRedis && isRedisAvailable();
-        console.log(`🍖 Setting up tick-based food updates [Redis mode: ${redisMode}]`);
+        if (serverConfig.verboseLogs) console.log(`🍖 Setting up tick-based food updates [Redis mode: ${redisMode}]`);
 
         calendarService.on('tick', async (tickData) => {
             try {
@@ -48,12 +49,12 @@ class VillageService {
      */
     static startFoodUpdateTimer(intervalMs = 1000) {
         if (this.foodUpdateTimer) {
-            console.log('Food update timer already running');
+            if (serverConfig.verboseLogs) console.log('Food update timer already running');
             return;
         }
 
         const redisMode = this.useRedis && isRedisAvailable();
-        console.log(`🍖 Starting food update timer (${intervalMs}ms intervals) [Redis mode: ${redisMode}]`);
+        if (serverConfig.verboseLogs) console.log(`🍖 Starting food update timer (${intervalMs}ms intervals) [Redis mode: ${redisMode}]`);
 
         this.foodUpdateTimer = setInterval(async () => {
             try {
@@ -74,7 +75,7 @@ class VillageService {
      */
     static stopFoodUpdateTimer() {
         if (this.foodUpdateTimer) {
-            console.log('🍖 Stopping food update timer');
+            if (serverConfig.verboseLogs) console.log('🍖 Stopping food update timer');
             clearInterval(this.foodUpdateTimer);
             this.foodUpdateTimer = null;
         }
@@ -230,7 +231,7 @@ class VillageService {
             const foodCapacity = village.food_capacity || 1000;
             const newFoodStores = Math.min(foodCapacity, Math.max(0, village.food_stores + foodProduced));
 
-            console.log(`Village ${villageId}: rate=${village.food_production_rate}, elapsed=${secondsElapsed}s, produced=${foodProduced}, old=${village.food_stores}, new=${newFoodStores}`);
+            if (serverConfig.verboseLogs) console.log(`Village ${villageId}: rate=${village.food_production_rate}, elapsed=${secondsElapsed}s, produced=${foodProduced}, old=${village.food_stores}, new=${newFoodStores}`);
 
             const updateQuery = `
                 UPDATE villages

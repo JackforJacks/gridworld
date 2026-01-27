@@ -13,6 +13,7 @@ const http = require('http');
 const pool = require('../config/database');
 const villageSeeder = require('../services/villageSeeder');
 const StateManager = require('../services/stateManager');
+const redis = require('../config/redis');
 
 // Use route modules
 router.use('/population', populationRoutes);
@@ -76,6 +77,28 @@ router.get('/state', async (req, res) => {
     } catch (error) {
         console.error('Error getting state:', error);
         res.status(500).json({ error: error.message });
+    }
+});
+
+// GET /api/metrics - Lightweight Redis counters for matchmaking & pregnancy
+router.get('/metrics', async (req, res) => {
+    try {
+        const keys = [
+            'stats:matchmaking:attempts','stats:matchmaking:successes','stats:matchmaking:failures','stats:matchmaking:contention',
+            'stats:pregnancy:attempts','stats:pregnancy:started','stats:pregnancy:aged_out','stats:pregnancy:eligible_added','stats:pregnancy:eligible_removed','stats:pregnancy:contention',
+            'stats:deliveries:count','stats:deliveries:contention'
+        ];
+        const pipeline = redis.pipeline();
+        for (const k of keys) pipeline.get(k);
+        const results = await pipeline.exec();
+        const metrics = {};
+        for (let i=0;i<keys.length;i++) metrics[keys[i]] = parseInt(results[i][1] || '0', 10) || 0;
+        // Also include approximate fertile set size
+        try { metrics['eligible:pregnancy:set_size'] = parseInt(await redis.scard('eligible:pregnancy:families') || 0, 10); } catch (_) { metrics['eligible:pregnancy:set_size'] = 0; }
+        return res.json({ success: true, metrics });
+    } catch (err) {
+        console.error('[API /api/metrics] Failed:', err);
+        return res.status(500).json({ success: false, error: err.message || String(err) });
     }
 });
 
@@ -150,66 +173,97 @@ router.get('/', (req, res) => {
     });
 });
 
-// POST /api/reset/fast - end-to-end reset in one call (no migrations)
-router.post('/reset/fast', async (req, res) => {
+// POST /api/worldrestart - Unified restart endpoint (tiles + population + villages + calendar reset)
+// REQUIRES explicit confirmation to prevent accidental data loss
+router.post('/worldrestart', async (req, res) => {
+    const startTime = Date.now();
+    
+    // SAFEGUARD: Require explicit confirmation to prevent accidental restarts
+    const { confirm } = req.body || {};
+    if (confirm !== 'DELETE_ALL_DATA') {
+        console.warn('⚠️ [worldrestart] Blocked restart attempt without confirmation');
+        return res.status(400).json({ 
+            success: false, 
+            message: 'World restart requires explicit confirmation. Send { "confirm": "DELETE_ALL_DATA" } in request body.',
+            warning: 'This will DELETE all population data permanently!'
+        });
+    }
+    
+    console.log('🔴 [worldrestart] CONFIRMED - Starting world restart (all data will be wiped)...');
+    
     const populationService = req.app.locals.populationService;
     if (!populationService) {
         return res.status(500).json({ success: false, message: 'Population service unavailable' });
     }
 
-    const status = {
-        regeneratedTiles: false,
-        populationReset: false,
-        populationsInitialized: false,
-        villagesSeeded: 0
-    };
+    const PopulationState = require('../services/populationState');
+    const villageSeeder = require('../services/villageSeeder');
+
+    let calendarState = null;
+    let wasRunning = false;
 
     try {
-        // 1) Regenerate tiles/lands via internal call (silent to avoid huge payload)
+        // Mark restarting so tick handlers skip processing
+        PopulationState.isRestarting = true;
+
+        // Pause calendar during world restart to prevent tick events
+        const calendarService = req.app.locals.calendarService;
+        if (calendarService && calendarService.state && calendarService.state.isRunning) {
+            wasRunning = true;
+            console.log('⏸️ Pausing calendar for world restart...');
+            calendarService.stop();
+        }
+
+        // Regenerate tiles (internal call)
+        let stepStart = Date.now();
         try {
             await selfGet('/api/tiles?regenerate=true&silent=1');
-            status.regeneratedTiles = true;
+            console.log(`⏱️ [worldrestart] Tiles regeneration: ${Date.now() - stepStart}ms`);
         } catch (regenErr) {
-            console.error('[API /api/reset/fast] Regeneration failed:', regenErr.message || regenErr);
-            return res.status(500).json({ success: false, step: 'regenerate', error: regenErr.message || String(regenErr) });
+            console.error('[API /api/worldrestart] Regeneration failed:', regenErr.message || regenErr);
+            throw regenErr;
         }
 
-        // 2) Reset population and reinitialize on habitable tiles
-        try {
-            await populationService.resetPopulation();
-            status.populationReset = true;
-        } catch (popResetErr) {
-            console.error('[API /api/reset/fast] Population reset failed:', popResetErr.message || popResetErr);
-            return res.status(500).json({ success: false, step: 'populationReset', error: popResetErr.message || String(popResetErr) });
-        }
+        // Reset population and reinitialize on habitable tiles
+        stepStart = Date.now();
+        await populationService.resetPopulation();
+        console.log(`⏱️ [worldrestart] Population reset: ${Date.now() - stepStart}ms`);
 
-        try {
-            const { rows: habitable } = await pool.query('SELECT id FROM tiles WHERE is_habitable = TRUE');
-            const habitableIds = habitable.map((r) => r.id);
-            if (habitableIds.length > 0) {
-                await populationService.initializeTilePopulations(habitableIds);
-            }
-            status.populationsInitialized = true;
-        } catch (popInitErr) {
-            console.error('[API /api/reset/fast] Population init failed:', popInitErr.message || popInitErr);
-            return res.status(500).json({ success: false, step: 'populationInit', error: popInitErr.message || String(popInitErr) });
+        stepStart = Date.now();
+        const { rows: habitable } = await pool.query('SELECT id FROM tiles WHERE is_habitable = TRUE');
+        const habitableIds = habitable.map((r) => r.id);
+        if (habitableIds.length > 0) {
+            await populationService.initializeTilePopulations(habitableIds);
         }
+        console.log(`⏱️ [worldrestart] Population initialization: ${Date.now() - stepStart}ms`);
 
-        // 3) Seed villages on populated tiles (non-fatal)
+        // Seed villages using Redis-first approach (non-fatal)
+        let seedResult = null;
+        stepStart = Date.now();
         try {
-            const seedResult = await villageSeeder.seedRandomVillages();
-            status.villagesSeeded = seedResult && seedResult.created ? seedResult.created : 0;
+            // Use Redis-first seeding - reads from Redis, writes to Redis
+            seedResult = await villageSeeder.seedVillagesRedisFirst();
+            console.log(`⏱️ [worldrestart] Village seeding (Redis-first): ${Date.now() - stepStart}ms`);
         } catch (seedErr) {
-            console.warn('[API /api/reset/fast] Village seeding failed:', seedErr.message || seedErr);
+            console.warn('[API /api/worldrestart] Village seeding failed:', seedErr.message || seedErr);
         }
 
-        // 4) Reset calendar to Year 4000
-        let calendarState = null;
+        // Broadcast villages to clients from Redis
+        try {
+            const villages = await StateManager.getAllVillages();
+            if (req.app.locals.io && villages.length > 0) {
+                req.app.locals.io.emit('villagesUpdated', villages);
+                console.log(`[API /api/worldrestart] Broadcasted ${villages.length} villages to clients`);
+            }
+        } catch (villageErr) {
+            console.warn('[API /api/worldrestart] Village broadcast failed:', villageErr.message || villageErr);
+        }
+
+        // Reset calendar to Year 4000 and reset internal counters
         try {
             const calendarService = req.app.locals.calendarService;
             if (calendarService && typeof calendarService.setDate === 'function') {
                 calendarService.setDate(1, 1, 4000);
-                // Reset internal counters
                 if (calendarService.state) {
                     if (typeof calendarService.calculateTotalDays === 'function') {
                         calendarService.state.totalDays = calendarService.calculateTotalDays(4000, 1, 1);
@@ -220,27 +274,60 @@ router.post('/reset/fast', async (req, res) => {
                     calendarService.state.startTime = Date.now();
                     calendarService.state.lastTickTime = Date.now();
                 }
-                // Persist to DB
                 if (typeof calendarService.saveStateToDB === 'function') {
                     try { await calendarService.saveStateToDB(); } catch (_) { }
                 }
                 calendarState = calendarService.getState();
-                // Broadcast to connected clients
                 if (calendarService.io && typeof calendarService.io.emit === 'function') {
                     calendarService.io.emit('calendarState', calendarState);
                     calendarService.io.emit('calendarDateSet', calendarState);
                 }
-                console.log('[API /api/reset/fast] Calendar reset to Year 4000');
+                console.log('[API /api/worldrestart] Calendar reset to Year 4000');
             }
         } catch (calErr) {
-            console.warn('[API /api/reset/fast] Calendar reset failed:', calErr.message || calErr);
+            console.warn('[API /api/worldrestart] Calendar reset failed:', calErr.message || calErr);
         }
 
-        return res.json({ success: true, ...status, calendarState });
+        // Broadcast population update to all clients after restart
+        try {
+            await populationService.broadcastUpdate('populationReset');
+            console.log('[API /api/worldrestart] Population update broadcasted to clients');
+        } catch (broadcastErr) {
+            console.warn('[API /api/worldrestart] Failed to broadcast population update:', broadcastErr.message || broadcastErr);
+        }
+
+        const elapsed = Date.now() - startTime;
+        const worldSeed = process.env.WORLD_SEED || 'unknown';
+        console.log(`🎲 World restarted with seed: ${worldSeed} (took ${elapsed}ms)`);
+
+        // Clear restarting flag and resume calendar if it was running
+        PopulationState.isRestarting = false;
+        if (wasRunning && req.app.locals.calendarService) {
+            console.log('▶️ Resuming calendar after world restart...');
+            req.app.locals.calendarService.start();
+        }
+
+        return res.json({ success: true, message: 'World restarted and reinitialized', newSeed: worldSeed, calendarState, elapsed, villagesSeeded: seedResult?.created || 0 });
     } catch (error) {
-        console.error('[API /api/reset/fast] Failed:', error.message || error);
-        return res.status(500).json({ success: false, message: 'Fast reset failed', error: error.message || String(error), ...status });
+        // Clear restarting flag even on error
+        PopulationState.isRestarting = false;
+
+        const elapsed = Date.now() - startTime;
+        console.error('[API /api/worldrestart] Failed:', error.message || error);
+
+        // Resume calendar even on failure if it was running
+        if (wasRunning && req.app.locals.calendarService) {
+            console.log('▶️ Resuming calendar after world restart failure...');
+            req.app.locals.calendarService.start();
+        }
+
+        return res.status(500).json({ success: false, message: 'World restart failed', error: error.message || String(error), elapsed });
     }
+});
+
+// Deprecated: /api/reset/fast has been superseded by /api/worldrestart
+router.post('/reset/fast', async (req, res) => {
+    res.status(410).json({ success: false, message: '/api/reset/fast is deprecated - use /api/worldrestart' });
 });
 
 // POST /api/reset-all - Truncate all tables dynamically

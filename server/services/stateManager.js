@@ -71,11 +71,13 @@ class StateManager {
         const { rows: people } = await pool.query('SELECT * FROM people');
         let maleCount = 0, femaleCount = 0;
         for (const p of people) {
+            // Normalize sex to boolean (Postgres may return it as string/int)
+            const sex = p.sex === true || p.sex === 'true' || p.sex === 1 ? true : false;
             pipeline.hset('person', p.id.toString(), JSON.stringify({
                 id: p.id,
                 tile_id: p.tile_id,
                 residency: p.residency,
-                sex: p.sex,
+                sex: sex,
                 health: p.health ?? 100,
                 family_id: p.family_id,
                 date_of_birth: p.date_of_birth,
@@ -85,8 +87,8 @@ class StateManager {
                 pipeline.sadd(`village:${p.tile_id}:${p.residency}:people`, p.id.toString());
             }
             // Count demographics
-            if (p.sex === true) maleCount++;
-            else if (p.sex === false) femaleCount++;
+            if (sex === true) maleCount++;
+            else femaleCount++;
         }
 
         // Load families
@@ -103,13 +105,34 @@ class StateManager {
             }));
         }
 
-        // Load tiles fertility
-        const { rows: tiles } = await pool.query('SELECT id, fertility FROM tiles');
-        for (const t of tiles) {
-            pipeline.hset('tile:fertility', t.id.toString(), (t.fertility || 0).toString());
+        // After writing families into Redis, populate fertile family set based on current calendar
+        try {
+            // Build a map of people for quick lookup
+            const peopleMap = {};
+            for (const p of people) peopleMap[p.id] = p;
+
+            let currentDate = { year: 1, month: 1, day: 1 };
+            if (this.calendarService && typeof this.calendarService.getState === 'function') {
+                const cs = this.calendarService.getState(); if (cs && cs.currentDate) currentDate = cs.currentDate;
+            }
+
+            const PopulationState = require('./populationState');
+            for (const f of families) {
+                try {
+                    // Skip if already pregnant or too many children
+                    const childrenCount = (f.children_ids || []).length;
+                    if (f.pregnancy || childrenCount >= 5) continue;
+                    const wife = peopleMap[f.wife_id];
+                    if (!wife || !wife.date_of_birth) continue;
+                    await PopulationState.addFertileFamily(f.id, currentDate.year, currentDate.month, currentDate.day);
+                } catch (_) { }
+            }
+            console.log('✅ Populated fertile family candidates from loaded families');
+        } catch (e) {
+            console.warn('⚠️ Failed to populate fertile family sets on load:', e && e.message ? e.message : e);
         }
 
-        // Load cleared land counts per village
+        // Get cleared land counts per village
         const { rows: landCounts } = await pool.query(`
             SELECT v.id as village_id, COUNT(*) as cleared_cnt
             FROM villages v
@@ -118,6 +141,7 @@ class StateManager {
                 AND tl.cleared = true
             GROUP BY v.id
         `);
+
         for (const lc of landCounts) {
             pipeline.hset('village:cleared', lc.village_id.toString(), lc.cleared_cnt.toString());
         }
@@ -133,6 +157,27 @@ class StateManager {
         await pipeline.exec();
         this.initialized = true;
         console.log(`✅ Loaded ${villages.length} villages, ${people.length} people (${maleCount} male, ${femaleCount} female), ${families.length} families to Redis`);
+
+        // Populate eligible matchmaking sets based on loaded people
+        try {
+            const PopulationState = require('./populationState');
+            let currentDate = { year: 1, month: 1, day: 1 };
+            if (this.calendarService && typeof this.calendarService.getState === 'function') {
+                const cs = this.calendarService.getState();
+                if (cs && cs.currentDate) currentDate = cs.currentDate;
+            }
+            console.log('📅 [StateManager] Using calendar date for eligible sets:', currentDate);
+            for (const p of people) {
+                try {
+                    await PopulationState.addEligiblePerson(p, currentDate.year, currentDate.month, currentDate.day);
+                } catch (e) {
+                    /* ignore individual failures */
+                }
+            }
+            console.log('✅ Populated eligible candidate sets from loaded people');
+        } catch (e) {
+            console.warn('⚠️ Failed to populate eligible sets on load:', e && e.message ? e.message : e);
+        }
 
         return { villages: villages.length, people: people.length, families: families.length, male: maleCount, female: femaleCount };
     }
@@ -165,6 +210,46 @@ class StateManager {
             const villageCount = Object.keys(villageData).length;
             console.log(`💾 [2/8] Got ${villageCount} villages`);
 
+            // Handle pending village inserts (Redis-first villages need to be persisted)
+            const pendingVillageIds = await PopulationState.getPendingVillageInserts();
+            let villagesInserted = 0;
+            const villageIdMappings = [];
+
+            if (pendingVillageIds.length > 0) {
+                console.log(`🏗️ Inserting ${pendingVillageIds.length} pending villages into PostgreSQL...`);
+                for (const tempId of pendingVillageIds) {
+                    try {
+                        const json = villageData[tempId.toString()];
+                        if (!json) continue;
+                        const v = JSON.parse(json);
+                        const insertResult = await pool.query(`
+                            INSERT INTO villages (tile_id, land_chunk_index, name, housing_slots, housing_capacity, food_stores, food_capacity, food_production_rate)
+                            VALUES ($1,$2,$3,$4,$5,$6,$7,$8)
+                            RETURNING id
+                        `, [v.tile_id, v.land_chunk_index, v.name, JSON.stringify(v.housing_slots || []), v.housing_capacity || 1000, v.food_stores || 0, v.food_capacity || 1000, v.food_production_rate || 0.5]);
+
+                        const newId = insertResult.rows[0].id;
+                        villageIdMappings.push({ tempId: parseInt(tempId, 10), newId });
+
+                        // Associate tiles_lands with this new village id
+                        try {
+                            await pool.query(`UPDATE tiles_lands SET village_id = $1 WHERE tile_id = $2 AND chunk_index = $3`, [newId, v.tile_id, v.land_chunk_index]);
+                        } catch (e) { /* non-fatal */ }
+
+                        villagesInserted++;
+                    } catch (err) {
+                        console.warn('[stateManager] Failed to insert pending village:', err.message || err);
+                    }
+                }
+
+                if (villageIdMappings.length > 0) {
+                    await PopulationState.reassignVillageIds(villageIdMappings);
+                    console.log(`🏗️ Reassigned ${villageIdMappings.length} village IDs in Redis`);
+                }
+                console.log(`🏗️ Inserted ${villagesInserted} villages into Postgres`);
+            }
+
+            // Now update existing villages' runtime fields (food stores, production)
             if (villageCount > 0) {
                 const villageValues = [];
                 for (const [id, json] of Object.entries(villageData)) {
@@ -191,6 +276,12 @@ class StateManager {
             let familiesDeleted = 0;
             if (pendingFamilyDeletes.length > 0) {
                 console.log(`🗑️ Deleting ${pendingFamilyDeletes.length} families from PostgreSQL...`);
+                // Remove any fertile family records for these families
+                try {
+                    for (const fid of pendingFamilyDeletes) {
+                        await redis.srem('eligible:pregnancy:families', fid.toString());
+                    }
+                } catch (_) { }
                 // First clear family_id references in people table
                 const famPlaceholders = pendingFamilyDeletes.map((_, idx) => `$${idx + 1}`).join(',');
                 await pool.query(`UPDATE people SET family_id = NULL WHERE family_id IN (${famPlaceholders})`, pendingFamilyDeletes);

@@ -1,5 +1,6 @@
 const EventEmitter = require('events');
 const calendarConfig = require('../config/calendar'); // Import the new config file
+const serverConfig = require('../config/server.js');
 const { getCalendarState, setCalendarState } = require('../models/calendarState');
 
 class CalendarService extends EventEmitter {
@@ -60,26 +61,38 @@ class CalendarService extends EventEmitter {
             realTimeTickMs: parseInt(process.env.CALENDAR_TICK_INTERVAL_MS) || 1000 // Load directly or use default
         };
 
-        // Defer all initialization until DB state is loaded
-        (async () => {
-            await this.loadStateFromDB();
-            console.log('📅 Calendar Service initialized:', {
-                daysPerMonth: this.internalConfig.daysPerMonth,
-                monthsPerYear: this.internalConfig.monthsPerYear,
-                currentSpeed: this.speedModes[this.currentSpeed].name,
-                realTimeInterval: `${this.internalConfig.realTimeTickMs}ms`,
-                startDate: this.getFormattedDate()
-            });
-            if (this.internalConfig.autoStart) {
-                this.start();
-            }
-        })();
-    }/**
+        // Mark as not initialized yet - caller must await initialize()
+        this._initialized = false;
+    }
+
+    /**
+     * Async initialization - must be awaited before using the service
+     */
+    async initialize() {
+        if (this._initialized) return;
+        
+        await this.loadStateFromDB();
+        this._initialized = true;
+        
+        if (serverConfig.verboseLogs) console.log('📅 Calendar Service initialized:', {
+            daysPerMonth: this.internalConfig.daysPerMonth,
+            monthsPerYear: this.internalConfig.monthsPerYear,
+            currentSpeed: this.speedModes[this.currentSpeed].name,
+            realTimeInterval: `${this.internalConfig.realTimeTickMs}ms`,
+            startDate: this.getFormattedDate()
+        });
+        
+        if (this.internalConfig.autoStart) {
+            this.start();
+        }
+    }
+
+    /**
      * Start the calendar ticking system (always 1 second intervals)
      */
     start() {
         if (this.state.isRunning) {
-            console.log('⚠️ Calendar is already running');
+            if (serverConfig.verboseLogs) console.log('⚠️ Calendar is already running');
             return false;
         }
 
@@ -90,7 +103,7 @@ class CalendarService extends EventEmitter {
         this.tickTimer = setInterval(() => {
             this.tick();
         }, this.internalConfig.realTimeTickMs); // Use internalConfig for realTimeTickMs
-        console.log(`🟢 Calendar started - ${this.speedModes[this.currentSpeed].name} (${this.internalConfig.realTimeTickMs}ms intervals)`);
+        if (serverConfig.verboseLogs) console.log(`🟢 Calendar started - ${this.speedModes[this.currentSpeed].name} (${this.internalConfig.realTimeTickMs}ms intervals)`);
 
         const stateData = this.getState();
         this.emit('started', stateData);
@@ -109,7 +122,7 @@ class CalendarService extends EventEmitter {
      */
     stop() {
         if (!this.state.isRunning) {
-            console.log('⚠️ Calendar is already stopped');
+            if (serverConfig.verboseLogs) console.log('⚠️ Calendar is already stopped');
             return false;
         }
 
@@ -118,7 +131,8 @@ class CalendarService extends EventEmitter {
         if (this.tickTimer) {
             clearInterval(this.tickTimer);
             this.tickTimer = null;
-        } console.log('🔴 Calendar stopped');
+        }
+        if (serverConfig.verboseLogs) console.log('🔴 Calendar stopped');
 
         const stateData = this.getState();
         this.emit('stopped', stateData);
@@ -157,7 +171,7 @@ class CalendarService extends EventEmitter {
 
         this.currentSpeed = this.config.defaultSpeed;
 
-        console.log('🔄 Calendar reset to start date');
+        if (serverConfig.verboseLogs) console.log('🔄 Calendar reset to start date');
         this.emit('reset', this.getState());
 
         if (wasRunning && this.config.autoStart) {
@@ -272,7 +286,7 @@ class CalendarService extends EventEmitter {
         this.currentSpeed = speedKey;
 
         // If running, no need to restart timer since interval is always 1 second
-        console.log(`⚡ Speed changed from ${this.speedModes[oldSpeed].name} to ${this.speedModes[speedKey].name}`);
+        if (serverConfig.verboseLogs) console.log(`⚡ Speed changed from ${this.speedModes[oldSpeed].name} to ${this.speedModes[speedKey].name}`);
 
         this.emit('speedChanged', {
             oldSpeed: this.speedModes[oldSpeed],
@@ -304,7 +318,7 @@ class CalendarService extends EventEmitter {
         // Recalculate total days
         this.state.totalDays = this.calculateTotalDays(year, month, day);
 
-        console.log(`📅 Date manually set: ${this.getFormattedDate().short}`);
+        if (serverConfig.verboseLogs) console.log(`📅 Date manually set: ${this.getFormattedDate().short}`);
         this.emit('dateSet', {
             previousDate,
             currentDate: { ...this.currentDate }
@@ -319,7 +333,7 @@ class CalendarService extends EventEmitter {
      * Change the tick interval (deprecated in new system)
      */
     setTickInterval(intervalMs) {
-        console.log('⚠️ setTickInterval is deprecated in the new calendar system. Tick interval is fixed at 1000ms.');
+        if (serverConfig.verboseLogs) console.log('⚠️ setTickInterval is deprecated in the new calendar system. Tick interval is fixed at 1000ms.');
         return false;
     }
 
@@ -358,7 +372,7 @@ class CalendarService extends EventEmitter {
             return { ...this.currentDate }; // Return a copy to prevent external modification
         }
 
-        console.warn('[CalendarService] currentDate not initialized. Using default start date.');
+        if (serverConfig.verboseLogs) console.warn('[CalendarService] currentDate not initialized. Using default start date.');
         return {
             year: this.config.startYear || 1,
             month: this.config.startMonth || 1,
