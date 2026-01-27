@@ -5,7 +5,7 @@ const pool = require('../config/database');
 class PopulationState {
     // Track next ID for new people created in Redis (not yet in Postgres)
     static nextTempId = -1; // Negative IDs indicate new records not yet in Postgres
-    
+
     // Global flag to indicate restart/clear in progress - tick handlers should check this
     static isRestarting = false;
 

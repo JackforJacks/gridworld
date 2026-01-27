@@ -33,7 +33,7 @@ async function seedRandomVillages(count = null) {
             WHERE tile_id IS NOT NULL
             GROUP BY tile_id
         `);
-        
+
         if (!populatedTiles || populatedTiles.length === 0) {
             await pool.query('ROLLBACK');
             return { created: 0, villages: [] };
@@ -75,7 +75,7 @@ async function seedRandomVillages(count = null) {
 
             for (const chunkIndex of chunksToUse) {
                 const name = `Village ${tileId}-${chunkIndex}`;
-                villageValues.push(`($${paramIndex}, $${paramIndex+1}, $${paramIndex+2}, $${paramIndex+3}, $${paramIndex+4})`);
+                villageValues.push(`($${paramIndex}, $${paramIndex + 1}, $${paramIndex + 2}, $${paramIndex + 3}, $${paramIndex + 4})`);
                 villageParams.push(tileId, chunkIndex, name, JSON.stringify([]), housingCapacity);
                 villageMap.push({ tile_id: tileId, chunk_index: chunkIndex });
                 paramIndex += 5;
@@ -94,13 +94,13 @@ async function seedRandomVillages(count = null) {
 
             // Batch update tiles_lands with village_ids
             if (insertedVillages.length > 0) {
-                const updateCases = insertedVillages.map(v => 
+                const updateCases = insertedVillages.map(v =>
                     `WHEN tile_id = ${v.tile_id} AND chunk_index = ${v.land_chunk_index} THEN ${v.id}`
                 ).join(' ');
-                const wherePairs = insertedVillages.map(v => 
+                const wherePairs = insertedVillages.map(v =>
                     `(tile_id = ${v.tile_id} AND chunk_index = ${v.land_chunk_index})`
                 ).join(' OR ');
-                
+
                 try {
                     await pool.query(`
                         UPDATE tiles_lands SET village_id = CASE ${updateCases} END
@@ -166,7 +166,7 @@ async function seedRandomVillages(count = null) {
 
         // Execute residency updates in batches
         for (const update of residencyUpdates) {
-            await pool.query(`UPDATE people SET residency = $1 WHERE id = ANY($2)`, 
+            await pool.query(`UPDATE people SET residency = $1 WHERE id = ANY($2)`,
                 [update.residency, update.personIds]);
         }
 

@@ -70,10 +70,10 @@ class CalendarService extends EventEmitter {
      */
     async initialize() {
         if (this._initialized) return;
-        
+
         await this.loadStateFromDB();
         this._initialized = true;
-        
+
         if (serverConfig.verboseLogs) console.log('📅 Calendar Service initialized:', {
             daysPerMonth: this.internalConfig.daysPerMonth,
             monthsPerYear: this.internalConfig.monthsPerYear,
@@ -81,7 +81,7 @@ class CalendarService extends EventEmitter {
             realTimeInterval: `${this.internalConfig.realTimeTickMs}ms`,
             startDate: this.getFormattedDate()
         });
-        
+
         if (this.internalConfig.autoStart) {
             this.start();
         }

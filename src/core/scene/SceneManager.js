@@ -297,17 +297,17 @@ class SceneManager {
             'All people, families, and villages will be wiped and regenerated.\n\n' +
             'Are you absolutely sure you want to regenerate tiles?'
         );
-        
+
         if (!confirmed) {
             console.log('🚫 Tile regeneration cancelled by user');
             return;
         }
-        
+
         try {
             console.log('🌍 Regenerating tiles with new terrain (user confirmed)...');
 
             // First, restart the world to get a new seed
-            const restartResponse = await fetch('/api/worldrestart', { 
+            const restartResponse = await fetch('/api/worldrestart', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ confirm: 'DELETE_ALL_DATA' })

@@ -186,12 +186,12 @@ async function getAllPopulationData(pool, calendarService, populationServiceInst
             console.warn('[getAllPopulationData] Redis getAllTilePopulations failed, falling back to Postgres:', e.message);
         }
     }
-    
+
     // If Redis didn't have data, fall back to Postgres
     if (Object.keys(populations).length === 0) {
         populations = await loadPopulationData(pool);
     }
-    
+
     const stats = await getPopulationStats(pool, calendarService, populationServiceInstance);
     const familyStats = await getFamilyStatistics(pool);
 

@@ -90,7 +90,7 @@ async function createFamily(pool, husbandId, wifeId, tileId) {
             try { await releaseLock(lockKey, lockToken); } catch (e) { console.warn('[createFamily] failed to release lock:', e && e.message ? e.message : e); }
         }
     }
-} 
+}
 
 /**
  * Starts pregnancy for a family - Redis-only
@@ -309,7 +309,7 @@ async function deliverBaby(pool, calendarService, populationServiceInstance, fam
             try { await releaseLock(lockKey, lockToken); } catch (e) { console.warn('[deliverBaby] failed to release lock:', e && e.message ? e.message : e); }
         }
     }
-} 
+}
 
 /**
  * Gets all families on a specific tile - from Redis
@@ -389,7 +389,7 @@ async function processDeliveries(pool, calendarService, populationServiceInstanc
                     continue;
                 }
 
-                        // Clear pregnancy status in Redis before delivery
+                // Clear pregnancy status in Redis before delivery
                 await PopulationState.updateFamily(family.id, { pregnancy: false, delivery_date: null });
                 const res = await deliverBaby(pool, calendarService, populationServiceInstance, family.id);
                 // After delivery, if still eligible, add back to fertile family set
@@ -483,75 +483,75 @@ async function formNewFamilies(pool, calendarService) {
 
         const { year, month, day } = currentDate;
 
-// Use Redis-based eligible sets for faster matchmaking
-    // Collect tiles that have eligible males or females
-    const maleTiles = await redis.smembers('tiles_with_eligible_males');
-    const femaleTiles = await redis.smembers('tiles_with_eligible_females');
-    const tileSet = new Set([...maleTiles, ...femaleTiles]);
+        // Use Redis-based eligible sets for faster matchmaking
+        // Collect tiles that have eligible males or females
+        const maleTiles = await redis.smembers('tiles_with_eligible_males');
+        const femaleTiles = await redis.smembers('tiles_with_eligible_females');
+        const tileSet = new Set([...maleTiles, ...femaleTiles]);
 
-    let newFamiliesCount = 0;
+        let newFamiliesCount = 0;
 
-    for (const tileId of tileSet) {
-        try {
-            const maleSetKey = `eligible:males:tile:${tileId}`;
-            const femaleSetKey = `eligible:females:tile:${tileId}`;
+        for (const tileId of tileSet) {
+            try {
+                const maleSetKey = `eligible:males:tile:${tileId}`;
+                const femaleSetKey = `eligible:females:tile:${tileId}`;
 
-            // Check approximate counts
-            const maleCount = parseInt(await redis.scard(maleSetKey), 10) || 0;
-            const femaleCount = parseInt(await redis.scard(femaleSetKey), 10) || 0;
+                // Check approximate counts
+                const maleCount = parseInt(await redis.scard(maleSetKey), 10) || 0;
+                const femaleCount = parseInt(await redis.scard(femaleSetKey), 10) || 0;
 
-            if (maleCount === 0 || femaleCount === 0) {
-                // Nothing to do on this tile
-                continue;
-            }
-
-            const pairs = Math.min(maleCount, femaleCount);
-            if (serverConfig.verboseLogs) console.log(`   Tile ${tileId}: Attempting up to ${pairs} pairings (${maleCount} males, ${femaleCount} females)`);
-
-            for (let i = 0; i < pairs; i++) {
-                // Record attempt
-                try { await redis.incr('stats:matchmaking:attempts'); } catch (_) { }
-
-                // Pop one candidate from each set
-                const maleId = await redis.spop(maleSetKey);
-                if (!maleId) break; // no more males
-                const femaleId = await redis.spop(femaleSetKey);
-                if (!femaleId) {
-                    // Put male back and stop trying for this tile now
-                    await redis.sadd(maleSetKey, maleId);
-                    break;
+                if (maleCount === 0 || femaleCount === 0) {
+                    // Nothing to do on this tile
+                    continue;
                 }
 
-                // Attempt to create family
-                try {
-                    const newFamily = await createFamily(pool, parseInt(maleId), parseInt(femaleId), parseInt(tileId));
-                    if (!newFamily) {
-                        // Creation failed (race or restart) - return survivors to sets
+                const pairs = Math.min(maleCount, femaleCount);
+                if (serverConfig.verboseLogs) console.log(`   Tile ${tileId}: Attempting up to ${pairs} pairings (${maleCount} males, ${femaleCount} females)`);
+
+                for (let i = 0; i < pairs; i++) {
+                    // Record attempt
+                    try { await redis.incr('stats:matchmaking:attempts'); } catch (_) { }
+
+                    // Pop one candidate from each set
+                    const maleId = await redis.spop(maleSetKey);
+                    if (!maleId) break; // no more males
+                    const femaleId = await redis.spop(femaleSetKey);
+                    if (!femaleId) {
+                        // Put male back and stop trying for this tile now
                         await redis.sadd(maleSetKey, maleId);
-                        await redis.sadd(femaleSetKey, femaleId);
-                        continue;
+                        break;
                     }
-                    // Add family to fertile family set if wife is fertile
+
+                    // Attempt to create family
                     try {
-                        await PopulationState.addFertileFamily(newFamily.id, year, month, day);
-                    } catch (_) { }
+                        const newFamily = await createFamily(pool, parseInt(maleId), parseInt(femaleId), parseInt(tileId));
+                        if (!newFamily) {
+                            // Creation failed (race or restart) - return survivors to sets
+                            await redis.sadd(maleSetKey, maleId);
+                            await redis.sadd(femaleSetKey, femaleId);
+                            continue;
+                        }
+                        // Add family to fertile family set if wife is fertile
+                        try {
+                            await PopulationState.addFertileFamily(newFamily.id, year, month, day);
+                        } catch (_) { }
 
-                    newFamiliesCount++;
+                        newFamiliesCount++;
 
-                    // 40% chance to start immediate pregnancy
-                    if (Math.random() < 0.40) {
-                        try { await startPregnancy(pool, calendarService, newFamily.id); } catch (e) { /* ignore */ }
+                        // 40% chance to start immediate pregnancy
+                        if (Math.random() < 0.40) {
+                            try { await startPregnancy(pool, calendarService, newFamily.id); } catch (e) { /* ignore */ }
+                        }
+                    } catch (err) {
+                        try { await redis.incr('stats:matchmaking:failures'); } catch (_) { }
+                        console.error(`Error creating family between ${maleId} and ${femaleId} on tile ${tileId}:`, err);
+                        // Return survivors to sets
+                        try { await redis.sadd(maleSetKey, maleId); } catch (_) { }
+                        try { await redis.sadd(femaleSetKey, femaleId); } catch (_) { }
                     }
-                } catch (err) {
-                    try { await redis.incr('stats:matchmaking:failures'); } catch (_) { }
-                    console.error(`Error creating family between ${maleId} and ${femaleId} on tile ${tileId}:`, err);
-                    // Return survivors to sets
-                    try { await redis.sadd(maleSetKey, maleId); } catch (_) { }
-                    try { await redis.sadd(femaleSetKey, femaleId); } catch (_) { }
                 }
-            }
-        } catch (err) {
-            console.warn('[formNewFamilies] Error processing tile:', tileId, err && err.message ? err.message : err);
+            } catch (err) {
+                console.warn('[formNewFamilies] Error processing tile:', tileId, err && err.message ? err.message : err);
             }
         }
 

@@ -84,15 +84,15 @@ router.get('/state', async (req, res) => {
 router.get('/metrics', async (req, res) => {
     try {
         const keys = [
-            'stats:matchmaking:attempts','stats:matchmaking:successes','stats:matchmaking:failures','stats:matchmaking:contention',
-            'stats:pregnancy:attempts','stats:pregnancy:started','stats:pregnancy:aged_out','stats:pregnancy:eligible_added','stats:pregnancy:eligible_removed','stats:pregnancy:contention',
-            'stats:deliveries:count','stats:deliveries:contention'
+            'stats:matchmaking:attempts', 'stats:matchmaking:successes', 'stats:matchmaking:failures', 'stats:matchmaking:contention',
+            'stats:pregnancy:attempts', 'stats:pregnancy:started', 'stats:pregnancy:aged_out', 'stats:pregnancy:eligible_added', 'stats:pregnancy:eligible_removed', 'stats:pregnancy:contention',
+            'stats:deliveries:count', 'stats:deliveries:contention'
         ];
         const pipeline = redis.pipeline();
         for (const k of keys) pipeline.get(k);
         const results = await pipeline.exec();
         const metrics = {};
-        for (let i=0;i<keys.length;i++) metrics[keys[i]] = parseInt(results[i][1] || '0', 10) || 0;
+        for (let i = 0; i < keys.length; i++) metrics[keys[i]] = parseInt(results[i][1] || '0', 10) || 0;
         // Also include approximate fertile set size
         try { metrics['eligible:pregnancy:set_size'] = parseInt(await redis.scard('eligible:pregnancy:families') || 0, 10); } catch (_) { metrics['eligible:pregnancy:set_size'] = 0; }
         return res.json({ success: true, metrics });
@@ -177,20 +177,20 @@ router.get('/', (req, res) => {
 // REQUIRES explicit confirmation to prevent accidental data loss
 router.post('/worldrestart', async (req, res) => {
     const startTime = Date.now();
-    
+
     // SAFEGUARD: Require explicit confirmation to prevent accidental restarts
     const { confirm } = req.body || {};
     if (confirm !== 'DELETE_ALL_DATA') {
         console.warn('⚠️ [worldrestart] Blocked restart attempt without confirmation');
-        return res.status(400).json({ 
-            success: false, 
+        return res.status(400).json({
+            success: false,
             message: 'World restart requires explicit confirmation. Send { "confirm": "DELETE_ALL_DATA" } in request body.',
             warning: 'This will DELETE all population data permanently!'
         });
     }
-    
+
     console.log('🔴 [worldrestart] CONFIRMED - Starting world restart (all data will be wiped)...');
-    
+
     const populationService = req.app.locals.populationService;
     if (!populationService) {
         return res.status(500).json({ success: false, message: 'Population service unavailable' });

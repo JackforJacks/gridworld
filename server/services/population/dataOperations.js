@@ -21,7 +21,7 @@ async function loadPopulationData(pool) {
                 console.warn('[loadPopulationData] Redis failed, falling back to Postgres:', e.message);
             }
         }
-        
+
         // Fall back to Postgres
         const result = await pool.query('SELECT tile_id, COUNT(*) as population FROM people GROUP BY tile_id');
         const populations = {};

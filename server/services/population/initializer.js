@@ -130,7 +130,7 @@ function startAutoSave(serviceInstance) {
             // Try to resume calendar even on error
             const calendarService = serviceInstance.calendarService;
             if (calendarService?.state?.isRunning === false && calendarService) {
-                try { calendarService.start(); } catch (_) {}
+                try { calendarService.start(); } catch (_) { }
             }
         }
     }, config.autoSaveInterval); // Use config for interval

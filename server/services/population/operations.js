@@ -143,7 +143,7 @@ async function initializeTilePopulations(pool, calendarService, serviceInstance,
         // ========== REDIS-FIRST: Generate all people in memory ==========
         const step1Start = Date.now();
         if (serverConfig.verboseLogs) console.log('⏱️ [initPop] Step 1: Generating people data in memory...');
-        
+
         let personIdCounter = 1;
         const allPeople = []; // Array of person objects with temp IDs
         const tilePopulationMap = {}; // tile_id -> array of person objects
@@ -152,7 +152,7 @@ async function initializeTilePopulations(pool, calendarService, serviceInstance,
             const tilePopulation = Math.floor(2500 + Math.random() * 1001);
             tilePopulationMap[tile_id] = [];
             const minBachelorsPerSex = Math.floor(tilePopulation * 0.15);
-            
+
             // Add guaranteed eligible males (16-45)
             for (let i = 0; i < minBachelorsPerSex; i++) {
                 const age = 16 + Math.floor(Math.random() * 30);
@@ -203,10 +203,10 @@ async function initializeTilePopulations(pool, calendarService, serviceInstance,
         // ========== Step 2: Create families in memory ==========
         const step2Start = Date.now();
         if (serverConfig.verboseLogs) console.log('⏱️ [initPop] Step 2: Creating families in memory...');
-        
+
         let familyIdCounter = 1;
         const allFamilies = [];
-        
+
         // Calculate age for matching
         const getAge = (birthDate) => {
             const [year, month, day] = birthDate.split('-').map(Number);
@@ -219,14 +219,14 @@ async function initializeTilePopulations(pool, calendarService, serviceInstance,
 
         for (const tile_id of selectedTiles) {
             const tilePeople = tilePopulationMap[tile_id];
-            
+
             // Find eligible bachelors
             const eligibleMales = tilePeople.filter(p => {
                 if (!p.sex || p.family_id !== null) return false;
                 const age = getAge(p.date_of_birth);
                 return age >= 16 && age <= 45;
             });
-            
+
             const eligibleFemales = tilePeople.filter(p => {
                 if (p.sex || p.family_id !== null) return false;
                 const age = getAge(p.date_of_birth);
@@ -245,7 +245,7 @@ async function initializeTilePopulations(pool, calendarService, serviceInstance,
                 const husband = eligibleMales[i];
                 const wife = eligibleFemales[i];
                 const familyId = familyIdCounter++;
-                
+
                 const family = {
                     id: familyId,
                     husband_id: husband.id,
@@ -255,11 +255,11 @@ async function initializeTilePopulations(pool, calendarService, serviceInstance,
                     delivery_date: null,
                     children_ids: []
                 };
-                
+
                 // Update person family_ids in memory
                 husband.family_id = familyId;
                 wife.family_id = familyId;
-                
+
                 tileFamilies.push(family);
                 allFamilies.push(family);
             }
@@ -270,7 +270,7 @@ async function initializeTilePopulations(pool, calendarService, serviceInstance,
                     const age = getAge(p.date_of_birth);
                     return age < 16 && p.family_id === null;
                 });
-                
+
                 for (let i = 0; i < minors.length; i++) {
                     const family = tileFamilies[i % tileFamilies.length];
                     minors[i].family_id = family.id;
@@ -284,30 +284,30 @@ async function initializeTilePopulations(pool, calendarService, serviceInstance,
         // ========== Step 3: Write all data to Redis ==========
         const step3Start = Date.now();
         if (serverConfig.verboseLogs) console.log('⏱️ [initPop] Step 3: Writing to Redis...');
-        
+
         // Use batch operations for Redis
         const BATCH_SIZE = 500;
-        
+
         // Add all people to Redis with isNew=true (marks as pending insert)
         for (let i = 0; i < allPeople.length; i += BATCH_SIZE) {
             const batch = allPeople.slice(i, i + BATCH_SIZE);
             await Promise.all(batch.map(person => PopulationState.addPerson(person, true)));
         }
         if (serverConfig.verboseLogs) console.log(`⏱️ [initPop] Added ${allPeople.length} people to Redis`);
-        
+
         // Add all families to Redis with isNew=true (marks as pending insert)
         for (let i = 0; i < allFamilies.length; i += BATCH_SIZE) {
             const batch = allFamilies.slice(i, i + BATCH_SIZE);
             await Promise.all(batch.map(family => PopulationState.addFamily(family, true)));
         }
-if (serverConfig.verboseLogs) console.log(`⏱️ [initPop] Added ${allFamilies.length} families to Redis`);
-        
+        if (serverConfig.verboseLogs) console.log(`⏱️ [initPop] Added ${allFamilies.length} families to Redis`);
+
         if (serverConfig.verboseLogs) console.log(`⏱️ [initPop] Step 3 done: Redis write completed in ${Date.now() - step3Start}ms`);
-        
+
         // ========== Return formatted result ==========
         const totalTime = Date.now() - startTime;
         if (serverConfig.verboseLogs) console.log(`✅ [initPop] COMPLETE: ${allPeople.length} people, ${allFamilies.length} families in ${totalTime}ms (Redis-only, pending Postgres save)`);
-        
+
         const populations = await PopulationState.getAllTilePopulations();
         return formatPopulationData(populations);
     } catch (error) {

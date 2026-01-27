@@ -158,15 +158,15 @@ router.get('/', async (req, res) => {
             const tileValues = [];
             const tileParams = [];
             let paramIndex = 1;
-            
+
             for (const tile of hexasphere.tiles) {
                 const props = tile.getProperties ? tile.getProperties() : tile;
                 const centerPoint = tile.centerPoint ? { x: tile.centerPoint.x, y: tile.centerPoint.y, z: tile.centerPoint.z } : null;
                 const biome = (centerPoint && props.isLand) ? calculateBiome(tile.centerPoint, props.terrainType, seededRandom) : null;
                 const fertility = calculateFertility(biome, props.terrainType, seededRandom);
                 const isHabitableFlag = (props.Habitable === 'yes' && biome !== 'tundra' && biome !== 'desert' && biome !== 'alpine');
-                
-                tileValues.push(`($${paramIndex}, $${paramIndex+1}, $${paramIndex+2}, $${paramIndex+3}, $${paramIndex+4}, $${paramIndex+5}, $${paramIndex+6}, $${paramIndex+7}, $${paramIndex+8}, $${paramIndex+9}, $${paramIndex+10}, $${paramIndex+11}, $${paramIndex+12})`);
+
+                tileValues.push(`($${paramIndex}, $${paramIndex + 1}, $${paramIndex + 2}, $${paramIndex + 3}, $${paramIndex + 4}, $${paramIndex + 5}, $${paramIndex + 6}, $${paramIndex + 7}, $${paramIndex + 8}, $${paramIndex + 9}, $${paramIndex + 10}, $${paramIndex + 11}, $${paramIndex + 12})`);
                 tileParams.push(
                     props.id,
                     centerPoint?.x || 0,
@@ -248,10 +248,10 @@ router.get('/', async (req, res) => {
                 }
 
                 for (let chunk_index = 0; chunk_index < 100; chunk_index++) {
-                    landValues.push(`($${landParamIndex}, $${landParamIndex+1}, $${landParamIndex+2}, $${landParamIndex+3})`);
+                    landValues.push(`($${landParamIndex}, $${landParamIndex + 1}, $${landParamIndex + 2}, $${landParamIndex + 3})`);
                     landParams.push(tile.id, chunk_index, landTypes[chunk_index], landTypes[chunk_index] === 'cleared');
                     landParamIndex += 4;
-                    
+
                     // Insert in batches to avoid query size limits
                     if (landValues.length >= BATCH_SIZE) {
                         await pool.query(
@@ -264,7 +264,7 @@ router.get('/', async (req, res) => {
                     }
                 }
             }
-            
+
             // Insert remaining land values
             if (landValues.length > 0) {
                 await pool.query(
