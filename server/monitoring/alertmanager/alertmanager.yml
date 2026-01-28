@@ -1,9 +1,0 @@
-global:
-  resolve_timeout: 5m
-route:
-  receiver: 'devops-email'
-receivers:
-  - name: 'devops-email'
-    email_configs:
-      - to: 'devops@example.com'
-        send_resolved: true
