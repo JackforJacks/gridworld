@@ -1,10 +1,17 @@
-let client;
-try {
-    client = require('prom-client');
-} catch (err) {
-    console.warn('[metrics] prom-client not installed — metrics disabled');
-    client = null;
+// REMOVED: Prometheus metrics integration has been removed from the codebase on 2026-01-28.
+// This module now provides no-op stubs so other modules that `require('./metrics')` do not crash.
+
+function init(app) {
+    // Intentionally no /metrics endpoint is registered.
 }
+
+const auditRunCounter = { inc: () => {} };
+const auditFailures = { inc: () => {} };
+const auditDuration = { observe: () => {} };
+const issuesGauge = { set: () => {} };
+const lastRunGauge = { set: () => {} };
+
+module.exports = { init, auditRunCounter, auditFailures, auditDuration, issuesGauge, lastRunGauge };
 
 // Provide no-op fallbacks when prom-client isn't present (helps tests without installing deps)
 let auditRunCounter, auditFailures, auditDuration, issuesGauge, lastRunGauge;
