@@ -58,7 +58,7 @@ describe('verifyAndRepairIntegrity', () => {
         expect(afterMissing).not.toContain('9999');
 
         // Duplicate resolved: id '1' should only be in one set
-        const sets = [0,1].map(r => `village:${tileId}:${r}:people`);
+        const sets = [0, 1].map(r => `village:${tileId}:${r}:people`);
         let total = 0;
         for (const s of sets) {
             const members = await storage.smembers(s);

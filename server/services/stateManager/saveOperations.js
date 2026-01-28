@@ -235,7 +235,7 @@ async function insertPendingFamiliesDirect(PopulationState) {
         const batchSize = 100;
         for (let i = 0; i < pendingFamilyInserts.length; i += batchSize) {
             const batch = pendingFamilyInserts.slice(i, i + batchSize);
-            
+
             const values = [];
             const params = [];
             let paramIdx = 1;

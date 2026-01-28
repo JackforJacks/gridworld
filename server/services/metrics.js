@@ -17,11 +17,11 @@ if (client) {
     lastRunGauge = new client.Gauge({ name: 'integrity_audit_last_run_timestamp', help: 'Unix timestamp of last integrity audit run' });
 } else {
     // No-op implementations
-    auditRunCounter = { inc: () => {} };
-    auditFailures = { inc: () => {} };
-    auditDuration = { observe: () => {} };
-    issuesGauge = { set: () => {} };
-    lastRunGauge = { set: () => {} };
+    auditRunCounter = { inc: () => { } };
+    auditFailures = { inc: () => { } };
+    auditDuration = { observe: () => { } };
+    issuesGauge = { set: () => { } };
+    lastRunGauge = { set: () => { } };
 }
 
 function init(app) {

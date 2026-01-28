@@ -32,7 +32,7 @@ class IdAllocator {
         }
 
         const blockSize = Math.max(this.defaultBlockSize, count);
-        
+
         try {
             // Reserve a block of IDs atomically
             // setval returns the new value, we calculate the first ID in our block
@@ -40,10 +40,10 @@ class IdAllocator {
                 `SELECT setval($1, nextval($1) + $2 - 1) - $2 + 1 AS first_id`,
                 [poolInfo.sequence, blockSize]
             );
-            
+
             poolInfo.next = parseInt(result.rows[0].first_id, 10);
             poolInfo.max = poolInfo.next + blockSize;
-            
+
             console.log(`🔢 Reserved ${blockSize} ${entityType} IDs: ${poolInfo.next} - ${poolInfo.max - 1}`);
         } catch (err) {
             console.error(`Failed to reserve ${entityType} IDs:`, err.message);
@@ -91,7 +91,7 @@ class IdAllocator {
         // Allocate the IDs
         const firstId = poolInfo.next;
         poolInfo.next += count;
-        
+
         // Use Uint32Array internally for memory efficiency (4 bytes per ID vs 8)
         const idsTyped = new Uint32Array(count);
         for (let i = 0; i < count; i++) {

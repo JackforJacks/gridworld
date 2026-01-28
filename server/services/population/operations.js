@@ -141,7 +141,7 @@ async function initializeTilePopulations(pool, calendarService, serviceInstance,
 
         // ========== Pre-allocate IDs dynamically per tile ==========
         const idAllocator = require('../idAllocator');
-        
+
         let allPeople = []; // Array of person objects with real IDs
         const tilePopulationMap = {}; // tile_id -> array of person objects
         const tilePopulationTargets = {}; // tile_id -> target population per tile (500-5000)
