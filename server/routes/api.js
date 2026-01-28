@@ -80,27 +80,8 @@ router.get('/state', async (req, res) => {
     }
 });
 
-// GET /api/metrics - Lightweight Redis counters for matchmaking & pregnancy
-router.get('/metrics', async (req, res) => {
-    try {
-        const keys = [
-            'stats:matchmaking:attempts', 'stats:matchmaking:successes', 'stats:matchmaking:failures', 'stats:matchmaking:contention',
-            'stats:pregnancy:attempts', 'stats:pregnancy:started', 'stats:pregnancy:aged_out', 'stats:pregnancy:eligible_added', 'stats:pregnancy:eligible_removed', 'stats:pregnancy:contention',
-            'stats:deliveries:count', 'stats:deliveries:contention'
-        ];
-        const pipeline = storage.pipeline();
-        for (const k of keys) pipeline.get(k);
-        const results = await pipeline.exec();
-        const metrics = {};
-        for (let i = 0; i < keys.length; i++) metrics[keys[i]] = parseInt(results[i][1] || '0', 10) || 0;
-        // Also include approximate fertile set size
-        try { metrics['eligible:pregnancy:set_size'] = parseInt(await storage.scard('eligible:pregnancy:families') || 0, 10); } catch (_) { metrics['eligible:pregnancy:set_size'] = 0; }
-        return res.json({ success: true, metrics });
-    } catch (err) {
-        console.error('[API /api/metrics] Failed:', err);
-        return res.status(500).json({ success: false, error: err.message || String(err) });
-    }
-});
+// REMOVED: /api/metrics endpoint (lightweight Redis metrics) removed on 2026-01-28
+// This endpoint was replaced/removed as part of removing monitoring artifacts from the repository.
 
 // Helper: internal GET request to this server
 async function selfGet(path) {
