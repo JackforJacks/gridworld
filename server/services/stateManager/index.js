@@ -36,15 +36,40 @@ class StateManager {
     /**
      * Load all data from PostgreSQL into Redis on server start
      */
-    static async loadFromDatabase() {
-        const result = await loadFromDatabase({
-            calendarService: this.calendarService,
-            io: this.io
-        });
-        if (!result.skipped) {
-            this.initialized = true;
+    static async loadFromDatabase(context) {
+        // Allow callers to pass a context with a calendarService & io for integration tests
+        const calendarService = context && context.calendarService ? context.calendarService : this.calendarService;
+        const io = context && context.io ? context.io : this.io;
+        let paused = false;
+        try {
+            // Pause the calendar if it's currently running to avoid tick events during load
+            if (calendarService && calendarService.state && calendarService.state.isRunning) {
+                try {
+                    calendarService.stop();
+                    paused = true;
+                } catch (e) {
+                    // If we cannot pause the calendar, skip loading to avoid inconsistent state
+                    console.warn('⚠️ Could not pause calendar, skipping state load');
+                    return { villages: 0, people: 0, families: 0, skipped: true };
+                }
+            }
+
+            const result = await loadFromDatabase({
+                calendarService: calendarService,
+                io: io
+            });
+            if (!result.skipped) {
+                this.initialized = true;
+            }
+            return result;
+        } finally {
+            // Resume the calendar if we paused it
+            if (paused && calendarService && typeof calendarService.start === 'function') {
+                try {
+                    calendarService.start();
+                } catch (e) { /* ignore */ }
+            }
         }
-        return result;
     }
 
     /**

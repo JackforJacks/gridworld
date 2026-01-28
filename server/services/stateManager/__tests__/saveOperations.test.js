@@ -72,7 +72,7 @@ describe('saveOperations helpers', () => {
 
     test('emitPopulationUpdate calls PopStats and emits to io', async () => {
         // Mock PopStats.getAllPopulationData
-        jest.mock('../..//population/PopStats', () => ({ getAllPopulationData: jest.fn().mockResolvedValue({ totalPopulation: 5 }) }), { virtual: true });
+        jest.mock('../../population/PopStats', () => ({ getAllPopulationData: jest.fn().mockResolvedValue({ totalPopulation: 5 }) }));
         // Re-require to ensure our mock for PopStats is used by the module under test
         jest.resetModules();
         const saveOpsReloaded = require('../saveOperations');
@@ -82,5 +82,187 @@ describe('saveOperations helpers', () => {
         await saveOpsReloaded.emitPopulationUpdate(io);
 
         expect(io.emit).toHaveBeenCalledWith('populationUpdate', expect.objectContaining({ totalPopulation: 5 }));
+    });
+
+    describe('insertPendingFamilies', () => {
+        test('inserts families with valid husband and wife IDs', async () => {
+            const mockPopulationState = {
+                getPendingFamilyInserts: jest.fn().mockResolvedValue([
+                    { id: -1, husband_id: 1, wife_id: 2, tile_id: 10, pregnancy: false, delivery_date: null, children_ids: [] },
+                    { id: -2, husband_id: 3, wife_id: 4, tile_id: 20, pregnancy: true, delivery_date: '2026-02-01', children_ids: [5] }
+                ]),
+                reassignFamilyIds: jest.fn()
+            };
+
+            // Mock person existence checks
+            pool.query
+                .mockResolvedValueOnce({ rows: [{ id: 1 }] }) // husband 1 exists
+                .mockResolvedValueOnce({ rows: [{ id: 2 }] }) // wife 2 exists
+                .mockResolvedValueOnce({ rows: [{ id: 3 }] }) // husband 3 exists
+                .mockResolvedValueOnce({ rows: [{ id: 4 }] }) // wife 4 exists
+                .mockResolvedValueOnce({ rows: [{ id: 100 }] }) // first insert returns id 100
+                .mockResolvedValueOnce({ rows: [{ id: 101 }] }); // second insert returns id 101
+
+            const result = await saveOps.insertPendingFamilies(mockPopulationState);
+
+            expect(pool.query).toHaveBeenCalledTimes(6); // 4 existence checks + 2 inserts
+            expect(pool.query).toHaveBeenCalledWith('SELECT 1 FROM people WHERE id = $1', [1]);
+            expect(pool.query).toHaveBeenCalledWith('SELECT 1 FROM people WHERE id = $1', [2]);
+            expect(pool.query).toHaveBeenCalledWith(
+                `
+                INSERT INTO family (husband_id, wife_id, tile_id, pregnancy, delivery_date, children_ids)
+                VALUES ($1, $2, $3, $4, $5, $6)
+                RETURNING id
+            `, [1, 2, 10, false, null, []]);
+            expect(result).toEqual({
+                familiesInserted: 2,
+                familyIdMappings: expect.arrayContaining([
+                    { tempId: -1, newId: expect.any(Number) },
+                    { tempId: -2, newId: expect.any(Number) }
+                ])
+            });
+            expect(mockPopulationState.reassignFamilyIds).toHaveBeenCalledWith([
+                { tempId: -1, newId: expect.any(Number) },
+                { tempId: -2, newId: expect.any(Number) }
+            ]);
+        });
+
+        test('sets husband_id and wife_id to null when people do not exist', async () => {
+            const mockPopulationState = {
+                getPendingFamilyInserts: jest.fn().mockResolvedValue([
+                    { id: -1, husband_id: 999, wife_id: 888, tile_id: 10, pregnancy: false, delivery_date: null, children_ids: [] }
+                ]),
+                reassignFamilyIds: jest.fn()
+            };
+
+            // Mock person existence checks - people don't exist
+            pool.query
+                .mockResolvedValueOnce({ rows: [] }) // husband 999 doesn't exist
+                .mockResolvedValueOnce({ rows: [] }) // wife 888 doesn't exist
+                .mockResolvedValueOnce({ rows: [{ id: 200 }] }); // insert returns id 200
+
+            const result = await saveOps.insertPendingFamilies(mockPopulationState);
+
+            expect(pool.query).toHaveBeenCalledWith(
+                `
+                INSERT INTO family (husband_id, wife_id, tile_id, pregnancy, delivery_date, children_ids)
+                VALUES ($1, $2, $3, $4, $5, $6)
+                RETURNING id
+            `, [null, null, 10, false, null, []]);
+            expect(result.familiesInserted).toBe(1);
+        });
+
+        test('handles negative IDs correctly (new people)', async () => {
+            const mockPopulationState = {
+                getPendingFamilyInserts: jest.fn().mockResolvedValue([
+                    { id: -1, husband_id: -5, wife_id: -10, tile_id: 10, pregnancy: false, delivery_date: null, children_ids: [] }
+                ]),
+                reassignFamilyIds: jest.fn()
+            };
+
+            pool.query.mockResolvedValueOnce({ rows: [{ id: 300 }] });
+
+            const result = await saveOps.insertPendingFamilies(mockPopulationState);
+
+            // Negative IDs should be set to null without existence checks
+            expect(pool.query).toHaveBeenCalledWith(
+                `
+                INSERT INTO family (husband_id, wife_id, tile_id, pregnancy, delivery_date, children_ids)
+                VALUES ($1, $2, $3, $4, $5, $6)
+                RETURNING id
+            `, [null, null, 10, false, null, []]);
+            expect(result.familiesInserted).toBe(1);
+        });
+
+        test('handles empty pending inserts', async () => {
+            const mockPopulationState = {
+                getPendingFamilyInserts: jest.fn().mockResolvedValue([]),
+                reassignFamilyIds: jest.fn()
+            };
+
+            const result = await saveOps.insertPendingFamilies(mockPopulationState);
+
+            expect(pool.query).not.toHaveBeenCalled();
+            expect(mockPopulationState.reassignFamilyIds).not.toHaveBeenCalled();
+            expect(result).toEqual({
+                familiesInserted: 0,
+                familyIdMappings: []
+            });
+        });
+
+        test('handles database errors during existence checks', async () => {
+            const mockPopulationState = {
+                getPendingFamilyInserts: jest.fn().mockResolvedValue([
+                    { id: -1, husband_id: 1, wife_id: 2, tile_id: 10, pregnancy: false, delivery_date: null, children_ids: [] }
+                ]),
+                reassignFamilyIds: jest.fn()
+            };
+
+            // Mock existence check failure
+            pool.query.mockRejectedValueOnce(new Error('DB error'));
+
+            await expect(saveOps.insertPendingFamilies(mockPopulationState)).rejects.toThrow('DB error');
+        });
+    });
+
+    describe('updateFamilyReferences', () => {
+        test('updates family references with mapped IDs', async () => {
+            const familyIdMappings = [
+                { tempId: -1, newId: 100 },
+                { tempId: -2, newId: 101 }
+            ];
+            const idMappings = [
+                { tempId: -5, newId: 200 },
+                { tempId: -10, newId: 201 },
+                { tempId: -15, newId: 202 },
+                { tempId: -20, newId: 203 },
+                { tempId: -25, newId: 204 }
+            ];
+
+            const mockPopulationState = {
+                getFamily: jest.fn()
+                    .mockResolvedValueOnce({ husband_id: -5, wife_id: -10, children_ids: [-15] }) // family 100
+                    .mockResolvedValueOnce({ husband_id: -20, wife_id: -25, children_ids: [] }) // family 101
+            };
+
+            pool.query.mockResolvedValue({});
+
+            await saveOps.updateFamilyReferences(familyIdMappings, idMappings, mockPopulationState);
+
+            expect(mockPopulationState.getFamily).toHaveBeenCalledWith(100);
+            expect(mockPopulationState.getFamily).toHaveBeenCalledWith(101);
+            expect(pool.query).toHaveBeenCalledTimes(3); // 2 husband/wife updates + 1 children update
+            // Check that husband/wife updates were called
+            expect(pool.query).toHaveBeenCalledWith(
+                expect.stringContaining('UPDATE family SET husband_id'),
+                expect.any(Array)
+            );
+            expect(pool.query).toHaveBeenCalledWith(
+                expect.stringContaining('UPDATE family SET children_ids'),
+                expect.any(Array)
+            );
+        });
+
+        test('skips update when no mappings provided', async () => {
+            const mockPopulationState = {};
+
+            await saveOps.updateFamilyReferences([], [], mockPopulationState);
+
+            expect(pool.query).not.toHaveBeenCalled();
+        });
+
+        test('handles families not found in storage', async () => {
+            const familyIdMappings = [{ tempId: -1, newId: 100 }];
+            const idMappings = [{ tempId: -5, newId: 200 }];
+
+            const mockPopulationState = {
+                getFamily: jest.fn().mockResolvedValue(null)
+            };
+
+            await saveOps.updateFamilyReferences(familyIdMappings, idMappings, mockPopulationState);
+
+            expect(mockPopulationState.getFamily).toHaveBeenCalledWith(100);
+            expect(pool.query).not.toHaveBeenCalled();
+        });
     });
 });

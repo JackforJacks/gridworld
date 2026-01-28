@@ -235,8 +235,24 @@ async function insertPendingFamilies(PopulationState) {
         console.log(`👨‍👩‍👧 Inserting ${pendingFamilyInserts.length} new families into PostgreSQL...`);
 
         for (const f of pendingFamilyInserts) {
-            const husbandId = f.husband_id > 0 ? f.husband_id : null;
-            const wifeId = f.wife_id > 0 ? f.wife_id : null;
+            let husbandId = f.husband_id > 0 ? f.husband_id : null;
+            let wifeId = f.wife_id > 0 ? f.wife_id : null;
+
+            // Validate that referenced people exist in PostgreSQL
+            if (husbandId) {
+                const husbandExists = await pool.query('SELECT 1 FROM people WHERE id = $1', [husbandId]);
+                if (husbandExists.rows.length === 0) {
+                    console.warn(`[insertPendingFamilies] Husband ${husbandId} not found in PostgreSQL, setting to null`);
+                    husbandId = null;
+                }
+            }
+            if (wifeId) {
+                const wifeExists = await pool.query('SELECT 1 FROM people WHERE id = $1', [wifeId]);
+                if (wifeExists.rows.length === 0) {
+                    console.warn(`[insertPendingFamilies] Wife ${wifeId} not found in PostgreSQL, setting to null`);
+                    wifeId = null;
+                }
+            }
 
             const insertResult = await pool.query(`
                 INSERT INTO family (husband_id, wife_id, tile_id, pregnancy, delivery_date, children_ids)
