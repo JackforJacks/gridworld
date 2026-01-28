@@ -88,10 +88,12 @@ describe('loadOperations', () => {
             // Mock database queries in the order the loader calls them: villages, people, families
             pool.query
                 .mockResolvedValueOnce({ rows: [{ id: 1, tile_id: 10, land_chunk_index: 0, name: 'Village1', housing_capacity: 100, food_capacity: 1000 }] }) // villages
-                .mockResolvedValueOnce({ rows: [
-                    { id: 1, tile_id: 10, sex: true, date_of_birth: '2000-01-01', residency: 1, family_id: null, health: 100 },
-                    { id: 2, tile_id: 10, sex: false, date_of_birth: '1995-01-01', residency: 1, family_id: null, health: 100 }
-                ] }) // people (include wife with id 2)
+                .mockResolvedValueOnce({
+                    rows: [
+                        { id: 1, tile_id: 10, sex: true, date_of_birth: '2000-01-01', residency: 1, family_id: null, health: 100 },
+                        { id: 2, tile_id: 10, sex: false, date_of_birth: '1995-01-01', residency: 1, family_id: null, health: 100 }
+                    ]
+                }) // people (include wife with id 2)
                 .mockResolvedValueOnce({ rows: [{ id: 1, husband_id: 1, wife_id: 2, tile_id: 10, pregnancy: false, delivery_date: null, children_ids: [] }] }); // families
 
             // Mock storage-related methods called by populateEligibleSets
