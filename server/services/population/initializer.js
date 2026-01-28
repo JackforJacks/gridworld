@@ -191,10 +191,61 @@ async function initializePopulationService(serviceInstance, io, calendarService)
             console.warn('[initializer.js] serviceInstance.startGrowth is not a function or not available.');
         }
     }
-    // Use the new helper function
-    startAutoSave(serviceInstance);
+    // Auto-save disabled - use manual save instead
+    // startAutoSave(serviceInstance);
     startRateTracking(serviceInstance); // Pass serviceInstance as context
     if (config.verboseLogs) console.log('🌱 Population service initialized (from initializer.js)');
+
+    // Start scheduled integrity audit if enabled
+    if (config.integrityAuditEnabled) {
+        startIntegrityAudit(serviceInstance);
+    }
 }
 
-module.exports = { initializePopulationService, ensureTableExists, initializeDatabase, startAutoSave };
+// Function to start scheduled integrity audit
+function startIntegrityAudit(serviceInstance) {
+    if (serviceInstance._integrityAuditInterval) {
+        clearInterval(serviceInstance._integrityAuditInterval);
+    }
+    serviceInstance._integrityAuditInterval = setInterval(async () => {
+        try {
+            const pool = serviceInstance.getPool ? serviceInstance.getPool() : serviceInstance._pool || serviceInstance['#pool'];
+            const { verifyAndRepairIntegrity } = require('./population/integrity');
+            const repair = config.integrityRepairOnSchedule || false;
+            if (serviceInstance.io) serviceInstance.io.emit('integrityAuditStart', { repair });
+            // Instrument audit metrics
+            let metrics; try { metrics = require('../metrics'); } catch (_) { metrics = null; }
+            const start = Date.now();
+            if (metrics && metrics.auditRunCounter) metrics.auditRunCounter.inc({ source: 'scheduled', repair: repair ? 'true' : 'false' });
+            const res = await verifyAndRepairIntegrity(pool, null, {}, { repair });
+            const durationSec = (Date.now() - start) / 1000;
+            if (metrics && metrics.auditDuration) metrics.auditDuration.observe(durationSec);
+            if (serviceInstance.io) serviceInstance.io.emit('integrityAuditComplete', res);
+
+            if (!res.ok) {
+                if (metrics && metrics.auditFailures) metrics.auditFailures.inc();
+                const issuesCount = Array.isArray(res.details) ? res.details.reduce((sum, d) => sum + (d.duplicatesCount || d.missingCount || d.mismatchedCount || 0), 0) : 0;
+                if (metrics && metrics.issuesGauge) metrics.issuesGauge.set(issuesCount);
+                if (metrics && metrics.lastRunGauge) metrics.lastRunGauge.set(Date.now() / 1000);
+                console.warn('[IntegrityAudit] Issues detected during scheduled audit:', res.details);
+            } else {
+                if (metrics && metrics.issuesGauge) metrics.issuesGauge.set(0);
+                if (metrics && metrics.lastRunGauge) metrics.lastRunGauge.set(Date.now() / 1000);
+                if (config.verboseLogs) console.log('[IntegrityAudit] Scheduled audit completed with no issues');
+            }
+        } catch (err) {
+            console.error('[IntegrityAudit] Scheduled audit failed:', err);
+            if (serviceInstance.io) serviceInstance.io.emit('integrityAuditError', { error: err.message || err });
+        }
+    }, config.integrityAuditInterval);
+    if (config.verboseLogs) console.log(`🔍 Integrity audit scheduled (every ${config.integrityAuditInterval / 1000}s)`);
+}
+
+function stopIntegrityAudit(serviceInstance) {
+    if (serviceInstance._integrityAuditInterval) {
+        clearInterval(serviceInstance._integrityAuditInterval);
+        serviceInstance._integrityAuditInterval = null;
+    }
+}
+
+module.exports = { initializePopulationService, ensureTableExists, initializeDatabase, startAutoSave, startIntegrityAudit, stopIntegrityAudit };

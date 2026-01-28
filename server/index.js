@@ -43,6 +43,13 @@ class GridWorldServer {
         // Configure middleware
         this.app.use(cors({ origin: true, credentials: true })); // Allow cross-origin from dev server
         this.app.use(express.json());
+        // Initialize Prometheus metrics endpoint (basic)
+        try {
+            const metrics = require('./services/metrics');
+            metrics.init(this.app);
+        } catch (err) {
+            console.warn('[metrics] Could not initialize metrics endpoint:', err.message || err);
+        }
         this.app.use(express.static(path.join(__dirname, '../dist')));
 
         // Setup routes

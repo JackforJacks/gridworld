@@ -82,7 +82,8 @@ class CalendarService extends EventEmitter {
             startDate: this.getFormattedDate()
         });
 
-        if (this.internalConfig.autoStart) {
+        // Auto-start calendar in non-test environments only to avoid leaving timers running during tests
+        if (this.internalConfig.autoStart && process.env.NODE_ENV !== 'test') {
             this.start();
         }
     }

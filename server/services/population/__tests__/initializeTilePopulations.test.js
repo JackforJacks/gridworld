@@ -2,6 +2,18 @@ const storage = require('../../storage');
 const { initializeTilePopulations } = require('../../population/operations');
 
 describe('initializeTilePopulations (storage-first)', () => {
+    let originalRandom;
+
+    beforeAll(() => {
+        // Make random deterministic for test: Math.random() -> 0.5
+        originalRandom = Math.random;
+        Math.random = () => 0.5;
+    });
+
+    afterAll(() => {
+        Math.random = originalRandom;
+    });
+
     beforeEach(async () => {
         // Ensure storage is clean before each test
         const keys = await storage.keys('*');
@@ -51,5 +63,10 @@ describe('initializeTilePopulations (storage-first)', () => {
         expect(Object.keys(result.tilePopulations).length).toBeGreaterThan(0);
         // Ensure our specific tile got populated
         expect(result.tilePopulations[fakeTileId]).toBeGreaterThan(0);
+
+        // Deterministic check: with Math.random=0.5 the target should be floor(500 + 0.5 * 4501) = 2750
+        const expected = Math.floor(500 + 0.5 * 4501);
+        expect(result.tilePopulations[fakeTileId]).toBe(expected);
+        expect(result.totalPopulation).toBe(expected);
     });
 });

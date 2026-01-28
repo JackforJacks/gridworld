@@ -1,0 +1,10 @@
+apiVersion: 1
+providers:
+  - name: 'integrity-dashboards'
+    orgId: 1
+    folder: 'GridWorld'
+    type: file
+    disableDeletion: false
+    updateIntervalSeconds: 30
+    options:
+      path: /var/lib/grafana/dashboards/gridworld

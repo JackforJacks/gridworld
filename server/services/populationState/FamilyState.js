@@ -9,21 +9,24 @@
  */
 
 const storage = require('../storage');
+const idAllocator = require('../idAllocator');
 
 class FamilyState {
-    static nextFamilyTempId = -1;
-
     /**
-     * Get a new temporary ID for a family created in Redis-only mode
+     * Get the next real Postgres ID for a new family
+     * IDs are pre-allocated from Postgres sequences, so they're valid for direct insert later
      */
     static async getNextTempId() {
-        if (!storage.isAvailable()) return this.nextFamilyTempId--;
-        try {
-            const id = await storage.hincrby('counts:global', 'nextFamilyTempId', -1);
-            return id;
-        } catch (err) {
-            return this.nextFamilyTempId--;
-        }
+        return idAllocator.getNextFamilyId();
+    }
+
+    /**
+     * Get a batch of real Postgres IDs for multiple new families
+     * @param {number} count - Number of IDs needed
+     * @returns {Promise<number[]>}
+     */
+    static async getIdBatch(count) {
+        return idAllocator.getFamilyIdBatch(count);
     }
 
     /**

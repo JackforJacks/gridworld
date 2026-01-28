@@ -50,20 +50,17 @@ async function saveToDatabase(context) {
         // Process pending people deletes
         const deletedCount = await processPeopleDeletes(PopulationState);
 
-        // Process pending family inserts
-        const { familiesInserted, familyIdMappings } = await insertPendingFamilies(PopulationState);
+        // Insert pending families (IDs are real Postgres IDs from idAllocator)
+        const familiesInserted = await insertPendingFamiliesDirect(PopulationState);
 
-        // Process pending people inserts
-        const { insertedCount, idMappings } = await insertPendingPeople(PopulationState, familyIdMappings);
-
-        // Update family member references
-        await updateFamilyReferences(familyIdMappings, idMappings, PopulationState);
+        // Insert pending people (IDs are real Postgres IDs from idAllocator)
+        const insertedCount = await insertPendingPeopleDirect(PopulationState);
 
         // Update existing families
-        const familiesUpdated = await updateExistingFamilies(PopulationState, familyIdMappings);
+        const familiesUpdated = await updateExistingFamilies(PopulationState, []);
 
         // Update existing people
-        const updatedCount = await updateExistingPeople(familyIdMappings);
+        const updatedCount = await updateExistingPeople([]);
 
         // Clear pending operations
         await PopulationState.clearPendingOperations();
@@ -218,6 +215,177 @@ async function processPeopleDeletes(PopulationState) {
     }
 
     return pendingDeletes.length;
+}
+
+/**
+ * Insert pending families directly with their real Postgres IDs
+ * IDs are pre-allocated from Postgres sequences via idAllocator, so no remapping needed
+ */
+async function insertPendingFamiliesDirect(PopulationState) {
+    console.log('💾 [5/8] Inserting pending families...');
+    const pendingFamilyInserts = await PopulationState.getPendingFamilyInserts();
+    console.log(`💾 [5/8] Found ${pendingFamilyInserts.length} family inserts`);
+
+    let familiesInserted = 0;
+
+    if (pendingFamilyInserts.length > 0) {
+        console.log(`👨‍👩‍👧 Inserting ${pendingFamilyInserts.length} families with real IDs...`);
+
+        // Batch insert families with explicit IDs
+        const batchSize = 100;
+        for (let i = 0; i < pendingFamilyInserts.length; i += batchSize) {
+            const batch = pendingFamilyInserts.slice(i, i + batchSize);
+            
+            const values = [];
+            const params = [];
+            let paramIdx = 1;
+
+            for (const f of batch) {
+                values.push(`($${paramIdx}, $${paramIdx + 1}, $${paramIdx + 2}, $${paramIdx + 3}, $${paramIdx + 4}, $${paramIdx + 5}, $${paramIdx + 6})`);
+                params.push(
+                    f.id,
+                    f.husband_id || null,
+                    f.wife_id || null,
+                    f.tile_id,
+                    f.pregnancy || false,
+                    f.delivery_date || null,
+                    f.children_ids || []
+                );
+                paramIdx += 7;
+            }
+
+            try {
+                await pool.query(`
+                    INSERT INTO family (id, husband_id, wife_id, tile_id, pregnancy, delivery_date, children_ids)
+                    VALUES ${values.join(',')}
+                    ON CONFLICT (id) DO UPDATE SET
+                        husband_id = EXCLUDED.husband_id,
+                        wife_id = EXCLUDED.wife_id,
+                        tile_id = EXCLUDED.tile_id,
+                        pregnancy = EXCLUDED.pregnancy,
+                        delivery_date = EXCLUDED.delivery_date,
+                        children_ids = EXCLUDED.children_ids,
+                        updated_at = CURRENT_TIMESTAMP
+                `, params);
+                familiesInserted += batch.length;
+            } catch (err) {
+                console.error(`❌ Family batch insert failed:`, err.message);
+                console.error(`   First family in batch:`, JSON.stringify(batch[0]));
+                throw err;
+            }
+        }
+
+        // Clear _isNew flags in Redis
+        for (const f of pendingFamilyInserts) {
+            await PopulationState.updateFamily(f.id, { _isNew: false });
+        }
+
+        console.log(`💾 [5/8] Inserted ${familiesInserted} families`);
+    }
+
+    return familiesInserted;
+}
+
+/**
+ * Insert pending people directly with their real Postgres IDs
+ * IDs are pre-allocated from Postgres sequences via idAllocator, so no remapping needed
+ */
+async function insertPendingPeopleDirect(PopulationState) {
+    console.log('💾 [6/8] Inserting pending people...');
+    const pendingInserts = await PopulationState.getPendingInserts();
+
+    let insertedCount = 0;
+
+    if (pendingInserts.length > 0) {
+        console.log(`📥 Inserting ${pendingInserts.length} people with real IDs...`);
+        const batchSize = 100;
+
+        for (let i = 0; i < pendingInserts.length; i += batchSize) {
+            const batch = pendingInserts.slice(i, i + batchSize);
+            console.log(`   Batch ${Math.floor(i / batchSize) + 1}/${Math.ceil(pendingInserts.length / batchSize)}: ${batch.length} people`);
+
+            const values = [];
+            const params = [];
+            let paramIdx = 1;
+
+            for (const p of batch) {
+                values.push(`($${paramIdx}, $${paramIdx + 1}, $${paramIdx + 2}, $${paramIdx + 3}, $${paramIdx + 4}, $${paramIdx + 5})`);
+                params.push(p.id, p.tile_id, p.sex, p.date_of_birth, p.residency, p.family_id || null);
+                paramIdx += 6;
+            }
+
+            try {
+                await pool.query(`
+                    INSERT INTO people (id, tile_id, sex, date_of_birth, residency, family_id)
+                    VALUES ${values.join(',')}
+                    ON CONFLICT (id) DO UPDATE SET
+                        tile_id = EXCLUDED.tile_id,
+                        sex = EXCLUDED.sex,
+                        date_of_birth = EXCLUDED.date_of_birth,
+                        residency = EXCLUDED.residency,
+                        family_id = EXCLUDED.family_id,
+                        updated_at = CURRENT_TIMESTAMP
+                `, params);
+                insertedCount += batch.length;
+                console.log(`   Batch insert complete: ${insertedCount}/${pendingInserts.length}`);
+            } catch (insertErr) {
+                console.error(`❌ Batch insert failed:`, insertErr.message);
+                console.error(`   First person in batch:`, JSON.stringify(batch[0]));
+                throw insertErr;
+            }
+        }
+
+        // Clear _isNew flags in Redis
+        for (const p of pendingInserts) {
+            await PopulationState.updatePerson(p.id, { _isNew: false });
+        }
+
+        console.log(`💾 [6/8] Inserted ${insertedCount} people`);
+    }
+
+    return insertedCount;
+}
+
+/**
+ * Reserve pending families in PostgreSQL as placeholders (husband/wife set to NULL)
+ * @deprecated Use insertPendingFamiliesDirect instead - IDs are now pre-allocated
+ */
+async function insertPendingFamiliesReserve(PopulationState) {
+    console.log('💾 [5/8] Reserving pending family inserts in PostgreSQL (placeholders)...');
+    const pendingFamilyInserts = await PopulationState.getPendingFamilyInserts();
+    console.log(`💾 [5/8] Found ${pendingFamilyInserts.length} family inserts`);
+
+    let familiesInserted = 0;
+    const familyIdMappings = [];
+
+    if (pendingFamilyInserts.length > 0) {
+        console.log(`👨‍👩‍👧 Reserving ${pendingFamilyInserts.length} new families in PostgreSQL...`);
+
+        for (const f of pendingFamilyInserts) {
+            try {
+                // Insert placeholder with NULL spouse references and empty children
+                const insertResult = await pool.query(`
+                    INSERT INTO family (husband_id, wife_id, tile_id, pregnancy, delivery_date, children_ids)
+                    VALUES ($1, $2, $3, $4, $5, $6)
+                    RETURNING id
+                `, [null, null, f.tile_id, f.pregnancy, f.delivery_date, []]);
+
+                const newFamilyId = insertResult.rows[0].id;
+                familyIdMappings.push({ tempId: f.id, newId: newFamilyId });
+                familiesInserted++;
+            } catch (err) {
+                console.warn('[stateManager] Failed to reserve pending family:', err.message || err);
+            }
+        }
+
+        console.log('💾 [5/8] Reassigning family IDs in storage...');
+        if (familyIdMappings.length > 0) {
+            await PopulationState.reassignFamilyIds(familyIdMappings);
+        }
+        console.log('💾 [5/8] Family IDs reassigned (reserved)');
+    }
+
+    return { familiesInserted, familyIdMappings };
 }
 
 /**
@@ -479,7 +647,11 @@ module.exports = {
     updateExistingVillages,
     processFamilyDeletes,
     processPeopleDeletes,
+    insertPendingFamiliesDirect,
+    insertPendingPeopleDirect,
+    // Legacy functions (deprecated, kept for backward compatibility)
     insertPendingFamilies,
+    insertPendingFamiliesReserve,
     insertPendingPeople,
     updateFamilyReferences,
     updateExistingFamilies,

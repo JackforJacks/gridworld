@@ -407,27 +407,36 @@ class TileSelector {
             `;
         }
 
-        // Update Villages page
+        // Update Villages page with fresh data
+        this.updateVillagesPage(tile);
+    }
+
+    async updateVillagesPage(tile) {
         const villagesPage = this.tileInfoPanel.querySelector('#info-panel-page-2');
-        if (villagesPage) {
-            let villageEntries = [];
-            if (Array.isArray(tile.lands)) villageEntries = tile.lands.filter(l => l.village_id !== null && l.village_id !== undefined);
-            const villagesCount = villageEntries.length;
-            const clearedCountDebug = Array.isArray(tile.lands) ? tile.lands.filter(l => l.cleared).length : 0;
-            const occupiedSlotsTotal = villageEntries.reduce((sum, v) => {
+        if (!villagesPage) return;
+
+        try {
+            // Fetch fresh village data for this tile
+            const response = await fetch(`/api/villages/tile/${tile.id}`);
+            const data = await response.json();
+            const villages = data.villages || [];
+
+            const villagesCount = villages.length;
+            const clearedCount = Array.isArray(tile.lands) ? tile.lands.filter(l => l.cleared).length : 0;
+            const occupiedSlotsTotal = villages.reduce((sum, v) => {
                 const occ = Array.isArray(v.housing_slots) ? v.housing_slots.length : (v.occupied_slots || 0);
                 return sum + occ;
             }, 0);
-            const capacityTotal = villageEntries.reduce((sum, v) => {
+            const capacityTotal = villages.reduce((sum, v) => {
                 const cap = v.housing_capacity || 100;
                 return sum + cap;
             }, 0);
             const availableSlots = Math.max(0, capacityTotal - occupiedSlotsTotal);
-            const totalFoodProduction = villageEntries.reduce((sum, v) => sum + (v.food_production_rate || 0), 0).toFixed(1);
+            const totalFoodProduction = villages.reduce((sum, v) => sum + (v.food_production_rate || 0), 0).toFixed(1);
             // Sum fractional food stores (don't floor) and show with two decimals
-            const totalFoodStockpile = villageEntries.reduce((sum, v) => sum + Number(v.food_stores || 0), 0).toFixed(2);
-            const totalFoodCapacity = villageEntries.reduce((sum, v) => sum + (v.food_capacity || 1000), 0);
-            const villageListHtml = villagesCount > 0 ? (`<ul class="village-list">` + villageEntries.map(v => {
+            const totalFoodStockpile = villages.reduce((sum, v) => sum + Number(v.food_stores || 0), 0).toFixed(2);
+            const totalFoodCapacity = villages.reduce((sum, v) => sum + (v.food_capacity || 1000), 0);
+            const villageListHtml = villagesCount > 0 ? (`<ul class="village-list">` + villages.map(v => {
                 const occ = Array.isArray(v.housing_slots) ? v.housing_slots.length : (v.occupied_slots || 0);
                 const cap = v.housing_capacity || 100;
                 // Show fractional food stores with two decimals
@@ -435,7 +444,7 @@ class TileSelector {
                 const foodCapacity = v.food_capacity || 1000;
                 const foodProduction = (v.food_production_rate || 0).toFixed(1);
                 return `\n                        <li>
-                            <div class="village-name">${v.village_name || ('Village ' + (v.village_id || ''))}</div>
+                            <div class="village-name">${v.village_name || ('Village ' + (v.id || ''))}</div>
                             <div class="village-details">Housing: ${occ}/${cap} | Food: ${foodStores}/${foodCapacity} 🍖 (${foodProduction}/sec)</div>
                         </li>`;
             }).join('') + `\n                    </ul>`) : '<div>No villages on this tile.</div>';
@@ -460,8 +469,13 @@ class TileSelector {
                 });
                 buildBtn.dataset.listenerAttached = '1';
             }
+        } catch (error) {
+            console.error('Failed to fetch village data:', error);
+            villagesPage.innerHTML = `
+                <h3>🏛️ Buildings</h3>
+                <p>Failed to load village data.</p>
+            `;
         }
-
     }
 
     ensureCloseButtonAttached() {

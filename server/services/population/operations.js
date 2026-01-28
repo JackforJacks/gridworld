@@ -105,9 +105,9 @@ async function initializeTilePopulations(pool, calendarService, serviceInstance,
             ? tileIds.filter(id => habitableFromDb.includes(id))
             : habitableFromDb;
 
-        // Select only up to 10 random tiles for initialization
+        // Select only up to 5 random tiles for initialization (faster restart)
         const shuffled = candidateTiles.sort(() => 0.5 - Math.random());
-        const selectedTiles = shuffled.slice(0, 10);
+        const selectedTiles = shuffled.slice(0, 5);
         if (serverConfig.verboseLogs) console.log(`[PopulationOperations] Selected ${selectedTiles.length} random tiles for initialization:`, selectedTiles);
 
         if (selectedTiles.length === 0) {
@@ -139,17 +139,24 @@ async function initializeTilePopulations(pool, calendarService, serviceInstance,
         const { year: currentYear, month: currentMonth, day: currentDay } = currentDate;
         const { getRandomSex, getRandomAge, getRandomBirthDate } = require('./calculator.js');
 
-        // ========== STORAGE-FIRST: Generate all people in memory ==========
-        const step1Start = Date.now();
-        if (serverConfig.verboseLogs) console.log('⏱️ [initPop] Step 1: Generating people data in memory...');
-
-        let personIdCounter = 1;
-        const allPeople = []; // Array of person objects with temp IDs
+        // ========== Pre-allocate IDs dynamically per tile ==========
+        const idAllocator = require('../idAllocator');
+        
+        let allPeople = []; // Array of person objects with real IDs
         const tilePopulationMap = {}; // tile_id -> array of person objects
+        const tilePopulationTargets = {}; // tile_id -> target population per tile (500-5000)
 
         for (const tile_id of selectedTiles) {
-            const tilePopulation = Math.floor(2500 + Math.random() * 1001);
+            const tilePopulation = Math.floor(500 + Math.random() * 4501); // 500-5000 per tile
+            // Use more conservative buffer for large populations to save memory
+            const bufferMultiplier = tilePopulation > 10000 ? 1.5 : 2.5;
+            const estimatedTilePeople = Math.ceil(tilePopulation * bufferMultiplier);
+            const tilePersonIds = await idAllocator.getPersonIdBatch(estimatedTilePeople);
+            let tilePersonIndex = 0;
+
             tilePopulationMap[tile_id] = [];
+            // Track the intended target population for this tile (used to prevent over-allocation)
+            tilePopulationTargets[tile_id] = tilePopulation;
             const minBachelorsPerSex = Math.floor(tilePopulation * 0.15);
 
             // Add guaranteed eligible males (16-45)
@@ -157,7 +164,7 @@ async function initializeTilePopulations(pool, calendarService, serviceInstance,
                 const age = 16 + Math.floor(Math.random() * 30);
                 const birthDate = getRandomBirthDate(currentYear, currentMonth, currentDay, age);
                 const person = {
-                    id: personIdCounter++,
+                    id: tilePersonIds[tilePersonIndex++],
                     tile_id,
                     residency: 0,
                     sex: true,
@@ -172,7 +179,7 @@ async function initializeTilePopulations(pool, calendarService, serviceInstance,
                 const age = 16 + Math.floor(Math.random() * 15);
                 const birthDate = getRandomBirthDate(currentYear, currentMonth, currentDay, age);
                 const person = {
-                    id: personIdCounter++,
+                    id: tilePersonIds[tilePersonIndex++],
                     tile_id,
                     residency: 0,
                     sex: false,
@@ -189,7 +196,7 @@ async function initializeTilePopulations(pool, calendarService, serviceInstance,
                 const age = getRandomAge();
                 const birthDate = getRandomBirthDate(currentYear, currentMonth, currentDay, age);
                 const person = {
-                    id: personIdCounter++,
+                    id: tilePersonIds[tilePersonIndex++],
                     tile_id,
                     residency: 0,
                     sex,
@@ -202,11 +209,15 @@ async function initializeTilePopulations(pool, calendarService, serviceInstance,
         }
         if (serverConfig.verboseLogs) console.log(`⏱️ [initPop] Step 1 done: ${allPeople.length} people generated in ${Date.now() - step1Start}ms`);
 
+        // Allocate family IDs based on actual people count
+        const estimatedFamilyCount = Math.ceil(allPeople.length * 0.3);
+        const familyIds = await idAllocator.getFamilyIdBatch(estimatedFamilyCount);
+        let familyIdIndex = 0;
+
         // ========== Step 2: Create families in memory ==========
         const step2Start = Date.now();
         if (serverConfig.verboseLogs) console.log('⏱️ [initPop] Step 2: Creating families in memory...');
 
-        let familyIdCounter = 1;
         const allFamilies = [];
 
         // Calculate age for matching
@@ -246,7 +257,7 @@ async function initializeTilePopulations(pool, calendarService, serviceInstance,
             for (let i = 0; i < pairCount; i++) {
                 const husband = eligibleMales[i];
                 const wife = eligibleFemales[i];
-                const familyId = familyIdCounter++;
+                const familyId = familyIds[familyIdIndex++];
 
                 const family = {
                     id: familyId,
@@ -266,20 +277,131 @@ async function initializeTilePopulations(pool, calendarService, serviceInstance,
                 allFamilies.push(family);
             }
 
-            // Assign minors to families
+            // Randomly seed pregnancies for a percentage of families
+            // e.g., 10% of families start pregnant
+            const PREGNANCY_SEED_RATE = 0.10;
+            for (const family of tileFamilies) {
+                if (Math.random() < PREGNANCY_SEED_RATE) {
+                    family.pregnancy = true;
+                    // Optionally set a random delivery date within the next 8-32 days
+                    const daysUntilDelivery = 8 + Math.floor(Math.random() * 25); // 8-32 days
+                    const delivery = new Date(currentYear, currentMonth - 1, currentDay);
+                    delivery.setDate(delivery.getDate() + daysUntilDelivery);
+                    family.delivery_date = delivery.toISOString().split('T')[0];
+                }
+            }
+
+            // --- FORCE AVG 4 CHILDREN PER FAMILY WITH VARIANCE 0-10 ---
             if (tileFamilies.length > 0) {
-                const minors = tilePeople.filter(p => {
+                // Assign each family a random number of children between 0 and 10
+                // but guarantee the average is as close as possible to 4
+                let childrenCounts = [];
+                let totalFamilies = tileFamilies.length;
+                let totalChildren = 0;
+                // First, assign random children counts
+                for (let i = 0; i < totalFamilies; i++) {
+                    const n = Math.floor(Math.random() * 11); // 0-10 inclusive
+                    childrenCounts.push(n);
+                    totalChildren += n;
+                }
+                // Calculate adjustment needed
+                const desiredTotal = totalFamilies * 4;
+                let diff = desiredTotal - totalChildren;
+                // Adjust up or down to hit the target average
+                while (diff !== 0) {
+                    if (diff > 0) {
+                        // Add 1 child to a random family below 10
+                        const candidates = childrenCounts.map((c, idx) => c < 10 ? idx : -1).filter(idx => idx !== -1);
+                        if (candidates.length === 0) break;
+                        const idx = candidates[Math.floor(Math.random() * candidates.length)];
+                        childrenCounts[idx]++;
+                        diff--;
+                    } else {
+                        // Remove 1 child from a random family above 0
+                        const candidates = childrenCounts.map((c, idx) => c > 0 ? idx : -1).filter(idx => idx !== -1);
+                        if (candidates.length === 0) break;
+                        const idx = candidates[Math.floor(Math.random() * candidates.length)];
+                        childrenCounts[idx]--;
+                        diff++;
+                    }
+                }
+                // Now generate and assign minors
+                let minors = tilePeople.filter(p => {
                     const age = getAge(p.date_of_birth);
                     return age < 16 && p.family_id === null;
                 });
-
-                for (let i = 0; i < minors.length; i++) {
-                    const family = tileFamilies[i % tileFamilies.length];
-                    minors[i].family_id = family.id;
-                    family.children_ids.push(minors[i].id);
+                // Compute how many new minors we *can* add without exceeding base tilePopulation
+                let needed = childrenCounts.reduce((a, b) => a + b, 0) - minors.length;
+                const targetForTile = tilePopulationTargets[tile_id];
+                const allowedNew = Math.max(0, (typeof targetForTile === 'number' ? targetForTile : Number.MAX_SAFE_INTEGER) - tilePeople.length);
+                needed = Math.min(needed, allowedNew);
+                if (needed > 0) {
+                    const newIds = await idAllocator.getPersonIdBatch(needed);
+                    for (let j = 0; j < needed; j++) {
+                        const age = Math.floor(Math.random() * 16);
+                        const birthDate = getRandomBirthDate(currentYear, currentMonth, currentDay, age);
+                        const person = {
+                            id: newIds[j],
+                            tile_id,
+                            residency: 0,
+                            sex: getRandomSex(),
+                            date_of_birth: birthDate,
+                            family_id: null
+                        };
+                        allPeople.push(person);
+                        tilePeople.push(person);
+                        minors.push(person);
+                    }
                 }
-                if (serverConfig.verboseLogs) console.log(`[Tile ${tile_id}] Assigned ${minors.length} minors to ${tileFamilies.length} families.`);
+                // If we couldn't add enough minors due to tile population cap, reduce childrenCounts to fit available minors
+                const totalChildrenNeeded = childrenCounts.reduce((a, b) => a + b, 0);
+                if (minors.length < totalChildrenNeeded) {
+                    if (serverConfig.verboseLogs) console.warn(`[Tile ${tile_id}] Not enough minors to satisfy childrenCounts (${minors.length} available, ${totalChildrenNeeded} requested). Reducing childrenCounts.`);
+                    // Reduce from families with highest child counts first
+                    const countsWithIndex = childrenCounts.map((c, idx) => ({ c, idx }));
+                    countsWithIndex.sort((a, b) => b.c - a.c);
+                    let remaining = minors.length;
+                    for (const entry of countsWithIndex) {
+                        const take = Math.min(entry.c, Math.max(0, remaining));
+                        childrenCounts[entry.idx] = take;
+                        remaining -= take;
+                        if (remaining <= 0) break;
+                    }
+                }
+
+                // Assign minors to families according to childrenCounts
+                let minorIdx = 0;
+                for (let f = 0; f < tileFamilies.length; f++) {
+                    for (let c = 0; c < childrenCounts[f]; c++) {
+                        const child = minors[minorIdx++];
+                        if (!child) continue; // defensive: skip if missing
+                        child.family_id = tileFamilies[f].id;
+                        tileFamilies[f].children_ids.push(child.id);
+                    }
+                }
+                if (serverConfig.verboseLogs) console.log(`[Tile ${tile_id}] Assigned children to families (avg 4, 0-10 variance).`);
+
+                // Safety: ensure we did not exceed the intended tilePopulation -- trim excess if any
+                const target = tilePopulationTargets ? tilePopulationTargets[tile_id] : undefined;
+                if (typeof target !== 'undefined' && tilePeople.length > target) {
+                    const excess = tilePeople.length - target;
+                    if (serverConfig.verboseLogs) console.warn(`[Tile ${tile_id}] Population exceeded target by ${excess}. Trimming ${excess} extras.`);
+                    // Remove last `excess` people from tilePeople and allPeople
+                    const removed = tilePeople.splice(tilePeople.length - excess, excess);
+                    for (const p of removed) {
+                        const idx = allPeople.findIndex(ap => ap.id === p.id);
+                        if (idx !== -1) allPeople.splice(idx, 1);
+                        // If any family contains these ids, remove from children lists
+                        for (const f of allFamilies) {
+                            if (f && Array.isArray(f.children_ids)) {
+                                const ci = f.children_ids.indexOf(p.id);
+                                if (ci !== -1) f.children_ids.splice(ci, 1);
+                            }
+                        }
+                    }
+                }
             }
+            // --- END FORCE AVG 4 CHILDREN PER FAMILY WITH VARIANCE 0-10 ---
         }
         if (serverConfig.verboseLogs) console.log(`⏱️ [initPop] Step 2 done: ${allFamilies.length} families created in ${Date.now() - step2Start}ms`);
 
@@ -287,8 +409,9 @@ async function initializeTilePopulations(pool, calendarService, serviceInstance,
         const step3Start = Date.now();
         if (serverConfig.verboseLogs) console.log('⏱️ [initPop] Step 3: Writing to storage...');
 
-        // Use batch operations for Redis
-        const BATCH_SIZE = 500;
+        // Use batch operations for Redis - dynamic batch size based on total people
+        const numBatches = Math.min(20, Math.ceil(allPeople.length / 1000)); // Aim for ~1000-2000 per batch, up to 20 batches
+        const BATCH_SIZE = Math.ceil(allPeople.length / numBatches);
 
         // Add all people to Redis with isNew=true (marks as pending insert)
         for (let i = 0; i < allPeople.length; i += BATCH_SIZE) {
@@ -306,11 +429,40 @@ async function initializeTilePopulations(pool, calendarService, serviceInstance,
 
         if (serverConfig.verboseLogs) console.log(`⏱️ [initPop] Step 3 done: storage write completed in ${Date.now() - step3Start}ms`);
 
+        // ========== Integrity verification & optional repair (delegated) ==========
+        try {
+            const { verifyAndRepairIntegrity } = require('./integrity');
+            const checkRes = await verifyAndRepairIntegrity(pool, selectedTiles, tilePopulationTargets, { repair: serverConfig.integrityRepairOnInit });
+            if (!checkRes.ok) {
+                console.warn('[initPop] Integrity check reported problems:', checkRes.details);
+                if (serverConfig.integrityFailOnInit) {
+                    throw new Error('Initialization aborted due to integrity check failures');
+                }
+            }
+        } catch (err) {
+            console.error('[initPop] Integrity verification failed:', err.message || err);
+            if (serverConfig.integrityFailOnInit) {
+                throw err;
+            }
+        }
+
         // ========== Return formatted result ==========
         const totalTime = Date.now() - startTime;
         if (serverConfig.verboseLogs) console.log(`✅ [initPop] COMPLETE: ${allPeople.length} people, ${allFamilies.length} families in ${totalTime}ms (storage-only, pending Postgres save)`);
 
         const populations = await PopulationState.getAllTilePopulations();
+        // Sanity check: ensure per-tile populations match intended targets
+        const mismatches = [];
+        for (const tid of selectedTiles) {
+            const actual = populations[tid] || 0;
+            const intended = tilePopulationTargets[tid];
+            if (typeof intended !== 'undefined' && actual !== intended) {
+                mismatches.push({ tile: tid, intended, actual });
+            }
+        }
+        if (mismatches.length > 0) {
+            console.warn('[initPop] Population mismatches detected:', mismatches.slice(0, 10));
+        }
         return formatPopulationData(populations);
     } catch (error) {
         console.error('[PopulationOperations] Critical error in initializeTilePopulations:', error);

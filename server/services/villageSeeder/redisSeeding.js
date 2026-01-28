@@ -7,6 +7,7 @@ const pool = require('../../config/database');
 const storage = require('../storage');
 const { ensureVillageIdColumn } = require('./dbUtils');
 const { seedRandomVillages } = require('./postgresSeeding');
+const idAllocator = require('../idAllocator');
 
 /**
  * Redis-first village seeding - reads population from Redis, writes villages to Redis
@@ -54,9 +55,9 @@ async function seedVillagesStorageFirst() {
             chunksByTile[chunk.tile_id].push(chunk.chunk_index);
         }
 
-        // Generate villages in memory
-        const allVillages = [];
-
+        // Calculate total villages needed
+        let totalVillagesNeeded = 0;
+        const villageSpecs = []; // {tileId, chunks[]}
         for (const tileIdStr of populatedTileIds) {
             const tileId = parseInt(tileIdStr);
             const tilePopulation = tilePopulations[tileIdStr];
@@ -65,11 +66,22 @@ async function seedVillagesStorageFirst() {
 
             const availableChunks = chunksByTile[tileId] || [];
             const chunksToUse = availableChunks.slice(0, desiredVillages);
+            totalVillagesNeeded += chunksToUse.length;
+            villageSpecs.push({ tileId, chunks: chunksToUse });
+        }
 
-            for (const chunkIndex of chunksToUse) {
-                const tempId = await PopulationState.getNextTempId();
+        // Pre-allocate all village IDs in a single batch call
+        const villageIds = await idAllocator.getVillageIdBatch(totalVillagesNeeded);
+        let villageIdIndex = 0;
+
+        // Generate villages in memory
+        const allVillages = [];
+
+        for (const { tileId, chunks } of villageSpecs) {
+            for (const chunkIndex of chunks) {
+                const villageId = villageIds[villageIdIndex++];
                 const village = {
-                    id: tempId,
+                    id: villageId,
                     tile_id: tileId,
                     land_chunk_index: chunkIndex,
                     name: `Village ${tileId}-${chunkIndex}`,
@@ -107,7 +119,7 @@ async function seedVillagesStorageFirst() {
 }
 
 /**
- * Assign residency to people in storage
+ * Assign residency to people in storage (batch optimized)
  */
 async function assignResidencyStorage(populatedTileIds, allVillages) {
     try {
@@ -132,21 +144,15 @@ async function assignResidencyStorage(populatedTileIds, allVillages) {
             }
         }
 
-        // Assign people to villages
+        // Collect all updates to batch at the end
+        const personUpdates = []; // { person, newResidency }
+        const villageUpdates = []; // { village }
+
+        // Assign people to villages (in memory first)
         for (const tileIdStr of populatedTileIds) {
             const tileId = parseInt(tileIdStr);
             const villages = villagesByTile[tileId] || [];
             const people = peopleByTile[tileId] || [];
-
-            // Clear existing residency
-            const clearPipeline = storage.pipeline();
-            for (const p of people) {
-                if (p.residency !== null && p.residency !== undefined) {
-                    clearPipeline.srem(`village:${p.tile_id}:${p.residency}:people`, p.id.toString());
-                    await PopulationState.updatePerson(p.id, { residency: null });
-                }
-            }
-            await clearPipeline.exec();
 
             // Shuffle people for random distribution
             for (let i = people.length - 1; i > 0; i--) {
@@ -162,24 +168,39 @@ async function assignResidencyStorage(populatedTileIds, allVillages) {
                 const toAssign = Math.min(available, people.length - peopleIndex);
                 const assignedPeople = people.slice(peopleIndex, peopleIndex + toAssign);
 
-                // Update people with residency in storage
-                const personWritePipeline = storage.pipeline();
                 for (const person of assignedPeople) {
-                    const pid = person.id;
-                    await PopulationState.updatePerson(pid, { residency: village.land_chunk_index });
-                    personWritePipeline.sadd(`village:${village.tile_id}:${village.land_chunk_index}:people`, pid.toString());
-                    village.housing_slots.push(pid);
+                    person.residency = village.land_chunk_index;
+                    personUpdates.push(person);
+                    village.housing_slots.push(person.id);
                 }
-                await personWritePipeline.exec();
 
-                // Update village housing_slots in storage
-                await storage.hset('village', village.id.toString(), JSON.stringify(village));
-
+                villageUpdates.push(village);
                 peopleIndex += toAssign;
             }
         }
 
-        console.log(`[villageSeeder] Assigned residency to people in storage`);
+        // Batch write all person updates
+        if (personUpdates.length > 0) {
+            const personPipeline = storage.pipeline();
+            for (const person of personUpdates) {
+                personPipeline.hset('person', person.id.toString(), JSON.stringify(person));
+                if (person.tile_id && person.residency !== null && person.residency !== undefined) {
+                    personPipeline.sadd(`village:${person.tile_id}:${person.residency}:people`, person.id.toString());
+                }
+            }
+            await personPipeline.exec();
+        }
+
+        // Batch write all village updates
+        if (villageUpdates.length > 0) {
+            const villagePipeline = storage.pipeline();
+            for (const village of villageUpdates) {
+                villagePipeline.hset('village', village.id.toString(), JSON.stringify(village));
+            }
+            await villagePipeline.exec();
+        }
+
+        console.log(`[villageSeeder] Assigned residency to ${personUpdates.length} people in storage`);
     } catch (err) {
         console.error('[villageSeeder] Failed to assign residency in storage:', err);
     }

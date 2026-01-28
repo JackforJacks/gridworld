@@ -203,6 +203,64 @@ describe('saveOperations helpers', () => {
 
             await expect(saveOps.insertPendingFamilies(mockPopulationState)).rejects.toThrow('DB error');
         });
+
+        test('reserve inserts families without existence checks', async () => {
+            const mockPopulationState = {
+                getPendingFamilyInserts: jest.fn().mockResolvedValue([
+                    { id: -1, husband_id: 1, wife_id: 2, tile_id: 10, pregnancy: false, delivery_date: null, children_ids: [] }
+                ]),
+                reassignFamilyIds: jest.fn()
+            };
+
+            // Only placeholder INSERT expected
+            pool.query.mockResolvedValueOnce({ rows: [{ id: 200 }] });
+
+            const result = await saveOps.insertPendingFamiliesReserve(mockPopulationState);
+
+            expect(pool.query).toHaveBeenCalledTimes(1);
+            expect(pool.query).toHaveBeenCalledWith(
+                expect.stringContaining('INSERT INTO family (husband_id, wife_id, tile_id'),
+                [null, null, 10, false, null, []]
+            );
+            expect(result.familiesInserted).toBe(1);
+            expect(mockPopulationState.reassignFamilyIds).toHaveBeenCalledWith([{ tempId: -1, newId: expect.any(Number) }]);
+        });
+
+        test('reserve + people insert + updateFamilyReferences sets husband/wife after person insert', async () => {
+            const mockPopulationState = {
+                getPendingFamilyInserts: jest.fn().mockResolvedValue([
+                    { id: -1, husband_id: -5, wife_id: -6, tile_id: 10, pregnancy: false, delivery_date: null, children_ids: [] }
+                ]),
+                reassignFamilyIds: jest.fn(),
+                getPendingInserts: jest.fn().mockResolvedValue([
+                    { id: -5, tile_id: 10, sex: 'male', date_of_birth: '2020-01-01', residency: null, family_id: 100 },
+                    { id: -6, tile_id: 10, sex: 'female', date_of_birth: '2020-01-01', residency: null, family_id: 100 }
+                ]),
+                reassignIds: jest.fn(),
+                getFamily: jest.fn().mockResolvedValue({ husband_id: -5, wife_id: -6, children_ids: [] })
+            };
+
+            // Family placeholder insert, then a batched people insert (single query returning both rows), then family UPDATE
+            pool.query
+                .mockResolvedValueOnce({ rows: [{ id: 100 }] }) // family reserve
+                .mockResolvedValueOnce({ rows: [{ id: 200 }, { id: 201 }] }); // batched people insert returns two rows
+
+            const { familiesInserted, familyIdMappings } = await saveOps.insertPendingFamiliesReserve(mockPopulationState);
+            expect(familiesInserted).toBe(1);
+            expect(mockPopulationState.reassignFamilyIds).toHaveBeenCalledWith([{ tempId: -1, newId: expect.any(Number) }]);
+
+            const { insertedCount, idMappings } = await saveOps.insertPendingPeople(mockPopulationState, familyIdMappings);
+            expect(insertedCount).toBe(2);
+
+            // Now update family refs using the resulting mappings
+            await saveOps.updateFamilyReferences(familyIdMappings, [{ tempId: -5, newId: 200 }, { tempId: -6, newId: 201 }], mockPopulationState);
+
+            // Expect an UPDATE to family with the new husband/wife ids
+            expect(pool.query).toHaveBeenCalledWith(
+                expect.stringContaining('UPDATE family SET husband_id'),
+                [200, 201, expect.any(Number)]
+            );
+        });
     });
 
     describe('updateFamilyReferences', () => {

@@ -13,6 +13,7 @@ const pool = require('../../config/database');
 const { seedRandomVillages, seedVillagesForTile } = require('./postgresSeeding');
 const { seedVillagesStorageFirst } = require('./redisSeeding');
 const { assignResidencyForTile } = require('./residency');
+const storage = require('../storage');
 
 /**
  * Seed villages if none exist in the database
@@ -30,6 +31,19 @@ async function seedIfNoVillages() {
         }
 
         console.log('[villageSeeder] No villages found, seeding initial villages...');
+
+        // --- REDIS-FIRST CHECK ---
+        const PopulationState = require('../populationState');
+        if (storage.isAvailable()) {
+            const peopleCount = await PopulationState.getTotalPopulation();
+            const villagesData = await storage.hgetall('village');
+            const villagesCountRedis = villagesData ? Object.keys(villagesData).length : 0;
+            if (peopleCount > 0 && villagesCountRedis > 0) {
+                console.log(`[villageSeeder] Redis already has ${villagesCountRedis} villages and ${peopleCount} people, skipping fallback seeding.`);
+                return { created: 0, villages: [] };
+            }
+        }
+        // --- END REDIS-FIRST CHECK ---
 
         // Check if there are any populated tiles
         const { rows: populatedTiles } = await pool.query(`
@@ -66,19 +80,8 @@ async function createInitialWorld() {
         await createInitialTiles();
     }
 
-    // Create initial population on a random habitable tile
-    const { rows: habitableTiles } = await pool.query(`
-        SELECT id FROM tiles
-        WHERE biome NOT IN ('desert', 'tundra', 'alpine')
-        AND terrain_type NOT IN ('ocean', 'mountains')
-        ORDER BY RANDOM()
-        LIMIT 1
-    `);
-
-    if (habitableTiles.length > 0) {
-        const tileId = habitableTiles[0].id;
-        await createInitialPopulation(tileId);
-    }
+    // Fallback initial population generation is disabled.
+    // No people will be generated here. Only tiles are created if needed.
 }
 
 /**
@@ -118,44 +121,8 @@ async function createInitialTiles() {
  * Create initial population on a tile
  */
 async function createInitialPopulation(tileId) {
-    console.log(`[villageSeeder] Creating initial population on tile ${tileId}`);
-    console.warn('⚠️ [villageSeeder] Creating fallback initial population - this should only happen on first run!');
-
-    const initialPopulation = 2500;
-    const values = [];
-    const params = [];
-
-    for (let i = 0; i < initialPopulation; i++) {
-        const pIndex = i * 3;
-        values.push(`($${pIndex + 1}, $${pIndex + 2}, $${pIndex + 3})`);
-        // Create people born 16-50 years ago so they're adults
-        const age = 16 + Math.floor(Math.random() * 35);
-        const birthYear = 4000 - age;
-        const birthMonth = 1 + Math.floor(Math.random() * 12);
-        const birthDay = 1 + Math.floor(Math.random() * 8);
-        const birthDate = `${birthYear}-${String(birthMonth).padStart(2, '0')}-${String(birthDay).padStart(2, '0')}`;
-        params.push(tileId, Math.random() > 0.5, birthDate);
-    }
-
-    if (values.length > 0) {
-        const res = await pool.query(
-            `INSERT INTO people (tile_id, sex, date_of_birth) VALUES ${values.join(',')} RETURNING id, tile_id, residency, sex, date_of_birth`,
-            params
-        );
-
-        // Sync to storage (via PopulationState)
-        try {
-            const PopulationState = require('../populationState');
-            for (const row of res.rows) {
-                const personObj = { id: row.id, tile_id: row.tile_id, residency: row.residency, sex: row.sex, health: 100 };
-                await PopulationState.addPerson(personObj);
-            }
-        } catch (err) {
-            console.warn('⚠️ Could not sync seeded people to storage (PopulationState):', err.message);
-        }
-    }
-
-    console.log(`[villageSeeder] Created ${initialPopulation} initial people on tile ${tileId} (adults aged 16-50)`);
+    // Fallback initial population generation is disabled.
+    // This function is now a no-op.
 }
 
 module.exports = {

@@ -132,6 +132,20 @@ router.post('/senescence', async (req, res, next) => {
     }
 });
 
+// Run integrity check (optionally repair) - ADMIN
+router.post('/integrity', async (req, res, next) => {
+    try {
+        const populationService = req.app.locals.populationService;
+        const { tiles, repair = false } = req.body || {};
+        // Expect tiles to be an array of tile IDs (optional)
+        const options = { tiles: Array.isArray(tiles) ? tiles : null, repair: Boolean(repair) };
+        const result = await populationService.runIntegrityCheck(options);
+        res.json({ success: result.success, details: result.details });
+    } catch (error) {
+        next(error);
+    }
+});
+
 // Create families for existing population
 router.post('/create-families', async (req, res, next) => {
     try {

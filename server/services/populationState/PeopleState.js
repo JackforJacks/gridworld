@@ -12,21 +12,24 @@
 
 const storage = require('../storage');
 const pool = require('../../config/database');
+const idAllocator = require('../idAllocator');
 
 class PeopleState {
-    static nextTempId = -1;
-
     /**
-     * Get a new temporary ID for a person created in storage-only mode
+     * Get the next real Postgres ID for a new person
+     * IDs are pre-allocated from Postgres sequences, so they're valid for direct insert later
      */
     static async getNextTempId() {
-        if (!storage.isAvailable()) return this.nextTempId--;
-        try {
-            const id = await storage.hincrby('counts:global', 'nextTempId', -1);
-            return id;
-        } catch (err) {
-            return this.nextTempId--;
-        }
+        return idAllocator.getNextPersonId();
+    }
+
+    /**
+     * Get a batch of real Postgres IDs for multiple new people
+     * @param {number} count - Number of IDs needed
+     * @returns {Promise<number[]>}
+     */
+    static async getIdBatch(count) {
+        return idAllocator.getPersonIdBatch(count);
     }
 
     /**
@@ -36,6 +39,10 @@ class PeopleState {
      */
     static async addPerson(person, isNew = false) {
         if (!storage.isAvailable()) return false;
+        if (!person || person.id === undefined || person.id === null) {
+            console.warn('[PeopleState] addPerson failed: person.id is missing or undefined:', person);
+            return false;
+        }
         try {
             const id = person.id.toString();
             const p = {
@@ -431,18 +438,57 @@ class PeopleState {
     static async getAllTilePopulations() {
         if (!storage.isAvailable()) return {};
         try {
-            const result = {};
+            // We must count UNIQUE person IDs per tile. People can be members of multiple residency sets;
+            // summing SCARD across residency sets will double-count the same person. Build a Set per tile.
+            const tileSets = new Map(); // tileId -> Set of person IDs
             const stream = storage.scanStream({ match: 'village:*:*:people', count: 100 });
             for await (const keys of stream) {
-                for (const key of keys) {
+                // Batch smembers for this chunk to reduce round trips
+                const pipeline = storage.pipeline();
+                for (const key of keys) pipeline.smembers(key);
+                const results = await pipeline.exec();
+
+                for (let i = 0; i < keys.length; i++) {
+                    const key = keys[i];
                     const parts = key.split(':');
-                    if (parts.length === 4) {
-                        const tileId = parseInt(parts[1]);
-                        const count = await storage.scard(key);
-                        result[tileId] = (result[tileId] || 0) + count;
-                    }
+                    if (parts.length !== 4) continue;
+                    const tileId = parseInt(parts[1], 10);
+                    const [err, members] = results[i];
+                    if (err || !Array.isArray(members)) continue;
+
+                    if (!tileSets.has(tileId)) tileSets.set(tileId, new Set());
+                    const set = tileSets.get(tileId);
+                    for (const id of members) set.add(id);
                 }
             }
+
+            const result = {};
+            for (const [tileId, set] of tileSets.entries()) {
+                const uniqueCount = set.size;
+                result[tileId] = uniqueCount;
+            }
+
+            // Detect and warn if duplicates exist (sum of scards > unique counts)
+            try {
+                let totalScards = 0;
+                let totalUnique = 0;
+                const warnStream = storage.scanStream({ match: 'village:*:*:people', count: 100 });
+                for await (const keys of warnStream) {
+                    const pipeline = storage.pipeline();
+                    for (const key of keys) pipeline.scard(key);
+                    const results = await pipeline.exec();
+                    for (const [err, sc] of results) {
+                        if (!err && typeof sc === 'number') totalScards += sc;
+                    }
+                }
+                for (const set of tileSets.values()) totalUnique += set.size;
+                if (totalScards > totalUnique) {
+                    console.warn('[PeopleState] Duplicate memberships detected: total memberships=', totalScards, 'unique persons=', totalUnique);
+                }
+            } catch (e) {
+                /* best-effort warning - ignore errors */
+            }
+
             return result;
         } catch (err) {
             console.warn('[PeopleState] getAllTilePopulations failed:', err.message);
@@ -488,19 +534,19 @@ class PeopleState {
                         age--;
                     }
 
-                    if (age < 18) {
+                    if (age < 16) {
                         minors++;
-                    } else if (age >= 65) {
+                    } else if (age > 60) {
                         elderly++;
                     } else {
                         working_age++;
                     }
 
-                    // Bachelors: unmarried adults (male 18-45, female 18-30)
+                    // Bachelors: unmarried adults (male 16-45, female 16-30)
                     if (!p.family_id) {
-                        if (p.sex === true && age >= 18 && age <= 45) {
+                        if (p.sex === true && age >= 16 && age <= 45) {
                             bachelors++;
-                        } else if (p.sex === false && age >= 18 && age <= 30) {
+                        } else if (p.sex === false && age >= 16 && age <= 30) {
                             bachelors++;
                         }
                     }

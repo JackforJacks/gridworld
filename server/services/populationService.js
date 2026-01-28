@@ -120,6 +120,35 @@ class PopulationService {
         return await regeneratePopulationWithNewAgeDistribution(this.#pool, this.calendarService, this);
     }
 
+    /**
+     * Run integrity check (and optional repair) on demand
+     * options: { tiles: Array|null, repair: boolean }
+     */
+    async runIntegrityCheck(options = {}) {
+        try {
+            const { tiles = null, repair = false } = options;
+            const integrity = require('./population/integrity');
+            let metrics; try { metrics = require('./metrics'); } catch (_) { metrics = null; }
+            const start = Date.now();
+            if (metrics && metrics.auditRunCounter) metrics.auditRunCounter.inc({ source: 'manual', repair: repair ? 'true' : 'false' });
+            const res = await integrity.verifyAndRepairIntegrity(this.#pool, tiles, {}, { repair });
+            const durationSec = (Date.now() - start) / 1000;
+            if (metrics && metrics.auditDuration) metrics.auditDuration.observe(durationSec);
+            if (!res.ok) {
+                if (metrics && metrics.auditFailures) metrics.auditFailures.inc();
+                const issuesCount = Array.isArray(res.details) ? res.details.reduce((sum, d) => sum + (d.duplicatesCount || d.missingCount || d.mismatchedCount || 0), 0) : 0;
+                if (metrics && metrics.issuesGauge) metrics.issuesGauge.set(issuesCount);
+            } else {
+                if (metrics && metrics.issuesGauge) metrics.issuesGauge.set(0);
+            }
+            if (metrics && metrics.lastRunGauge) metrics.lastRunGauge.set(Date.now() / 1000);
+            return { success: res.ok, details: res.details };
+        } catch (err) {
+            console.error('Error running integrity check:', err);
+            throw err;
+        }
+    }
+
     startGrowth() { startGrowth(this); }
     stopGrowth() { stopGrowth(this); }
     async updateGrowthRate(rate) { return await updateGrowthRate(this, rate); } async applySenescenceManually() {
@@ -248,6 +277,11 @@ class PopulationService {
     } async shutdown() {
         this.stopGrowth();
         this.stopAutoSave();
+        // Stop scheduled integrity audit if running
+        try {
+            const { stopIntegrityAudit } = require('./population/initializer');
+            stopIntegrityAudit(this);
+        } catch (_) { }
         stopRateTracking(this);
         // Shutdown statistics service
         if (this.statisticsService) {

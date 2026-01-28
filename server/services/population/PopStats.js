@@ -58,63 +58,32 @@ function getCalendarCutoffs(calendarService) {
 async function getPopulationStats(pool, calendarService, populationServiceInstance) {
     try {
         const cutoffs = getCalendarCutoffs(calendarService);
-        const { currentDateStr, minorsCutoff, elderlyCutoff, bachelorMaleCutoff, bachelorFemaleCutoff } = cutoffs;
+        const { currentDateStr } = cutoffs;
 
-        let stats;
+        let stats = {
+            totalPopulation: 0,
+            male: 0,
+            female: 0,
+            minors: 0,
+            working_age: 0,
+            elderly: 0,
+            bachelors: 0
+        };
         let villagesCount = 0;
 
-        // Try storage first
+        // Only use storage (Redis) for all stats
         if (storage.isAvailable()) {
-            const storageStats = await PopulationState.getDemographicStats(currentDateStr);
+            // Parse currentDateStr to object for getDemographicStats
+            const [year, month, day] = currentDateStr.split('-').map(Number);
+            const storageStats = await PopulationState.getDemographicStats({ year, month, day });
             if (storageStats) {
                 stats = storageStats;
-                // Get villages count from storage ('village' hash)
-                try {
-                    const villageData = await storage.hgetall('village');
-                    villagesCount = villageData ? Object.keys(villageData).length : 0;
-                } catch (e) {
-                    // Fall back to Postgres for villages count
-                    const vres = await pool.query('SELECT COUNT(*)::int AS cnt FROM villages');
-                    villagesCount = vres.rows && vres.rows[0] ? vres.rows[0].cnt : 0;
-                }
             }
-        }
-
-        // Fall back to Postgres if Redis didn't provide stats
-        if (!stats) {
-            const result = await pool.query(`
-                SELECT 
-                    COUNT(*) as total_population,
-                    COUNT(*) FILTER (WHERE sex = true) AS male,
-                    COUNT(*) FILTER (WHERE sex = false) AS female,
-                    COUNT(*) FILTER (WHERE date_of_birth > $1) AS minors,
-                    COUNT(*) FILTER (WHERE date_of_birth <= $1 AND date_of_birth > $2) AS working_age,
-                    COUNT(*) FILTER (WHERE date_of_birth <= $2) AS elderly,
-                    COUNT(*) FILTER (
-                        WHERE family_id IS NULL AND (
-                            (sex = true AND date_of_birth <= $1 AND date_of_birth > $3) OR
-                            (sex = false AND date_of_birth <= $1 AND date_of_birth > $4)
-                        )
-                    ) AS bachelors
-                FROM people;`, [minorsCutoff, elderlyCutoff, bachelorMaleCutoff, bachelorFemaleCutoff]);
-
-            const row = result.rows[0] || {};
-            stats = {
-                totalPopulation: parseInt(row.total_population, 10) || 0,
-                male: parseInt(row.male, 10) || 0,
-                female: parseInt(row.female, 10) || 0,
-                minors: parseInt(row.minors, 10) || 0,
-                working_age: parseInt(row.working_age, 10) || 0,
-                elderly: parseInt(row.elderly, 10) || 0,
-                bachelors: parseInt(row.bachelors, 10) || 0
-            };
-
-            // Get villages count from Postgres
+            // Get villages count from storage ('village' hash)
             try {
-                const vres = await pool.query('SELECT COUNT(*)::int AS cnt FROM villages');
-                villagesCount = vres.rows && vres.rows[0] ? vres.rows[0].cnt : 0;
+                const villageData = await storage.hgetall('village');
+                villagesCount = villageData ? Object.keys(villageData).length : 0;
             } catch (e) {
-                console.warn('[getPopulationStats] Failed to query villages count:', e && e.message ? e.message : e);
                 villagesCount = 0;
             }
         }
@@ -241,28 +210,28 @@ async function getPopulationDistribution(pool) {
  * @returns {Object} Family statistics
  */
 async function getFamilyStatistics(pool) {
+    // Redis-first implementation
     try {
-        // Use the correct 'family' table
-        // Count children by joining people table
-        const result = await pool.query(`
-            SELECT 
-                COUNT(*) as total_families,
-                COUNT(*) FILTER (WHERE pregnancy = TRUE) as pregnant_families,
-                COALESCE(AVG(child_count),0) as avg_children_per_family,
-                COUNT(*) FILTER (WHERE child_count > 0) as families_with_children
-            FROM (
-                SELECT f.id, f.pregnancy, COUNT(p.id) as child_count
-                FROM family f
-                LEFT JOIN people p ON p.family_id = f.id AND EXTRACT(YEAR FROM AGE(p.date_of_birth)) < 16
-                GROUP BY f.id, f.pregnancy
-            ) sub;
-        `);
-        const stats = result.rows[0] || {};
+        const FamilyState = require('../populationState/FamilyState');
+        const families = await FamilyState.getAllFamilies();
+        let totalFamilies = 0;
+        let pregnantFamilies = 0;
+        let familiesWithChildren = 0;
+        let totalChildren = 0;
+
+        for (const fam of families) {
+            totalFamilies++;
+            if (fam.pregnancy) pregnantFamilies++;
+            const numChildren = Array.isArray(fam.children_ids) ? fam.children_ids.length : 0;
+            if (numChildren > 0) familiesWithChildren++;
+            totalChildren += numChildren;
+        }
+        const avgChildrenPerFamily = totalFamilies > 0 ? totalChildren / totalFamilies : 0;
         return {
-            totalFamilies: parseInt(stats.total_families, 10) || 0,
-            pregnantFamilies: parseInt(stats.pregnant_families, 10) || 0,
-            avgChildrenPerFamily: parseFloat(stats.avg_children_per_family) || 0,
-            familiesWithChildren: parseInt(stats.families_with_children, 10) || 0
+            totalFamilies,
+            pregnantFamilies,
+            avgChildrenPerFamily,
+            familiesWithChildren
         };
     } catch (error) {
         console.error('Error getting family statistics:', error);
