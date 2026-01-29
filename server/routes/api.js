@@ -196,14 +196,29 @@ router.post('/worldrestart', async (req, res) => {
             calendarService.stop();
         }
 
-        // Regenerate tiles (internal call)
+        // Only regenerate tiles if explicitly requested (slower - ~40s for 1442 tiles)
+        // Default: skip tile regeneration for faster restarts (~7-11s)
+        const shouldRegenerateTiles = req.body.regenerateTiles === true;
         let stepStart = Date.now();
-        try {
-            await selfGet('/api/tiles?regenerate=true&silent=1');
-            if (serverConfig.verboseLogs) console.log(`⏱️ [worldrestart] Tiles regeneration: ${Date.now() - stepStart}ms`);
-        } catch (regenErr) {
-            console.error('[API /api/worldrestart] Regeneration failed:', regenErr.message || regenErr);
-            throw regenErr;
+        if (shouldRegenerateTiles) {
+            try {
+                await selfGet('/api/tiles?regenerate=true&silent=1');
+                if (serverConfig.verboseLogs) console.log(`⏱️ [worldrestart] Tiles regeneration: ${Date.now() - stepStart}ms`);
+            } catch (regenErr) {
+                console.error('[API /api/worldrestart] Regeneration failed:', regenErr.message || regenErr);
+                throw regenErr;
+            }
+        } else {
+            if (serverConfig.verboseLogs) console.log('⏱️ [worldrestart] Skipping tile regeneration (use regenerateTiles: true to force)');
+            
+            // Check if tiles_lands is empty and regenerate just the lands if needed
+            stepStart = Date.now();
+            const { rows: landCount } = await pool.query('SELECT COUNT(*) as cnt FROM tiles_lands');
+            if (parseInt(landCount[0].cnt) === 0) {
+                console.log('[worldrestart] tiles_lands is empty, regenerating lands for habitable tiles...');
+                await selfGet('/api/tiles?regenerate=true&silent=1');
+                if (serverConfig.verboseLogs) console.log(`⏱️ [worldrestart] Lands regeneration: ${Date.now() - stepStart}ms`);
+            }
         }
 
         // Reset population and reinitialize on habitable tiles
@@ -212,7 +227,14 @@ router.post('/worldrestart', async (req, res) => {
         if (serverConfig.verboseLogs) console.log(`⏱️ [worldrestart] Population reset: ${Date.now() - stepStart}ms`);
 
         stepStart = Date.now();
-        const { rows: habitable } = await pool.query('SELECT id FROM tiles WHERE is_habitable = TRUE');
+        // Select habitable tiles that also have cleared lands in tiles_lands
+        // This ensures villages can be seeded on those tiles
+        const { rows: habitable } = await pool.query(`
+            SELECT DISTINCT t.id 
+            FROM tiles t 
+            INNER JOIN tiles_lands tl ON t.id = tl.tile_id AND tl.land_type = 'cleared'
+            WHERE t.is_habitable = TRUE
+        `);
         const habitableIds = habitable.map((r) => r.id);
         if (habitableIds.length > 0) {
             await populationService.initializeTilePopulations(habitableIds);

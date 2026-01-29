@@ -119,57 +119,39 @@ class VillageService {
     }
 
     /**
-     * Update food production rate for a village
+     * Update food production rate for a village (Redis-first)
      * @param {number} villageId - Village ID
      * @returns {Promise<Object>} Updated village data
      */
     static async updateVillageFoodProduction(villageId) {
         try {
-            // Get village data with tile and lands information
-            const villageQuery = `
-                SELECT v.*,
-                       t.fertility,
-                       COUNT(tl.id) as total_chunks,
-                       COUNT(CASE WHEN tl.cleared THEN 1 END) as cleared_chunks
-                FROM villages v
-                LEFT JOIN tiles t ON v.tile_id = t.id
-                LEFT JOIN tiles_lands tl ON tl.tile_id = v.tile_id AND tl.chunk_index = v.land_chunk_index
-                WHERE v.id = $1
-                GROUP BY v.id, t.fertility
-            `;
-            const { rows: villageRows } = await pool.query(villageQuery, [villageId]);
-
-            if (villageRows.length === 0) {
+            // Get village data from Redis
+            const village = await StateManager.getVillage(villageId);
+            if (!village) {
                 throw new Error(`Village with ID ${villageId} not found`);
             }
 
-            const village = villageRows[0];
-            const clearedChunks = parseInt(village.cleared_chunks) || 0;
-            const fertility = parseInt(village.fertility) || 0;
+            // Get fertility from Redis
+            const fertility = parseInt(await StateManager.getTileFertility(village.tile_id)) || 0;
 
-            // Get current population in the village
-            const populationQuery = `
-                SELECT COUNT(*) as population
-                FROM people p
-                JOIN villages v ON p.tile_id = v.tile_id
-                WHERE v.id = $1 AND p.residency = v.land_chunk_index
-            `;
-            const { rows: popRows } = await pool.query(populationQuery, [villageId]);
-            const population = parseInt(popRows[0]?.population) || 0;
+            // Get cleared land count from Redis
+            const clearedChunks = parseInt(await StateManager.getVillageClearedLand(villageId)) || 0;
+
+            // Get population count from Redis
+            const population = parseInt(await StateManager.getVillagePopulation(village.tile_id, village.land_chunk_index)) || 0;
 
             // Calculate new production rate
             const foodProductionRate = this.calculateFoodProduction(fertility, clearedChunks, population);
 
-            // Update village with new production rate (do NOT modify last_food_update here)
-            const updateQuery = `
-                UPDATE villages
-                SET food_production_rate = $1, updated_at = CURRENT_TIMESTAMP
-                WHERE id = $2
-                RETURNING *
-            `;
-            const { rows: updatedRows } = await pool.query(updateQuery, [foodProductionRate, villageId]);
+            // Update village in Redis with new production rate
+            const updatedVillage = {
+                ...village,
+                food_production_rate: foodProductionRate
+            };
 
-            return updatedRows[0];
+            await storage.hset('village', villageId.toString(), JSON.stringify(updatedVillage));
+
+            return updatedVillage;
         } catch (error) {
             console.error('Error updating village food production:', error);
             throw error;
@@ -177,35 +159,30 @@ class VillageService {
     }
 
     /**
-     * Update food capacity for a village
+     * Update food capacity for a village (Redis-first)
      * @param {number} villageId - Village ID
      * @returns {Promise<Object>} Updated village data
      */
     static async updateVillageFoodCapacity(villageId) {
         try {
-            // Get village housing capacity
-            const { rows: villageRows } = await pool.query(
-                'SELECT housing_capacity FROM villages WHERE id = $1',
-                [villageId]
-            );
-
-            if (villageRows.length === 0) {
+            // Get village data from Redis
+            const village = await StateManager.getVillage(villageId);
+            if (!village) {
                 throw new Error(`Village with ID ${villageId} not found`);
             }
 
-            const housingCapacity = parseInt(villageRows[0].housing_capacity) || 1000;
+            const housingCapacity = parseInt(village.housing_capacity) || 1000;
             const foodCapacity = this.calculateFoodCapacity(housingCapacity);
 
-            // Update village with new food capacity
-            const updateQuery = `
-                UPDATE villages
-                SET food_capacity = $1, updated_at = CURRENT_TIMESTAMP
-                WHERE id = $2
-                RETURNING *
-            `;
-            const { rows: updatedRows } = await pool.query(updateQuery, [foodCapacity, villageId]);
+            // Update village in Redis with new food capacity
+            const updatedVillage = {
+                ...village,
+                food_capacity: foodCapacity
+            };
 
-            return updatedRows[0];
+            await storage.hset('village', villageId.toString(), JSON.stringify(updatedVillage));
+
+            return updatedVillage;
         } catch (error) {
             console.error('Error updating village food capacity:', error);
             throw error;
@@ -213,7 +190,7 @@ class VillageService {
     }
 
     /**
-     * Update food stores for a village based on time elapsed
+     * Update food stores for a village (Redis-first)
      * @param {number} villageId - Village ID
      * @returns {Promise<Object>} Updated village data
      */
@@ -222,40 +199,30 @@ class VillageService {
             // First update the production rate to ensure it's current
             await this.updateVillageFoodProduction(villageId);
 
-            // Get current village data
-            const { rows: villageRows } = await pool.query(
-                'SELECT * FROM villages WHERE id = $1',
-                [villageId]
-            );
-
-            if (villageRows.length === 0) {
+            // Get current village data from Redis
+            const village = await StateManager.getVillage(villageId);
+            if (!village) {
                 throw new Error(`Village with ID ${villageId} not found`);
             }
 
-            const village = villageRows[0];
-            const lastUpdate = new Date(village.last_food_update);
-            const now = new Date();
-            const secondsElapsed = (now - lastUpdate) / 1000;
+            // For Redis-first, we add 1 second of production (same as tick updates)
+            const currentStores = parseFloat(village.food_stores) || 0;
+            const newFoodStores = Math.min(
+                village.food_capacity || 100000,
+                Math.max(0, currentStores + village.food_production_rate)
+            );
 
-            // Calculate food produced since last update
-            const timeDelta = now - lastUpdate; // milliseconds
-            const foodProduced = (village.food_production_rate * timeDelta) / 1000;
+            if (serverConfig.verboseLogs) console.log(`Village ${villageId}: rate=${village.food_production_rate}, old=${currentStores}, new=${newFoodStores}`);
 
-            // Update food stores and timestamp (capped at food capacity)
-            const foodCapacity = village.food_capacity || 100000;
-            const newFoodStores = Math.min(foodCapacity, Math.max(0, village.food_stores + foodProduced));
+            // Update village in Redis with new food stores
+            const updatedVillage = {
+                ...village,
+                food_stores: newFoodStores
+            };
 
-            if (serverConfig.verboseLogs) console.log(`Village ${villageId}: rate=${village.food_production_rate}, elapsed=${secondsElapsed}s, produced=${foodProduced}, old=${village.food_stores}, new=${newFoodStores}`);
+            await storage.hset('village', villageId.toString(), JSON.stringify(updatedVillage));
 
-            const updateQuery = `
-                UPDATE villages
-                SET food_stores = $1, last_food_update = CURRENT_TIMESTAMP, updated_at = CURRENT_TIMESTAMP
-                WHERE id = $2
-                RETURNING *
-            `;
-            const { rows: updatedRows } = await pool.query(updateQuery, [newFoodStores, villageId]);
-
-            return updatedRows[0];
+            return updatedVillage;
         } catch (error) {
             console.error('Error updating village food stores:', error);
             throw error;
@@ -263,7 +230,7 @@ class VillageService {
     }
 
     /**
-     * Get village data with current food information
+     * Get village data with current food information (Redis-first)
      * @param {number} villageId - Village ID
      * @returns {Promise<Object>} Village data including food info
      */
@@ -272,142 +239,31 @@ class VillageService {
             // First update food stores to ensure current data
             await this.updateVillageFoodStores(villageId);
 
-            // Then get updated data with tile and lands info
-            const query = `
-                SELECT v.*,
-                       t.fertility,
-                       COUNT(tl.id) as total_chunks,
-                       COUNT(CASE WHEN tl.cleared THEN 1 END) as cleared_chunks
-                FROM villages v
-                LEFT JOIN tiles t ON v.tile_id = t.id
-                LEFT JOIN tiles_lands tl ON tl.tile_id = v.tile_id AND tl.chunk_index = v.land_chunk_index
-                WHERE v.id = $1
-                GROUP BY v.id, t.fertility
-            `;
-            const { rows } = await pool.query(query, [villageId]);
-
-            if (rows.length === 0) {
+            // Get updated village data from Redis
+            const village = await StateManager.getVillage(villageId);
+            if (!village) {
                 throw new Error(`Village with ID ${villageId} not found`);
             }
 
-            return rows[0];
+            // Get additional data from Redis
+            const fertility = await StateManager.getTileFertility(village.tile_id);
+            const clearedChunks = await StateManager.getVillageClearedLand(villageId);
+            const population = await StateManager.getVillagePopulation(village.tile_id, village.land_chunk_index);
+
+            return {
+                ...village,
+                fertility: parseInt(fertility) || 0,
+                total_chunks: 100, // Assuming 100 chunks per tile
+                cleared_chunks: parseInt(clearedChunks) || 0,
+                population: parseInt(population) || 0
+            };
         } catch (error) {
             console.error('Error getting village food info:', error);
             throw error;
         }
     }
 
-    /**
-     * Update food production rates for all villages in a single batch query
-     * @returns {Promise<Array>} Array of updated villages
-     */
-    static async updateAllVillageFoodProduction() {
-        try {
-            // Single batch query using CTE to calculate production rates
-            const { rows: updatedVillages } = await pool.query(`
-                WITH village_stats AS (
-                    SELECT 
-                        v.id as village_id,
-                        COALESCE(t.fertility, 0) as fertility,
-                        (SELECT COUNT(*) FROM tiles_lands tl 
-                         WHERE tl.tile_id = v.tile_id 
-                         AND tl.chunk_index = v.land_chunk_index 
-                         AND tl.cleared = true) as cleared_cnt,
-                        -- Fallback to counting people by tile_id so villages still
-                        -- produce food even if individual residency hasn't been
-                        -- assigned to the land_chunk_index yet (e.g., after a
-                        -- storage-first seed where residency may be pending).
-                        (SELECT COUNT(*) FROM people p 
-                         WHERE p.tile_id = v.tile_id) as pop_cnt
-                    FROM villages v
-                    LEFT JOIN tiles t ON v.tile_id = t.id
-                )
-                UPDATE villages v
-                SET 
-                    food_production_rate = GREATEST(0, FLOOR(
-                        (vs.fertility / 100.0) * 
-                        vs.cleared_cnt * 
-                        SQRT(vs.pop_cnt + 1) * 10
-                    )),
-                    updated_at = CURRENT_TIMESTAMP
-                FROM village_stats vs
-                WHERE v.id = vs.village_id
-                RETURNING v.*
-            `);
 
-            return updatedVillages;
-        } catch (error) {
-            console.error('Error updating all village food production:', error);
-            throw error;
-        }
-    }
-
-    /**
-     * Update food capacity for all villages in a single batch query
-     * @returns {Promise<Array>} Array of updated villages
-     */
-    static async updateAllVillageFoodCapacity() {
-        try {
-            // Single batch query: update all food capacities at once
-            const { rows: updatedVillages } = await pool.query(`
-                UPDATE villages
-                SET 
-                    food_capacity = LEAST(1000, COALESCE(housing_capacity, 1000) * 100),
-                    updated_at = CURRENT_TIMESTAMP
-                RETURNING *
-            `);
-
-            return updatedVillages;
-        } catch (error) {
-            console.error('Error updating all village food capacity:', error);
-            throw error;
-        }
-    }
-
-    /**
-     * Update food stores for all villages in a single batch query
-     * Uses time elapsed since last update to calculate food produced
-     * @returns {Promise<Array>} Array of updated villages
-     */
-    static async updateAllVillageFoodStores() {
-        try {
-            // First, batch update all production rates (1 query)
-            await this.updateAllVillageFoodProduction();
-
-            // Then batch update all food stores based on elapsed time (1 query)
-            const { rows: updatedVillages } = await pool.query(`
-                UPDATE villages
-                SET 
-                    food_stores = LEAST(
-                        COALESCE(food_capacity, 1000),
-                        GREATEST(0, 
-                            FLOOR(COALESCE(food_stores, 0) + 
-                            COALESCE(food_production_rate, 0) * 
-                            EXTRACT(EPOCH FROM (NOW() - COALESCE(last_food_update, NOW()))))
-                        )
-                    ),
-                    last_food_update = CURRENT_TIMESTAMP,
-                    updated_at = CURRENT_TIMESTAMP
-                RETURNING *
-            `);
-
-            console.log(`🍖 Batch updated food stores for ${updatedVillages.length} villages`);
-
-            // Emit updates to connected clients so the UI can update in real time
-            if (this.io && updatedVillages.length > 0) {
-                try {
-                    this.io.emit('villagesUpdated', updatedVillages);
-                } catch (e) {
-                    console.warn('[villageService] Failed to emit village updates via socket:', e.message);
-                }
-            }
-
-            return updatedVillages;
-        } catch (error) {
-            console.error('Error updating all village food stores:', error);
-            throw error;
-        }
-    }
 
     /**
      * Update all village food stores using Redis (no database writes!)

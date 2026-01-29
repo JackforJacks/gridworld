@@ -14,6 +14,7 @@ const idAllocator = require('../idAllocator');
  * @returns {Promise<Object>} Result with created count and villages
  */
 async function seedVillagesStorageFirst() {
+    console.log('[villageSeeder] seedVillagesStorageFirst called');
     if (!storage.isAvailable()) {
         console.warn('[villageSeeder] storage not available - falling back to Postgres seeding');
         return seedRandomVillages();
@@ -23,22 +24,36 @@ async function seedVillagesStorageFirst() {
     const perTileMax = 30;
     const housingCapacity = 1000;
 
+    // Check if villages already exist in Redis
+    const existingVillages = await storage.hgetall('village');
+    const villagesCount = existingVillages ? Object.keys(existingVillages).length : 0;
+    console.log('[villageSeeder] Existing villages in Redis:', villagesCount);
+    if (villagesCount > 0) {
+        console.log(`[villageSeeder] Redis already has ${villagesCount} villages, skipping storage-first seeding`);
+        return { created: 0, villages: [] };
+    }
+
     try {
         const PopulationState = require('../populationState');
 
         // Get population counts per tile from Redis
-        const tilePopulations = await PopulationState.getAllTilePopulations();
+        let tilePopulations = await PopulationState.getAllTilePopulations();
+        console.log('[villageSeeder] getAllTilePopulations returned:', Object.keys(tilePopulations).length, 'tiles');
         let populatedTileIds = Object.keys(tilePopulations).filter(id => tilePopulations[id] > 0);
+        console.log('[villageSeeder] populatedTileIds:', populatedTileIds);
 
         // If no per-village sets found, try a best-effort fallback: group people by tile_id
         if (populatedTileIds.length === 0) {
-            if (require('../../config/server').verboseLogs) console.log('[villageSeeder] No populated tiles found via sets; falling back to grouping people by tile_id');
+            console.log('[villageSeeder] No populated tiles found via sets; falling back to grouping people by tile_id');
             let allPeople = await PopulationState.getAllPeople();
+            console.log('[villageSeeder] getAllPeople returned:', allPeople.length, 'people');
             const byTile = {};
             if (!allPeople || allPeople.length === 0) {
                 // Last-resort: read raw person hash directly from storage
+                console.log('[villageSeeder] Trying raw storage.hgetall(person)...');
                 try {
                     const peopleRaw = await storage.hgetall('person') || {};
+                    console.log('[villageSeeder] Raw person hash has', Object.keys(peopleRaw).length, 'entries');
                     allPeople = Object.values(peopleRaw).map(j => {
                         try { return JSON.parse(j); } catch (_) { return null; }
                     }).filter(Boolean);
@@ -227,9 +242,15 @@ async function assignResidencyStorage(populatedTileIds, allVillages) {
                 if (person.tile_id && person._oldResidency !== undefined && person._oldResidency !== null && person._oldResidency !== person.residency) {
                     personPipeline.srem(`village:${person.tile_id}:${person._oldResidency}:people`, person.id.toString());
                 }
+                // Clean up temporary marker before saving
+                const personToSave = { ...person };
+                delete personToSave._oldResidency;
                 // Write updated person
-                personPipeline.hset('person', person.id.toString(), JSON.stringify(person));
+                personPipeline.hset('person', person.id.toString(), JSON.stringify(personToSave));
                 // Add to new residency set
+                if (person.tile_id && person.residency !== null && person.residency !== undefined) {
+                    personPipeline.sadd(`village:${person.tile_id}:${person.residency}:people`, person.id.toString());
+                }
             }
             await personPipeline.exec();
         }

@@ -198,9 +198,17 @@ async function seedVillagesForTile(tileId) {
 
     await pool.query('BEGIN');
     try {
-        // Get tile population
-        const { rows: popRows } = await pool.query(`SELECT COUNT(*)::int AS cnt FROM people WHERE tile_id = $1`, [tileId]);
-        const tilePopulation = (popRows && popRows[0]) ? Number(popRows[0].cnt) : 0;
+        // Get tile population from Redis first, fallback to Postgres
+        let tilePopulation = 0;
+        try {
+            const PopulationState = require('../populationState');
+            const tilePops = await PopulationState.getAllTilePopulations();
+            tilePopulation = tilePops[String(tileId)] || tilePops[tileId] || 0;
+        } catch (e) {
+            // Fallback to Postgres
+            const { rows: popRows } = await pool.query(`SELECT COUNT(*)::int AS cnt FROM people WHERE tile_id = $1`, [tileId]);
+            tilePopulation = (popRows && popRows[0]) ? Number(popRows[0].cnt) : 0;
+        }
 
         if (tilePopulation === 0) {
             await pool.query('ROLLBACK');

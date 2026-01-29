@@ -142,7 +142,9 @@ class SceneManager {
             colorIndex += tileVertexCount;
         });
         this.createHexasphereMesh(hexasphereGeometry, vertices, colors, indices);
-        // Don't automatically initialize population here - let the caller decide when to initialize
+        // After tiles are loaded, immediately apply any existing population data
+        this.updateTilePopulations();
+        this.checkPopulationThresholds();
     }
 
     async initializeTilePopulations(habitableTileIds) {
@@ -161,13 +163,28 @@ class SceneManager {
             throw error;
         }
     } updateTilePopulations() {
-        if (!this.hexasphere || !this.hexasphere.tiles) return;
+        if (!this.hexasphere || !this.hexasphere.tiles) {
+            console.warn('[SceneManager] updateTilePopulations: hexasphere not ready');
+            return;
+        }
         const tilePopulations = populationManager.getAllTilePopulations();
+        const popKeys = Object.keys(tilePopulations);
+        console.log('[SceneManager] updateTilePopulations: received', popKeys.length, 'tiles with population, sample:', popKeys.slice(0, 5), tilePopulations);
+        let updated = 0;
+        // Debug: Check a specific tile that should have population
+        if (popKeys.length > 0) {
+            const testTileId = popKeys[0];
+            const foundTile = this.hexasphere.tiles.find(t => String(t.id) === String(testTileId));
+            console.log('[SceneManager] DEBUG: Looking for tile', testTileId, 'found:', !!foundTile, foundTile ? { id: foundTile.id, Habitable: foundTile.Habitable, is_habitable: foundTile.is_habitable } : null);
+        }
         this.hexasphere.tiles.forEach(tile => {
             const oldPop = tile.population;
-            tile.population = tile.Habitable === 'yes' ? (tilePopulations[tile.id] || 0) : 0;
-            // Removed debug log
+            // Use string comparison to handle both numeric and string IDs
+            const pop = tilePopulations[tile.id] || tilePopulations[String(tile.id)] || 0;
+            tile.population = (tile.Habitable === 'yes' || tile.is_habitable === true) ? pop : 0;
+            if (tile.population > 0) updated++;
         });
+        console.log('[SceneManager] updateTilePopulations: updated', updated, 'tiles with population > 0');
     } checkPopulationThresholds() {
         if (!this.hexasphere || !this.hexasphere.tiles || !this.hexasphereMesh) return;
         const POPULATION_THRESHOLD = 0; // Changed to 0 - any tile with population > 0 will be red

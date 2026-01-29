@@ -104,6 +104,7 @@ class PopulationManager {
             });
 
             this.socket.on('populationUpdate', (data) => {
+                console.log('[PopulationManager] socket populationUpdate received:', Object.keys(data), 'tilePopulations keys:', Object.keys(data.tilePopulations || {}));
                 this.updatePopulationData(data);
                 this.notifyCallbacks('populationUpdate', data);
             });
@@ -156,7 +157,9 @@ class PopulationManager {
 
     // OPTIMIZED: Centralized data update logic
     updatePopulationData(data) {
+        console.log('[PopulationManager] updatePopulationData received:', Object.keys(data), 'tilePopulations:', data.tilePopulations);
         this.populationData = { ...this.populationData, ...data };
+        console.log('[PopulationManager] after merge, tilePopulations:', this.populationData.tilePopulations);
     }    // Disconnect from the server
     disconnect() {
         if (this.pingInterval) {

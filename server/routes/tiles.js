@@ -300,24 +300,23 @@ router.get('/', async (req, res) => {
             // --- Fetch persisted tile data from database ---
             try {
                 const { rows: dbTiles } = await pool.query(
-                    'SELECT biome, fertility FROM tiles WHERE id = $1',
+                    'SELECT terrain_type, is_land, is_habitable, biome, fertility FROM tiles WHERE id = $1',
                     [props.id]
                 );
                 if (dbTiles.length > 0) {
-                    // Use persisted data from database
+                    // Use persisted data from database (authoritative source of truth)
+                    props.terrainType = dbTiles[0].terrain_type;
+                    props.isLand = dbTiles[0].is_land;
                     props.biome = dbTiles[0].biome;
                     props.fertility = dbTiles[0].fertility;
+                    // Use the database is_habitable flag to set Habitable
+                    props.Habitable = dbTiles[0].is_habitable ? 'yes' : 'no';
                 } else {
                     // Fallback to calculated values (should rarely happen)
                     props.biome = calculateBiome(tile.centerPoint, props.terrainType, seededRandom);
                     props.fertility = calculateFertility(props.biome, props.terrainType, seededRandom);
-                }
-
-                // Recompute Habitable: tundra, desert, and alpine should not be considered habitable even if terrain type suggests so
-                try {
+                    // Recompute Habitable from calculated values
                     props.Habitable = ((props.terrainType === 'flats' || props.terrainType === 'hills') && props.biome !== 'tundra' && props.biome !== 'desert' && props.biome !== 'alpine') ? 'yes' : 'no';
-                } catch (e) {
-                    props.Habitable = (props.terrainType === 'flats' || props.terrainType === 'hills') ? 'yes' : 'no';
                 }
             } catch (e) {
                 console.error(`[ERROR] Failed to fetch tile data for tile ${props.id}:`, e.message);

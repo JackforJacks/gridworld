@@ -269,9 +269,28 @@ async function insertPendingFamiliesDirect(PopulationState) {
         console.log(`👨‍👩‍👧 Inserting ${pendingFamilyInserts.length} families with real IDs...`);
 
         // Batch insert families with explicit IDs
-        const batchSize = 100;
+        const batchSize = 500; // Increased from 100 to 500 for better throughput
         for (let i = 0; i < pendingFamilyInserts.length; i += batchSize) {
             const batch = pendingFamilyInserts.slice(i, i + batchSize);
+
+            // Gather all referenced person IDs for this batch (husbands and wives)
+            const personIds = [];
+            for (const f of batch) {
+                if (f.husband_id > 0) personIds.push(f.husband_id);
+                if (f.wife_id > 0) personIds.push(f.wife_id);
+            }
+            const uniquePersonIds = Array.from(new Set(personIds));
+
+            // Bulk check person existence
+            let existingPersons = new Set();
+            if (uniquePersonIds.length > 0) {
+                try {
+                    const res = await pool.query('SELECT id FROM people WHERE id = ANY($1::int[])', [uniquePersonIds]);
+                    existingPersons = new Set(res.rows.map(r => r.id));
+                } catch (e) {
+                    console.warn('[insertPendingFamiliesDirect] Could not verify person existence:', e && e.message ? e.message : e);
+                }
+            }
 
             const values = [];
             const params = [];
@@ -282,28 +301,13 @@ async function insertPendingFamiliesDirect(PopulationState) {
                 let husbandId = f.husband_id > 0 ? f.husband_id : null;
                 let wifeId = f.wife_id > 0 ? f.wife_id : null;
 
-                if (husbandId) {
-                    try {
-                        const h = await pool.query('SELECT 1 FROM people WHERE id = $1', [husbandId]);
-                        if (h.rowCount === 0) {
-                            console.warn(`[insertPendingFamiliesDirect] Husband ${husbandId} not found in Postgres, setting to NULL for family ${f.id}`);
-                            husbandId = null;
-                        }
-                    } catch (e) {
-                        // If check fails, proceed with original ID (optimistic), but log a warning
-                        console.warn('[insertPendingFamiliesDirect] Could not verify husband existence:', e && e.message ? e.message : e);
-                    }
+                if (husbandId && !existingPersons.has(husbandId)) {
+                    console.warn(`[insertPendingFamiliesDirect] Husband ${husbandId} not found in Postgres, setting to NULL for family ${f.id}`);
+                    husbandId = null;
                 }
-                if (wifeId) {
-                    try {
-                        const w = await pool.query('SELECT 1 FROM people WHERE id = $1', [wifeId]);
-                        if (w.rowCount === 0) {
-                            console.warn(`[insertPendingFamiliesDirect] Wife ${wifeId} not found in Postgres, setting to NULL for family ${f.id}`);
-                            wifeId = null;
-                        }
-                    } catch (e) {
-                        console.warn('[insertPendingFamiliesDirect] Could not verify wife existence:', e && e.message ? e.message : e);
-                    }
+                if (wifeId && !existingPersons.has(wifeId)) {
+                    console.warn(`[insertPendingFamiliesDirect] Wife ${wifeId} not found in Postgres, setting to NULL for family ${f.id}`);
+                    wifeId = null;
                 }
 
                 values.push(`($${paramIdx}, $${paramIdx + 1}, $${paramIdx + 2}, $${paramIdx + 3}, $${paramIdx + 4}, $${paramIdx + 5}, $${paramIdx + 6})`);
@@ -363,7 +367,7 @@ async function insertPendingPeopleDirect(PopulationState) {
 
     if (pendingInserts.length > 0) {
         console.log(`📥 Inserting ${pendingInserts.length} people with real IDs...`);
-        const batchSize = 100;
+        const batchSize = 500; // Increased from 100 to 500 for better throughput
 
         for (let i = 0; i < pendingInserts.length; i += batchSize) {
             const batch = pendingInserts.slice(i, i + batchSize);
@@ -427,13 +431,6 @@ async function insertPendingPeopleDirect(PopulationState) {
                     await pool.query(`
                         INSERT INTO people (id, tile_id, sex, date_of_birth, residency, family_id)
                         VALUES ${values.join(',')}
-                        ON CONFLICT (id) DO UPDATE SET
-                            tile_id = EXCLUDED.tile_id,
-                            sex = EXCLUDED.sex,
-                            date_of_birth = EXCLUDED.date_of_birth,
-                            residency = EXCLUDED.residency,
-                            family_id = EXCLUDED.family_id,
-                            updated_at = CURRENT_TIMESTAMP
                     `, params);
                     insertedCount += batch.length;
                     console.log(`   Batch insert complete: ${insertedCount}/${pendingInserts.length}`);

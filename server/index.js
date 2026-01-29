@@ -70,6 +70,8 @@ class GridWorldServer {
             const seeded = await villageSeeder.seedIfNoVillages();
             if (seeded && seeded.created && seeded.created > 0) {
                 console.log(`🌱 Seeded ${seeded.created} villages at startup`);
+                // Mark that we just seeded, so storage reconnect handler won't wipe the fresh data
+                if (this._setJustSeeded) this._setJustSeeded(true);
             }
         } catch (err) {
             console.error('Error seeding villages at startup:', err);
@@ -152,18 +154,38 @@ class GridWorldServer {
             await StateManager.loadFromDatabase();
             console.log('🔴 State Manager initialized (storage mode)');
 
+            // Track if we've already loaded - only reload on actual reconnects, not initial ready events
+            let hasLoadedOnce = true; // We just loaded above
+            let justSeeded = false; // Will be set true after seedIfNoVillages
+
             // If storage reconnects later, re-sync automatically
             try {
                 // Attach to storage events emitted when adapter becomes ready
                 if (typeof storage.on === 'function') {
                     storage.on('ready', async () => {
                         try {
+                            // Skip reload if we just seeded population at startup
+                            if (justSeeded) {
+                                console.log('🔁 Storage adapter ready, but skipping reload (just seeded at startup)');
+                                justSeeded = false; // Reset flag after first skip
+                                return;
+                            }
+                            // Skip reload if we're in the middle of a world restart
+                            // (worldrestart creates fresh data in Redis that shouldn't be overwritten)
+                            const PopulationState = require('./services/populationState');
+                            if (PopulationState.isRestarting) {
+                                console.log('🔁 Storage adapter ready, but skipping reload (worldrestart in progress)');
+                                return;
+                            }
                             console.log('🔁 Storage adapter ready, reloading state from Postgres...');
                             await StateManager.loadFromDatabase();
                         } catch (e) {
                             console.warn('⚠️ Failed to reload state after storage reconnect:', e.message);
                         }
                     });
+                    
+                    // Expose setter for justSeeded flag so seedIfNoVillages can signal it
+                    this._setJustSeeded = (val) => { justSeeded = val; };
                 }
             } catch (e) {
                 console.warn('⚠️ Could not attach storage reconnect handler:', e.message);

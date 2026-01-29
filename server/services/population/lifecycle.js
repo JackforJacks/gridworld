@@ -325,6 +325,9 @@ module.exports = {
  */
 async function assignResidencyForAdults(pool, tileId, calendarService) {
     try {
+        const StateManager = require('../stateManager');
+        const PopulationState = require('../populationState');
+
         // Get current date
         let currentYear = 4000, currentMonth = 1, currentDay = 1;
         if (calendarService && typeof calendarService.getCurrentDate === 'function') {
@@ -334,81 +337,65 @@ async function assignResidencyForAdults(pool, tileId, calendarService) {
             currentDay = currentDate.day;
         }
 
-        // Get villages for this tile
-        const { rows: villages } = await pool.query(`
-            SELECT id, housing_capacity, housing_slots
-            FROM villages
-            WHERE tile_id = $1
-            ORDER BY id
-        `, [tileId]);
+        // Get villages for this tile from Redis
+        const allVillages = await StateManager.getAllVillages();
+        const villages = allVillages.filter(v => v.tile_id == tileId);
 
         if (villages.length === 0) return; // No villages to assign to
 
         const { calculateAge } = require('./calculator.js');
 
+        // Get all people from Redis
+        const allPeople = await PopulationState.getAllPeople();
+        const tilePeople = allPeople.filter(p => p.tile_id == tileId);
+
         // First, move people from over-capacity villages
         for (const village of villages) {
-            const occupied = village.housing_slots.length;
+            const occupied = Array.isArray(village.housing_slots) ? village.housing_slots.length : 0;
             if (occupied <= village.housing_capacity) continue;
 
             // Get 18+ people in this village
-            const overPeopleResult = await pool.query(`
-                SELECT id FROM people
-                WHERE residency = $1 AND tile_id = $2
-            `, [village.id, tileId]);
-
-            const adultsInVillage = overPeopleResult.rows.filter(person => {
-                // Get age - need date_of_birth
-                const personResult = pool.query(`SELECT date_of_birth FROM people WHERE id = $1`, [person.id]);
-                // Wait, better to get with date_of_birth
-                // Actually, modify query
-            });
-
-            // To optimize, get people with date_of_birth
-            const overAdultsResult = await pool.query(`
-                SELECT p.id, p.date_of_birth FROM people p
-                WHERE p.residency = $1 AND p.tile_id = $2
-            `, [village.id, tileId]);
-
-            const adultsToMove = overAdultsResult.rows.filter(person => {
+            const adultsInVillage = tilePeople.filter(person => {
+                if (person.residency != village.id) return false;
+                if (!person.date_of_birth) return false;
                 const age = calculateAge(person.date_of_birth, currentYear, currentMonth, currentDay);
                 return age >= 18;
             });
 
             // Move excess adults (over capacity) to available villages
             const excess = occupied - village.housing_capacity;
-            const toMove = Math.min(adultsToMove.length, excess);
+            const toMove = Math.min(adultsInVillage.length, excess);
 
             for (let i = 0; i < toMove; i++) {
-                const personId = adultsToMove[i].id;
+                const person = adultsInVillage[i];
                 // Find available village
-                const availableVillage = villages.find(v => v.housing_slots.length < v.housing_capacity);
+                const availableVillage = villages.find(v => {
+                    const vOccupied = Array.isArray(v.housing_slots) ? v.housing_slots.length : 0;
+                    return vOccupied < v.housing_capacity;
+                });
                 if (!availableVillage) break; // No available
 
                 // Move person
-                await pool.query(`UPDATE people SET residency = $1 WHERE id = $2`, [availableVillage.id, personId]);
+                await PopulationState.updatePerson(person.id, { residency: availableVillage.id });
 
                 // Update slots
-                const currentSlots = village.housing_slots;
-                const newSlots = currentSlots.filter(id => id != personId);
-                await pool.query(`UPDATE villages SET housing_slots = $1 WHERE id = $2`, [JSON.stringify(newSlots), village.id]);
+                const currentSlots = village.housing_slots || [];
+                const newSlots = currentSlots.filter(id => id != person.id);
+                await StateManager.updateVillage(village.id, { housing_slots: newSlots });
 
-                const availSlots = [...availableVillage.housing_slots, personId];
-                await pool.query(`UPDATE villages SET housing_slots = $1 WHERE id = $2`, [JSON.stringify(availSlots), availableVillage.id]);
+                const availSlots = [...(availableVillage.housing_slots || []), person.id];
+                await StateManager.updateVillage(availableVillage.id, { housing_slots: availSlots });
 
-                // Update local
+                // Update local copies for subsequent operations
                 village.housing_slots = newSlots;
                 availableVillage.housing_slots = availSlots;
             }
         }
 
         // Then, assign unassigned adults
-        const unassignedResult = await pool.query(`
-            SELECT id, date_of_birth FROM people
-            WHERE tile_id = $1 AND (residency IS NULL OR residency = 0)
-        `, [tileId]);
-
-        const unassignedAdults = unassignedResult.rows.filter(person => {
+        const unassignedAdults = tilePeople.filter(person => {
+            if (person.residency !== null && person.residency !== 0) return false;
+            if (!person.date_of_birth) return false;
             const age = calculateAge(person.date_of_birth, currentYear, currentMonth, currentDay);
             return age >= 18;
         });
@@ -418,24 +405,22 @@ async function assignResidencyForAdults(pool, tileId, calendarService) {
         let peopleIndex = 0;
 
         for (const village of villages) {
-            const currentOccupied = village.housing_slots.length;
+            const currentOccupied = Array.isArray(village.housing_slots) ? village.housing_slots.length : 0;
             const available = village.housing_capacity - currentOccupied;
 
             if (available <= 0 || peopleIndex >= unassignedAdults.length) continue;
 
             const toAssign = Math.min(available, unassignedAdults.length - peopleIndex);
-            const assignedPeopleIds = unassignedAdults.slice(peopleIndex, peopleIndex + toAssign).map(p => p.id);
+            const assignedPeople = unassignedAdults.slice(peopleIndex, peopleIndex + toAssign);
 
             // Update people residency
-            await pool.query(`
-                UPDATE people SET residency = $1 WHERE id = ANY($2)
-            `, [village.id, assignedPeopleIds]);
+            for (const person of assignedPeople) {
+                await PopulationState.updatePerson(person.id, { residency: village.id });
+            }
 
             // Update village housing_slots
-            const updatedSlots = [...village.housing_slots, ...assignedPeopleIds];
-            await pool.query(`
-                UPDATE villages SET housing_slots = $1 WHERE id = $2
-            `, [JSON.stringify(updatedSlots), village.id]);
+            const updatedSlots = [...(village.housing_slots || []), ...assignedPeople.map(p => p.id)];
+            await StateManager.updateVillage(village.id, { housing_slots: updatedSlots });
 
             // Update local
             village.housing_slots = updatedSlots;

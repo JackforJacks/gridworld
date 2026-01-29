@@ -25,6 +25,8 @@ async function clearStoragePopulation() {
 
         // Clear person hash
         await storage.del('person');
+        // Clear village hash (village objects)
+        await storage.del('village');
         // Clear all village:*:*:people sets
         const stream = storage.scanStream({ match: 'village:*:*:people', count: 1000 });
         const keys = [];
@@ -60,11 +62,19 @@ async function updateTilePopulation(pool, calendarService, serviceInstance, tile
  */
 async function resetAllPopulation(pool, serviceInstance) {
     try {
-        if (serverConfig.verboseLogs) console.log('[resetAllPopulation] Attempting to truncate people and families tables...');
+        if (serverConfig.verboseLogs) console.log('[resetAllPopulation] Attempting to truncate people, families, and villages tables...');
         // Clear storage population data first
         await clearStoragePopulation();
-        // Truncate people and family tables to clear all data and reset sequences.
+        // Clear village references from tiles_lands BEFORE deleting villages
+        // This prevents TRUNCATE CASCADE from clearing tiles_lands
+        await pool.query('UPDATE tiles_lands SET owner_id = NULL, village_id = NULL');
+        // Truncate people, family tables (they don't reference tiles_lands)
         await pool.query('TRUNCATE TABLE family, people RESTART IDENTITY CASCADE');
+        // Use DELETE for villages to avoid TRUNCATE CASCADE clearing tiles_lands
+        // (PostgreSQL TRUNCATE CASCADE would truncate tiles_lands due to FK relationship)
+        await pool.query('DELETE FROM villages');
+        // Reset the villages sequence
+        await pool.query('ALTER SEQUENCE villages_id_seq RESTART WITH 1');
         if (serverConfig.verboseLogs) console.log('[resetAllPopulation] Truncate successful. Broadcasting update...');
         await serviceInstance.broadcastUpdate('populationReset');
         const { formatPopulationData } = require('./dataOperations.js');
@@ -140,8 +150,14 @@ async function initializeTilePopulations(pool, calendarService, serviceInstance,
 
         if (serverConfig.verboseLogs) console.log('[PopulationOperations] No existing population found. Proceeding with storage-first initialization...');
 
-        // Fetch habitable tiles from the database
-        const habitableResult = await pool.query(`SELECT id FROM tiles WHERE is_habitable = TRUE`);
+        // Fetch habitable tiles that also have cleared lands in tiles_lands
+        // This ensures villages can be seeded on those tiles
+        const habitableResult = await pool.query(`
+            SELECT DISTINCT t.id 
+            FROM tiles t 
+            INNER JOIN tiles_lands tl ON t.id = tl.tile_id AND tl.land_type = 'cleared'
+            WHERE t.is_habitable = TRUE
+        `);
         const habitableFromDb = habitableResult.rows.map(r => r.id);
         const candidateTiles = Array.isArray(tileIds) && tileIds.length > 0
             ? tileIds.filter(id => habitableFromDb.includes(id))
@@ -182,7 +198,8 @@ async function initializeTilePopulations(pool, calendarService, serviceInstance,
         const { year: currentYear, month: currentMonth, day: currentDay } = currentDate;
         const { getRandomSex, getRandomAge, getRandomBirthDate } = require('./calculator.js');
 
-        // ========== Pre-allocate IDs dynamically per tile ==========
+        // ========== Step 1: Pre-allocate IDs and generate people ==========
+        const step1Start = Date.now();
         const idAllocator = require('../idAllocator');
 
         let allPeople = []; // Array of person objects with real IDs

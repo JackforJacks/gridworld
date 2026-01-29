@@ -42,6 +42,13 @@ async function seedIfNoVillages() {
                 console.log(`[villageSeeder] Redis already has ${villagesCountRedis} villages and ${peopleCount} people, skipping fallback seeding.`);
                 return { created: 0, villages: [] };
             }
+            // If Redis has people but no villages, seed villages from storage
+            if (peopleCount > 0) {
+                console.log(`[villageSeeder] Redis has ${peopleCount} people, will seed villages from storage.`);
+                const result = await seedVillagesStorageFirst();
+                console.log(`[villageSeeder] Seeded ${result.created} initial villages`);
+                return result;
+            }
         }
         // --- END REDIS-FIRST CHECK ---
 
@@ -55,8 +62,8 @@ async function seedIfNoVillages() {
             await createInitialWorld();
         }
 
-        // Now seed villages
-        const result = await seedRandomVillages(5);
+        // Now seed villages using storage-first approach since people are in Redis
+        const result = await seedVillagesStorageFirst();
 
         console.log(`[villageSeeder] Seeded ${result.created} initial villages`);
         return result;
@@ -75,13 +82,72 @@ async function createInitialWorld() {
     const { rows: allTiles } = await pool.query('SELECT COUNT(*) as count FROM tiles');
     const tileCount = parseInt(allTiles[0].count);
 
+    let tilesToPopulate = [];
+
     if (tileCount === 0) {
         console.log('[villageSeeder] No tiles found, creating initial habitable tiles...');
-        await createInitialTiles();
+        // createInitialTiles now returns the created tile descriptors
+        tilesToPopulate = await createInitialTiles();
+    } else {
+        // Use existing habitable tiles that ALSO have cleared lands in tiles_lands
+        // This ensures villages can be seeded on those tiles
+        let { rows: habitable } = await pool.query(`
+            SELECT DISTINCT t.id 
+            FROM tiles t 
+            INNER JOIN tiles_lands tl ON t.id = tl.tile_id AND tl.land_type = 'cleared'
+            WHERE t.is_habitable = TRUE
+        `);
+        
+        // If no habitable tiles with cleared lands, create tiles_lands for some habitable tiles
+        if (habitable.length === 0) {
+            console.log('[villageSeeder] No habitable tiles with cleared lands found. Creating tiles_lands entries...');
+            
+            // Get some random habitable tiles
+            const { rows: habitableTiles } = await pool.query(`
+                SELECT id FROM tiles WHERE is_habitable = TRUE ORDER BY RANDOM() LIMIT 5
+            `);
+            
+            if (habitableTiles.length === 0) {
+                console.warn('[villageSeeder] No habitable tiles found at all. Cannot create initial population.');
+                return;
+            }
+            
+            // Create tiles_lands entries for these tiles
+            for (const tile of habitableTiles) {
+                for (let chunkIndex = 0; chunkIndex < 100; chunkIndex++) {
+                    const landType = chunkIndex < 5 ? 'cleared' : (Math.random() > 0.3 ? 'forest' : 'wasteland');
+                    await pool.query(`
+                        INSERT INTO tiles_lands (tile_id, chunk_index, land_type, cleared)
+                        VALUES ($1, $2, $3, $4)
+                        ON CONFLICT (tile_id, chunk_index) DO NOTHING
+                    `, [tile.id, chunkIndex, landType, landType === 'cleared']);
+                }
+            }
+            
+            console.log(`[villageSeeder] Created tiles_lands entries for ${habitableTiles.length} habitable tiles`);
+            
+            // Re-query for habitable tiles with cleared lands
+            const result = await pool.query(`
+                SELECT DISTINCT t.id 
+                FROM tiles t 
+                INNER JOIN tiles_lands tl ON t.id = tl.tile_id AND tl.land_type = 'cleared'
+                WHERE t.is_habitable = TRUE
+            `);
+            habitable = result.rows;
+        }
+        
+        if (habitable.length === 0) {
+            console.warn('[villageSeeder] Still no habitable tiles with cleared lands after creating tiles_lands. Cannot create initial population.');
+            return;
+        }
+        
+        const shuffled = habitable.sort(() => 0.5 - Math.random());
+        tilesToPopulate = shuffled.slice(0, 5);
+        console.log(`[villageSeeder] Selected ${tilesToPopulate.length} random tiles for initial population:`, tilesToPopulate.map(t => t.id));
     }
 
     // Create initial population on each tile
-    for (const tile of initialTiles) {
+    for (const tile of tilesToPopulate) {
         await createInitialPopulation(tile.id);
     }
 }
@@ -117,6 +183,8 @@ async function createInitialTiles() {
     }
 
     console.log(`[villageSeeder] Created ${initialTiles.length} initial habitable tiles with land chunks`);
+    // Return the created tile descriptors so callers can populate them
+    return initialTiles;
 }
 
 /**
@@ -139,7 +207,7 @@ async function createInitialPopulation(tileId) {
         const personObj = {
             id: tempId,
             tile_id: tileId,
-            residency: null,
+            residency: 0, // Default residency - required for village membership sets
             sex: sex,
             date_of_birth: birthDate,
             health: 100,
