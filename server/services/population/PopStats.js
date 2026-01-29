@@ -149,13 +149,54 @@ async function getAllPopulationData(pool, calendarService, populationServiceInst
     let populations = {};
     if (storage.isAvailable()) {
         try {
-            populations = await PopulationState.getAllTilePopulations();
+            // Poll a few times to capture batched/streamed writes that may be in progress
+            let best = {};
+            const MAX_POLLS = 10;
+            const POLL_MS = 100;
+            for (let i = 0; i < MAX_POLLS; i++) {
+                const current = await PopulationState.getAllTilePopulations();
+                const currentCount = current ? Object.keys(current).length : 0;
+                const bestCount = best ? Object.keys(best).length : 0;
+                if (current && currentCount > bestCount) {
+                    best = current;
+                }
+                // If we've captured at least 5 tiles, likely complete (init selects <=5 tiles)
+                if (Object.keys(best).length >= 5) break;
+                await new Promise(resolve => setTimeout(resolve, POLL_MS));
+            }
+            populations = best;
         } catch (e) {
             console.warn('[getAllPopulationData] storage.getAllTilePopulations failed, falling back to Postgres:', e.message);
         }
     }
 
-    // If storage didn't have data, fall back to Postgres
+    // If storage didn't have data after polling, attempt a repair if person hash exists
+    if (Object.keys(populations).length === 0) {
+        try {
+            // If person hash has entries, rebuild village membership sets then re-read
+            const counts = await storage.hgetall('counts:global');
+            const personHash = await storage.hgetall('person');
+            const personCount = personHash ? Object.keys(personHash).length : 0;
+            if (personCount > 0 || (counts && counts.total && parseInt(counts.total, 10) > 0)) {
+                console.warn('[getAllPopulationData] Detected persons but no per-tile data; attempting rebuild of village membership sets...');
+                try {
+                    const rebuildRes = await PopulationState.rebuildVillageMemberships();
+                    if (rebuildRes && rebuildRes.success) {
+                        const repaired = await PopulationState.getAllTilePopulations();
+                        if (repaired && Object.keys(repaired).length > 0) {
+                            populations = repaired;
+                        }
+                    }
+                } catch (e) {
+                    console.warn('[getAllPopulationData] rebuildVillageMemberships failed:', e && e.message ? e.message : e);
+                }
+            }
+        } catch (e) {
+            // ignore and fall back to Postgres
+        }
+    }
+
+    // If still empty after attempted repair, fall back to Postgres
     if (Object.keys(populations).length === 0) {
         populations = await loadPopulationData(pool);
     }

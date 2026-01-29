@@ -95,18 +95,49 @@ async function initializeTilePopulations(pool, calendarService, serviceInstance,
 
         validateTileIds(tileIds);
 
-        // Check if population already exists in Redis - if so, don't reinitialize
+        // Check if population already exists in Redis - if so, and per-tile data is present, don't reinitialize.
         const existingCount = await PopulationState.getTotalPopulation();
         if (existingCount > 0) {
-            if (serverConfig.verboseLogs) console.log(`[PopulationOperations] Found ${existingCount} existing people in Redis. Using existing population.`);
-            const populations = await PopulationState.getAllTilePopulations();
-            return {
-                success: true,
-                message: `Using existing population data (${existingCount} people)`,
-                isExisting: true,
-                ...formatPopulationData(populations)
-            };
+            // Log the raw counts and tile keys for diagnostics
+            let populations;
+            try {
+                populations = await PopulationState.getAllTilePopulations();
+            } catch (e) {
+                populations = {};
+            }
+            const tilesFound = populations && Object.keys(populations).length ? Object.keys(populations).length : 0;
+
+            if (tilesFound > 0) {
+                if (serverConfig.verboseLogs) console.log(`[PopulationOperations] Found ${existingCount} existing people in Redis and ${tilesFound} populated tiles. Using existing population.`);
+                return {
+                    success: true,
+                    message: `Using existing population data (${existingCount} people)`,
+                    isExisting: true,
+                    ...formatPopulationData(populations)
+                };
+            }
+
+            // If we have a total count but no per-tile breakdown, that's inconsistent - try to rebuild village membership sets from the person hash
+            console.warn('[PopulationOperations] Inconsistent storage state: counts exist but no per-tile populations. Attempting to rebuild village membership sets from person hash...');
+            try {
+                const rebuildRes = await PopulationState.rebuildVillageMemberships();
+                if (rebuildRes && rebuildRes.success && rebuildRes.total > 0) {
+                    const repaired = await PopulationState.getAllTilePopulations();
+                    if (repaired && Object.keys(repaired).length > 0) {
+                        return {
+                            success: true,
+                            message: `Using repaired population data (${existingCount} people)`,
+                            isExisting: true,
+                            ...formatPopulationData(repaired)
+                        };
+                    }
+                }
+                console.warn('[PopulationOperations] rebuildVillageMemberships did not produce per-tile populations; continuing with initialization.');
+            } catch (e) {
+                console.warn('[PopulationOperations] rebuildVillageMemberships failed:', e && e.message ? e.message : e);
+            }
         }
+
         if (serverConfig.verboseLogs) console.log('[PopulationOperations] No existing population found. Proceeding with storage-first initialization...');
 
         // Fetch habitable tiles from the database
@@ -470,6 +501,29 @@ async function initializeTilePopulations(pool, calendarService, serviceInstance,
             console.warn('[initPop] savePopulationData failed:', e && e.message ? e.message : e);
         }
 
+        // Wait for storage to reflect all intended tiles (helps avoid returning a partial view if writes were batched)
+        try {
+            const waitStart = Date.now();
+            const MAX_WAIT_MS = 5000; // total timeout waiting for all tiles
+            const POLL_MS = 200;
+            let allFound = false;
+            while (Date.now() - waitStart < MAX_WAIT_MS) {
+                const current = await PopulationState.getAllTilePopulations();
+                const keys = Object.keys(current);
+                allFound = selectedTiles.every(tid => keys.includes(String(tid)) || keys.includes(tid));
+                if (allFound) break;
+                // Small backoff
+                await new Promise(resolve => setTimeout(resolve, POLL_MS));
+            }
+            if (!allFound) {
+                console.warn('[initPop] Timeout waiting for all selected tiles to appear in storage. Proceeding with best-effort data.');
+            } else if (serverConfig.verboseLogs) {
+                console.log('[initPop] All selected tiles detected in storage after', Date.now() - waitStart, 'ms');
+            }
+        } catch (e) {
+            console.warn('[initPop] Error while waiting for selected tiles in storage:', e && e.message ? e.message : e);
+        }
+
         // ========== Return formatted result ==========
         const totalTime = Date.now() - startTime;
         if (serverConfig.verboseLogs) console.log(`✅ [initPop] COMPLETE: ${allPeople.length} people, ${allFamilies.length} families in ${totalTime}ms (storage-first, persisted to Postgres if enabled)`);
@@ -497,6 +551,16 @@ async function initializeTilePopulations(pool, calendarService, serviceInstance,
         if (mismatches.length > 0) {
             console.warn('[initPop] Population mismatches detected:', mismatches.slice(0, 10));
         }
+
+        // Notify listeners/UI that population data changed so front-end can refresh
+        try {
+            if (serviceInstance && typeof serviceInstance.broadcastUpdate === 'function') {
+                await serviceInstance.broadcastUpdate('populationUpdate');
+            }
+        } catch (e) {
+            console.warn('[initPop] broadcastUpdate failed:', e && e.message ? e.message : e);
+        }
+
         return formatPopulationData(populations);
     } catch (error) {
         console.error('[PopulationOperations] Critical error in initializeTilePopulations:', error);

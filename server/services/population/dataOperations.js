@@ -10,13 +10,33 @@ const storage = require('../storage');
 async function loadPopulationData(pool) {
     try {
         // Try storage first for tile populations (hot data after restart)
+        // If storage isn't available yet, wait briefly for it to become ready (useful during restarts)
+        if (!storage.isAvailable()) {
+            // wait up to 2000ms for storage to emit 'ready' if storage exposes an 'on' event API
+            if (typeof storage.on === 'function') {
+                await Promise.race([
+                    new Promise(resolve => storage.on('ready', resolve)),
+                    new Promise(resolve => setTimeout(resolve, 2000))
+                ]);
+            } else {
+                // storage adapter doesn't provide events in this environment; short sleep to avoid stalling tests
+                await new Promise(resolve => setTimeout(resolve, 200));
+            }
+        }
+
         if (storage.isAvailable()) {
             try {
                 const PopulationState = require('../populationState');
-                const populations = await PopulationState.getAllTilePopulations();
-                if (Object.keys(populations).length > 0) {
-                    return populations;
+                // Poll a few times in case initialization is writing people in batches
+                for (let attempt = 0; attempt < 6; attempt++) {
+                    const populations = await PopulationState.getAllTilePopulations();
+                    if (Object.keys(populations).length > 0) {
+                        return populations;
+                    }
+                    // Small backoff between polls
+                    await new Promise(resolve => setTimeout(resolve, 100));
                 }
+                // If storage is available but no populations found after polling, fall through to Postgres fallback
             } catch (e) {
                 console.warn('[loadPopulationData] storage failed, falling back to Postgres:', e.message);
             }
