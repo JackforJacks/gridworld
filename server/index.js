@@ -183,7 +183,7 @@ class GridWorldServer {
                             console.warn('⚠️ Failed to reload state after storage reconnect:', e.message);
                         }
                     });
-                    
+
                     // Expose setter for justSeeded flag so seedIfNoVillages can signal it
                     this._setJustSeeded = (val) => { justSeeded = val; };
                 }

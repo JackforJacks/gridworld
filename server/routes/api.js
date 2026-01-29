@@ -210,7 +210,7 @@ router.post('/worldrestart', async (req, res) => {
             }
         } else {
             if (serverConfig.verboseLogs) console.log('⏱️ [worldrestart] Skipping tile regeneration (use regenerateTiles: true to force)');
-            
+
             // Check if tiles_lands is empty and regenerate just the lands if needed
             stepStart = Date.now();
             const { rows: landCount } = await pool.query('SELECT COUNT(*) as cnt FROM tiles_lands');

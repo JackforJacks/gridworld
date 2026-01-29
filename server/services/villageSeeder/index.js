@@ -97,21 +97,21 @@ async function createInitialWorld() {
             INNER JOIN tiles_lands tl ON t.id = tl.tile_id AND tl.land_type = 'cleared'
             WHERE t.is_habitable = TRUE
         `);
-        
+
         // If no habitable tiles with cleared lands, create tiles_lands for some habitable tiles
         if (habitable.length === 0) {
             console.log('[villageSeeder] No habitable tiles with cleared lands found. Creating tiles_lands entries...');
-            
+
             // Get some random habitable tiles
             const { rows: habitableTiles } = await pool.query(`
                 SELECT id FROM tiles WHERE is_habitable = TRUE ORDER BY RANDOM() LIMIT 5
             `);
-            
+
             if (habitableTiles.length === 0) {
                 console.warn('[villageSeeder] No habitable tiles found at all. Cannot create initial population.');
                 return;
             }
-            
+
             // Create tiles_lands entries for these tiles
             for (const tile of habitableTiles) {
                 for (let chunkIndex = 0; chunkIndex < 100; chunkIndex++) {
@@ -123,9 +123,9 @@ async function createInitialWorld() {
                     `, [tile.id, chunkIndex, landType, landType === 'cleared']);
                 }
             }
-            
+
             console.log(`[villageSeeder] Created tiles_lands entries for ${habitableTiles.length} habitable tiles`);
-            
+
             // Re-query for habitable tiles with cleared lands
             const result = await pool.query(`
                 SELECT DISTINCT t.id 
@@ -135,12 +135,12 @@ async function createInitialWorld() {
             `);
             habitable = result.rows;
         }
-        
+
         if (habitable.length === 0) {
             console.warn('[villageSeeder] Still no habitable tiles with cleared lands after creating tiles_lands. Cannot create initial population.');
             return;
         }
-        
+
         const shuffled = habitable.sort(() => 0.5 - Math.random());
         tilesToPopulate = shuffled.slice(0, 5);
         console.log(`[villageSeeder] Selected ${tilesToPopulate.length} random tiles for initial population:`, tilesToPopulate.map(t => t.id));
