@@ -16,6 +16,10 @@ module.exports = {
     // If true, initialization will fail (throw) when integrity issues are detected. Use INIT_POP_FAIL=1 to enable.
     integrityFailOnInit: (process.env.INIT_POP_FAIL === '1' || process.env.INIT_POP_FAIL === 'true'),
 
+    // Persist population created at initialization into Postgres (saveToDatabase).
+    // Default: enabled. Set SAVE_POP_ON_INIT=0 or SAVE_POP_ON_INIT=false to disable the immediate save during restart.
+    savePopulationOnInit: (process.env.SAVE_POP_ON_INIT === undefined) ? true : (process.env.SAVE_POP_ON_INIT === '1' || process.env.SAVE_POP_ON_INIT === 'true'),
+
     // Scheduled integrity audit settings
     integrityAuditEnabled: (process.env.INTEGRITY_AUDIT_ENABLED === '1' || process.env.INTEGRITY_AUDIT_ENABLED === 'true'),
     // Interval in milliseconds for scheduled audits (default 24 hours)

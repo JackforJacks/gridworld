@@ -56,6 +56,8 @@ describe('initializeTilePopulations (storage-first)', () => {
         const calendarService = { getCurrentDate: () => ({ year: 4000, month: 1, day: 1 }) };
         const serviceInstance = { broadcastUpdate: async () => { } };
 
+        const saveSpy = jest.spyOn(require('../../population/dataOperations'), 'savePopulationData').mockResolvedValue({ success: true });
+
         const result = await initializeTilePopulations(pool, calendarService, serviceInstance, [fakeTileId]);
 
         expect(result).toBeTruthy();
@@ -68,5 +70,8 @@ describe('initializeTilePopulations (storage-first)', () => {
         const expected = Math.floor(500 + 0.5 * 4501);
         expect(result.tilePopulations[fakeTileId]).toBe(expected);
         expect(result.totalPopulation).toBe(expected);
+
+        expect(saveSpy).toHaveBeenCalled();
+        saveSpy.mockRestore();
     });
 });

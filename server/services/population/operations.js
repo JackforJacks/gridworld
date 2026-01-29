@@ -10,7 +10,18 @@ const storage = require('../storage');
  */
 async function clearStoragePopulation() {
     try {
-        if (!storage.isAvailable()) return;
+        if (!storage.isAvailable()) {
+            // Storage may not yet be ready (e.g., Redis connecting). Wait briefly for a 'ready' event
+            if (serverConfig.verboseLogs) console.log('[clearStoragePopulation] storage not available, waiting for ready event...');
+            await Promise.race([
+                new Promise(resolve => storage.on('ready', resolve)),
+                new Promise(resolve => setTimeout(resolve, 5000))
+            ]);
+            if (!storage.isAvailable()) {
+                console.warn('[clearStoragePopulation] storage remained unavailable after waiting; skipping clear');
+                return;
+            }
+        }
 
         // Clear person hash
         await storage.del('person');
@@ -128,13 +139,14 @@ async function initializeTilePopulations(pool, calendarService, serviceInstance,
         await pool.query('TRUNCATE TABLE family, people RESTART IDENTITY CASCADE');
         if (serverConfig.verboseLogs) console.log(`⏱️ [initPop] Clear done in ${Date.now() - startTime}ms`);
 
-        // Get current date from calendar service
+        // Get current date from calendar service - if missing, use system date to avoid invalid historical years
         let currentDate;
         if (calendarService && typeof calendarService.getCurrentDate === 'function') {
             currentDate = calendarService.getCurrentDate();
         } else {
-            console.warn('[PopulationOperations] CalendarService not available. Using fallback date.');
-            currentDate = { year: 1, month: 1, day: 1 };
+            const now = new Date();
+            currentDate = { year: now.getFullYear(), month: now.getMonth() + 1, day: now.getDate() };
+            console.warn('[PopulationOperations] CalendarService not available. Using system date as fallback:', currentDate);
         }
         const { year: currentYear, month: currentMonth, day: currentDay } = currentDate;
         const { getRandomSex, getRandomAge, getRandomBirthDate } = require('./calculator.js');
@@ -446,11 +458,33 @@ async function initializeTilePopulations(pool, calendarService, serviceInstance,
             }
         }
 
+        // Optionally persist the storage-first population to Postgres so stats remain available
+        try {
+            if (serverConfig.savePopulationOnInit) {
+                if (serverConfig.verboseLogs) console.log('[initPop] Persisting population to Postgres via savePopulationData()...');
+                const { savePopulationData } = require('./dataOperations.js');
+                const saveRes = await savePopulationData();
+                if (serverConfig.verboseLogs) console.log('[initPop] savePopulationData result:', saveRes);
+            }
+        } catch (e) {
+            console.warn('[initPop] savePopulationData failed:', e && e.message ? e.message : e);
+        }
+
         // ========== Return formatted result ==========
         const totalTime = Date.now() - startTime;
-        if (serverConfig.verboseLogs) console.log(`✅ [initPop] COMPLETE: ${allPeople.length} people, ${allFamilies.length} families in ${totalTime}ms (storage-only, pending Postgres save)`);
+        if (serverConfig.verboseLogs) console.log(`✅ [initPop] COMPLETE: ${allPeople.length} people, ${allFamilies.length} families in ${totalTime}ms (storage-first, persisted to Postgres if enabled)`);
 
-        const populations = await PopulationState.getAllTilePopulations();
+        // Prefer to return authoritative populations from storage if available; if we persisted to Postgres during init,
+        // use loadPopulationData(pool) which will fall back to Postgres when necessary (ensures consumers see population data even if storage was cleared during save)
+        let populations;
+        try {
+            const { loadPopulationData } = require('./dataOperations.js');
+            populations = await loadPopulationData(pool);
+        } catch (e) {
+            // Fallback to storage read (best-effort)
+            populations = await PopulationState.getAllTilePopulations();
+        }
+
         // Sanity check: ensure per-tile populations match intended targets
         const mismatches = [];
         for (const tid of selectedTiles) {
