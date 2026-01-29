@@ -46,7 +46,7 @@ test('concurrent deliverBaby: only one succeeds and contention is logged', async
 
     const fakeCalendar = { getCurrentDate: () => ({ year: 2026, month: 1, day: 28 }) };
 
-    const warnSpy = jest.spyOn(console, 'warn').mockImplementation(() => {});
+    const warnSpy = jest.spyOn(console, 'warn').mockImplementation(() => { });
 
     // Spawn several concurrent delivery attempts
     const concurrent = 6;

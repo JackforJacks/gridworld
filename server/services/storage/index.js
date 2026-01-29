@@ -235,8 +235,8 @@ module.exports = {
                 const items = await adapter.zrangebyscore(queueKey, '-inf', String(now));
                 if (!items || items.length === 0) return null;
                 const member = items[0];
-                try { if (typeof adapter.zrem === 'function') await adapter.zrem(queueKey, member); } catch(_){}
-                try { if (typeof adapter.srem === 'function') await adapter.srem(membersKey, member); } catch(_){}
+                try { if (typeof adapter.zrem === 'function') await adapter.zrem(queueKey, member); } catch (_) { }
+                try { if (typeof adapter.srem === 'function') await adapter.srem(membersKey, member); } catch (_) { }
                 return member;
             }
         } catch (e) {

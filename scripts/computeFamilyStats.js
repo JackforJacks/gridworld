@@ -26,6 +26,6 @@ const pool = require('../server/config/database');
         console.error('Error querying database:', err && err.message ? err.message : err);
         process.exitCode = 2;
     } finally {
-        try { await pool.end(); } catch(_){ }
+        try { await pool.end(); } catch (_) { }
     }
 })();

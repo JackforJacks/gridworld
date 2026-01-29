@@ -80,7 +80,7 @@ class StateManager {
                 } catch (e) { /* ignore */ }
             }
             // release lock
-            try { await releaseLock(lockKey, token); } catch (_) {}
+            try { await releaseLock(lockKey, token); } catch (_) { }
         }
     }
 

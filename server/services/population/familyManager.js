@@ -439,12 +439,12 @@ async function processDeliveries(pool, calendarService, populationServiceInstanc
                             const delay = Math.round(baseDelay * Math.pow(serverConfig.deliveryRetryBackoffMultiplier || 2, attempts - 1));
 
                             await storage.zadd('pending:deliveries:retry', Date.now() + delay, String(family.id));
-                            try { await storage.incr('stats:deliveries:retries'); } catch(_){}
+                            try { await storage.incr('stats:deliveries:retries'); } catch (_) { }
                             const adapter = storage.getAdapter ? storage.getAdapter() : storage;
                             const holder = adapter && adapter.client && typeof adapter.client.get === 'function' ? await adapter.client.get(lockKey) : null;
                             console.warn(`[processDeliveries] Could not acquire lock for family ${family.id} - requeued for retry (attempt ${attempts}, delay ${delay}ms) - holder=${holder || 'unknown'}`);
                         } else {
-                            try { await storage.incr('stats:deliveries:permanent_failures'); } catch(_){}
+                            try { await storage.incr('stats:deliveries:permanent_failures'); } catch (_) { }
                             console.warn(`[processDeliveries] Family ${family.id} reached max delivery retry attempts (${attempts}) - skipping permanently`);
                         }
                     } catch (e) {

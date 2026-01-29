@@ -506,18 +506,18 @@ class PeopleState {
                             if (set.size > 1) duplicates.push({ id, sets: Array.from(set), count: set.size });
                         }
 
-                        duplicates.sort((a,b) => b.count - a.count);
+                        duplicates.sort((a, b) => b.count - a.count);
                         console.warn('[PeopleState] Diagnostic: duplicate persons count=', duplicates.length);
                         for (let i = 0; i < Math.min(20, duplicates.length); i++) {
                             const d = duplicates[i];
-                            console.warn(`[PeopleState] Duplicate sample ${i+1}: id=${d.id}, count=${d.count}, sets=${d.sets.join(', ')}`);
+                            console.warn(`[PeopleState] Duplicate sample ${i + 1}: id=${d.id}, count=${d.count}, sets=${d.sets.join(', ')}`);
                         }
 
                         if (duplicates.length > 0) {
                             const sampleId = duplicates[0].id;
                             const personJson = await storage.hget('person', sampleId);
                             console.warn('[PeopleState] Sample duplicated person hash:', personJson);
-                            try { console.warn('[PeopleState] Sample parsed:', JSON.parse(personJson)); } catch (_) {}
+                            try { console.warn('[PeopleState] Sample parsed:', JSON.parse(personJson)); } catch (_) { }
                         }
                     } catch (e) {
                         console.warn('[PeopleState] Duplicate diagnostic failed:', e && e.message ? e.message : e);
@@ -735,7 +735,7 @@ class PeopleState {
         } finally {
             // release lock if held
             if (typeof token !== 'undefined' && token) {
-                try { await releaseLock(lockKey, token); } catch (_) {}
+                try { await releaseLock(lockKey, token); } catch (_) { }
             }
         }
     }
@@ -787,7 +787,7 @@ class PeopleState {
             return { ok: false, error: e && e.message ? e.message : e };
         } finally {
             if (token) {
-                try { await releaseLock(lockKey, token); } catch (_) {}
+                try { await releaseLock(lockKey, token); } catch (_) { }
             }
         }
     }
