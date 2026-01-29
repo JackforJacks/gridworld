@@ -140,6 +140,7 @@ class UIManager {
         const resetDataButton = document.getElementById('reset-data');
         const showStatsButton = document.getElementById('show-stats');
         const saveGameButton = document.getElementById('save-game');
+        const loadGameButton = document.getElementById('load-game');
 
         if (resetDataButton) {
             resetDataButton.addEventListener('click', () => {
@@ -159,6 +160,12 @@ class UIManager {
             });
         }
 
+        if (loadGameButton) {
+            loadGameButton.addEventListener('click', () => {
+                this.handleLoadGame();
+            });
+        }
+
         // Normalize dashboard buttons sizes and log pixel sizes for debugging
         this.measureAndNormalizeDashboardButtons();
     }
@@ -172,18 +179,20 @@ class UIManager {
             const resetBtn = document.getElementById('reset-data');
             const statsBtn = document.getElementById('show-stats');
             const saveBtn = document.getElementById('save-game');
-            if (!resetBtn || !statsBtn || !saveBtn) return;
+            const loadBtn = document.getElementById('load-game');
+            if (!resetBtn || !statsBtn || !saveBtn || !loadBtn) return;
 
             const r = resetBtn.getBoundingClientRect();
             const s = statsBtn.getBoundingClientRect();
             const v = saveBtn.getBoundingClientRect();
+            const l = loadBtn.getBoundingClientRect();
 
-            const heights = { reset: Math.round(r.height), stats: Math.round(s.height), save: Math.round(v.height) };
+            const heights = { reset: Math.round(r.height), stats: Math.round(s.height), save: Math.round(v.height), load: Math.round(l.height) };
             console.log('🔍 Dashboard button heights (px):', heights);
 
-            const maxHeight = Math.max(heights.reset, heights.stats, heights.save);
+            const maxHeight = Math.max(heights.reset, heights.stats, heights.save, heights.load);
             // Apply min-height to all dashboard buttons to ensure uniform vertical size
-            [resetBtn, statsBtn, saveBtn].forEach(btn => {
+            [resetBtn, statsBtn, saveBtn, loadBtn].forEach(btn => {
                 btn.style.minHeight = maxHeight + 'px';
                 // Also set line-height to center single-line content if needed
                 btn.style.lineHeight = maxHeight + 'px';
@@ -213,7 +222,6 @@ class UIManager {
                 saveButton.classList.remove('saving');
                 saveButton.classList.add('saved');
                 saveButton.innerHTML = '✅ Saved!';
-                console.log(`💾 Game saved: ${result.villages} villages, ${result.people} people in ${result.elapsed}ms`);
 
                 setTimeout(() => {
                     saveButton.innerHTML = originalText;
@@ -231,6 +239,47 @@ class UIManager {
             setTimeout(() => {
                 saveButton.innerHTML = originalText;
                 saveButton.disabled = false;
+            }, 2000);
+        }
+    }
+
+    async handleLoadGame() {
+        const loadButton = document.getElementById('load-game');
+        if (!loadButton) return;
+
+        // Prevent double-clicking
+        if (loadButton.disabled) return;
+
+        const originalText = loadButton.innerHTML;
+        loadButton.disabled = true;
+        loadButton.classList.add('loading');
+        loadButton.innerHTML = '⏳ Loading...';
+
+        try {
+            const response = await fetch('/api/sync', { method: 'POST' });
+            const result = await response.json();
+
+            if (result.success) {
+                loadButton.classList.remove('loading');
+                loadButton.classList.add('loaded');
+                loadButton.innerHTML = '✅ Loaded!';
+
+                // Reload the page to refresh all client state with the loaded data
+                setTimeout(() => {
+                    console.log('🔁 Reloading page to display loaded world...');
+                    window.location.reload();
+                }, 500);
+            } else {
+                throw new Error(result.error || 'Load failed');
+            }
+        } catch (error) {
+            console.error('❌ Load failed:', error);
+            loadButton.classList.remove('loading');
+            loadButton.innerHTML = '❌ Failed';
+
+            setTimeout(() => {
+                loadButton.innerHTML = originalText;
+                loadButton.disabled = false;
             }, 2000);
         }
     }

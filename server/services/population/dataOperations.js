@@ -3,23 +3,20 @@ const { getTotalPopulation } = require('./PopStats.js');
 const storage = require('../storage');
 
 /**
- * Loads population data - tries Redis first (hot data), falls back to Postgres
- * @param {Pool} pool - Database pool instance
+ * Loads population data from Redis (only source of truth)
+ * @param {Pool} pool - Database pool instance (unused, kept for API compatibility)
  * @returns {Object} Population data by tile ID
  */
 async function loadPopulationData(pool) {
     try {
-        // Try storage first for tile populations (hot data after restart)
-        // If storage isn't available yet, wait briefly for it to become ready (useful during restarts)
+        // Wait for storage to be available if needed
         if (!storage.isAvailable()) {
-            // wait up to 2000ms for storage to emit 'ready' if storage exposes an 'on' event API
             if (typeof storage.on === 'function') {
                 await Promise.race([
                     new Promise(resolve => storage.on('ready', resolve)),
                     new Promise(resolve => setTimeout(resolve, 2000))
                 ]);
             } else {
-                // storage adapter doesn't provide events in this environment; short sleep to avoid stalling tests
                 await new Promise(resolve => setTimeout(resolve, 200));
             }
         }
@@ -36,21 +33,15 @@ async function loadPopulationData(pool) {
                     // Small backoff between polls
                     await new Promise(resolve => setTimeout(resolve, 100));
                 }
-                // If storage is available but no populations found after polling, fall through to Postgres fallback
             } catch (e) {
-                console.warn('[loadPopulationData] storage failed, falling back to Postgres:', e.message);
+                console.warn('[loadPopulationData] storage failed:', e.message);
             }
         }
 
-        // Fall back to Postgres
-        const result = await pool.query('SELECT tile_id, COUNT(*) as population FROM people GROUP BY tile_id');
-        const populations = {};
-        result.rows.forEach(row => {
-            populations[row.tile_id] = parseInt(row.population, 10);
-        });
-        return populations;
+        // Return empty if Redis has no data (no Postgres fallback)
+        return {};
     } catch (error) {
-        console.error('Error loading data from database:', error);
+        console.error('Error loading data from storage:', error);
         return {};
     }
 }

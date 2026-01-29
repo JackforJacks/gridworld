@@ -118,6 +118,16 @@ function startAutoSave(serviceInstance) {
                 console.warn('[initializer.js] Error checking pending changes for autosave:', err.message);
             }
 
+            // Save calendar state to database during autosave
+            if (calendarService && typeof calendarService.saveStateToDB === 'function') {
+                try {
+                    await calendarService.saveStateToDB();
+                    if (config.verboseLogs) console.log('📅 Calendar state saved during autosave');
+                } catch (err) {
+                    console.warn('[initializer.js] Failed to save calendar state during autosave:', err.message);
+                }
+            }
+
             // Resume calendar if it was running
             if (wasRunning && calendarService) {
                 calendarService.start();

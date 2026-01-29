@@ -229,7 +229,8 @@ class CalendarService extends EventEmitter {
             this.io.emit('calendarState', this.getState());
         }
 
-        await this.saveStateToDB();
+        // Note: Calendar state is no longer saved automatically on every tick
+        // It is saved during explicit save operations and autosave
     }
 
     /**
@@ -477,6 +478,13 @@ class CalendarService extends EventEmitter {
                 month: this.currentDate.month,
                 day: this.currentDate.day
             });
+        }
+
+        // Emit state update to clients
+        this.emit('dateSet', this.getState());
+        if (this.io) {
+            this.io.emit('calendarDateSet', this.getState());
+            this.io.emit('calendarState', this.getState());
         }
     }
 

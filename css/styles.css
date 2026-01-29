@@ -519,6 +519,29 @@ kbd {
     background: #4CAF50;
 }
 
+.load-button {
+    background: #2196F3;
+}
+
+.load-button:hover {
+    background: #1976D2;
+}
+
+.load-button:disabled {
+    background: #9E9E9E;
+    cursor: not-allowed;
+    transform: none;
+}
+
+.load-button.loading {
+    background: #FFC107;
+    animation: pulse 0.5s infinite alternate;
+}
+
+.load-button.loaded {
+    background: #2196F3;
+}
+
 @keyframes pulse {
     from {
         opacity: 1;

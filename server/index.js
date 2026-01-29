@@ -72,6 +72,11 @@ class GridWorldServer {
                 console.log(`🌱 Seeded ${seeded.created} villages at startup`);
                 // Mark that we just seeded, so storage reconnect handler won't wipe the fresh data
                 if (this._setJustSeeded) this._setJustSeeded(true);
+                
+                // DEBUG: Verify person hash is still populated
+                const _storage = require('./services/storage');
+                const personCheck = await _storage.hgetall('person');
+                console.log(`[DEBUG] After seeding in init(): person hash has ${personCheck ? Object.keys(personCheck).length : 0} entries`);
             }
         } catch (err) {
             console.error('Error seeding villages at startup:', err);
@@ -157,12 +162,14 @@ class GridWorldServer {
             // Track if we've already loaded - only reload on actual reconnects, not initial ready events
             let hasLoadedOnce = true; // We just loaded above
             let justSeeded = false; // Will be set true after seedIfNoVillages
+            console.log('[DEBUG] hasLoadedOnce=true, justSeeded=false at init');
 
             // If storage reconnects later, re-sync automatically
             try {
                 // Attach to storage events emitted when adapter becomes ready
                 if (typeof storage.on === 'function') {
                     storage.on('ready', async () => {
+                        console.log(`[DEBUG] storage 'ready' event fired. justSeeded=${justSeeded}, isRestarting=${require('./services/populationState').isRestarting}`);
                         try {
                             // Skip reload if we just seeded population at startup
                             if (justSeeded) {
@@ -177,7 +184,7 @@ class GridWorldServer {
                                 console.log('🔁 Storage adapter ready, but skipping reload (worldrestart in progress)');
                                 return;
                             }
-                            console.log('🔁 Storage adapter ready, reloading state from Postgres...');
+                            console.log('🔁 Storage adapter ready, reloading state from Postgres... (WARNING: THIS WILL FLUSH REDIS!)');
                             await StateManager.loadFromDatabase();
                         } catch (e) {
                             console.warn('⚠️ Failed to reload state after storage reconnect:', e.message);
@@ -289,6 +296,11 @@ class GridWorldServer {
     async shutdown() {
         try {
             console.log('\n🛑 Shutting down server...');
+            
+            // DEBUG: Check person hash at shutdown start
+            const _storage = require('./services/storage');
+            const personCheck = await _storage.hgetall('person');
+            console.log(`[DEBUG] At shutdown start: person hash has ${personCheck ? Object.keys(personCheck).length : 0} entries`);
 
             // Stop food update timer
             try {

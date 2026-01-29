@@ -42,6 +42,8 @@ function attachRedisListeners() {
             try {
                 // Fallback to memory adapter on close
                 if (!(adapter instanceof MemoryAdapter)) {
+                    console.warn('⚠️ storage: Redis close event received - switching to MemoryAdapter (DATA WILL BE LOST!)');
+                    console.trace('⚠️ storage: Redis close stack trace:');
                     adapter = new MemoryAdapter();
                     console.warn('⚠️ storage: Redis closed - switched to MemoryAdapter fallback');
                     storageEvents.emit('close');
@@ -99,11 +101,18 @@ module.exports = {
         return Promise.resolve(0);
     },
     del: (...keys) => {
+        // Debug: log when person hash is deleted
+        if (keys.includes('person')) {
+            console.log('[STORAGE DEBUG] del called with "person" key!');
+            console.trace('[STORAGE DEBUG] del person stack trace:');
+        }
         if (adapter && adapter.client && typeof adapter.client.del === 'function') return adapter.client.del(...keys);
         if (typeof adapter.del === 'function') return adapter.del(...keys);
         return Promise.resolve(0);
     },
     flushdb: () => {
+        console.log('[STORAGE DEBUG] flushdb called!');
+        console.trace('[STORAGE DEBUG] flushdb stack trace:');
         if (adapter && adapter.client && typeof adapter.client.flushdb === 'function') return adapter.client.flushdb();
         if (typeof adapter.flushdb === 'function') return adapter.flushdb();
         // For memory adapter, clear all data
@@ -140,6 +149,13 @@ module.exports = {
         if (adapter && adapter.client && typeof adapter.client.smembers === 'function') return adapter.client.smembers(k);
         if (typeof adapter.smembers === 'function') return adapter.smembers(k);
         return Promise.resolve([]);
+    },
+    sismember: async (k, m) => {
+        if (adapter && adapter.client && typeof adapter.client.sismember === 'function') return adapter.client.sismember(k, m);
+        if (typeof adapter.sismember === 'function') return adapter.sismember(k, m);
+        // Fallback: use smembers to check membership
+        const members = await (adapter && adapter.client && typeof adapter.client.smembers === 'function' ? adapter.client.smembers(k) : (typeof adapter.smembers === 'function' ? adapter.smembers(k) : Promise.resolve([])));
+        return members.includes(String(m)) ? 1 : 0;
     },
     keys: (pattern = '*') => {
         if (adapter && adapter.client && typeof adapter.client.keys === 'function') return adapter.client.keys(pattern);

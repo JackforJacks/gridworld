@@ -97,7 +97,8 @@ class StateManager {
             'pending:family:inserts',
             'pending:family:updates',
             'pending:family:deletes',
-            'pending:village:inserts'
+            'pending:village:inserts',
+            'pending:tiles:regenerate'
         ];
         for (const key of pendingSets) {
             try {

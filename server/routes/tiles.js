@@ -10,6 +10,7 @@ const villageSeeder = require('../services/villageSeeder');
 const villageService = require('../services/villageService');
 const http = require('http');
 const serverConfig = require('../config/server');
+const storage = require('../services/storage');
 
 // Helper: parse float with fallback
 function parseParam(val, fallback) {
@@ -145,19 +146,18 @@ router.get('/', async (req, res) => {
         }
         const hexasphere = new Hexasphere(radius, subdivisions, tileWidthRatio);
 
-        // If regenerating, always persist tiles and reinitialize lands
+        // If regenerating, store tiles and lands in Redis (will be saved to Postgres on save/autosave)
         if (isRegenerating) {
             const regenStartTime = Date.now();
-            if (serverConfig.verboseLogs) console.log('[API /api/tiles] Regenerating tiles and lands...');
+            if (serverConfig.verboseLogs) console.log('[API /api/tiles] Regenerating tiles and lands in Redis...');
 
-            // Clear and populate tiles table
-            await pool.query('TRUNCATE TABLE tiles RESTART IDENTITY CASCADE');
-            await pool.query('TRUNCATE TABLE tiles_lands RESTART IDENTITY CASCADE');
+            // Clear existing tile data in Redis
+            await storage.del('tile');
+            await storage.del('tile:fertility');
+            await storage.del('tile:lands');
 
-            // BATCH INSERT - prepare all tile data first
-            const tileValues = [];
-            const tileParams = [];
-            let paramIndex = 1;
+            // Store all tile data in Redis
+            const pipeline = storage.pipeline();
 
             for (const tile of hexasphere.tiles) {
                 const props = tile.getProperties ? tile.getProperties() : tile;
@@ -166,47 +166,36 @@ router.get('/', async (req, res) => {
                 const fertility = calculateFertility(biome, props.terrainType, seededRandom);
                 const isHabitableFlag = (props.Habitable === 'yes' && biome !== 'tundra' && biome !== 'desert' && biome !== 'alpine');
 
-                tileValues.push(`($${paramIndex}, $${paramIndex + 1}, $${paramIndex + 2}, $${paramIndex + 3}, $${paramIndex + 4}, $${paramIndex + 5}, $${paramIndex + 6}, $${paramIndex + 7}, $${paramIndex + 8}, $${paramIndex + 9}, $${paramIndex + 10}, $${paramIndex + 11}, $${paramIndex + 12})`);
-                tileParams.push(
-                    props.id,
-                    centerPoint?.x || 0,
-                    centerPoint?.y || 0,
-                    centerPoint?.z || 0,
-                    props.latitude || 0,
-                    props.longitude || 0,
-                    props.terrainType,
-                    props.isLand,
-                    isHabitableFlag,
-                    JSON.stringify(tile.boundary ? tile.boundary.map(p => ({ x: p.x, y: p.y, z: p.z })) : []),
-                    JSON.stringify(props.neighborIds || []),
-                    biome,
-                    fertility
-                );
-                paramIndex += 13;
+                const tileData = {
+                    id: props.id,
+                    center_x: centerPoint?.x || 0,
+                    center_y: centerPoint?.y || 0,
+                    center_z: centerPoint?.z || 0,
+                    latitude: props.latitude || 0,
+                    longitude: props.longitude || 0,
+                    terrain_type: props.terrainType,
+                    is_land: props.isLand,
+                    is_habitable: isHabitableFlag,
+                    boundary_points: JSON.stringify(tile.boundary ? tile.boundary.map(p => ({ x: p.x, y: p.y, z: p.z })) : []),
+                    neighbor_ids: JSON.stringify(props.neighborIds || []),
+                    biome: biome,
+                    fertility: fertility
+                };
+
+                pipeline.hset('tile', props.id.toString(), JSON.stringify(tileData));
+                if (fertility !== null) {
+                    pipeline.hset('tile:fertility', props.id.toString(), fertility.toString());
+                }
             }
 
-            // Single batch insert for all tiles
-            if (tileValues.length > 0) {
-                await pool.query(`
-                    INSERT INTO tiles (id, center_x, center_y, center_z, latitude, longitude, terrain_type, is_land, is_habitable, boundary_points, neighbor_ids, biome, fertility)
-                    VALUES ${tileValues.join(', ')}
-                    ON CONFLICT (id) DO UPDATE SET
-                        center_x = EXCLUDED.center_x, center_y = EXCLUDED.center_y, center_z = EXCLUDED.center_z,
-                        latitude = EXCLUDED.latitude, longitude = EXCLUDED.longitude, terrain_type = EXCLUDED.terrain_type,
-                        is_land = EXCLUDED.is_land, is_habitable = EXCLUDED.is_habitable, boundary_points = EXCLUDED.boundary_points,
-                        neighbor_ids = EXCLUDED.neighbor_ids, biome = EXCLUDED.biome, fertility = EXCLUDED.fertility,
-                        updated_at = CURRENT_TIMESTAMP
-                `, tileParams);
-            }
-
-            if (serverConfig.verboseLogs) console.log(`[API /api/tiles] Persisted ${hexasphere.tiles.length} tiles to database (batch insert)`);
-
-            // Now initialize tiles_lands for eligible tiles - BATCH INSERT
-            const eligibleTiles = await pool.query(`
-                SELECT id, biome, terrain_type FROM tiles
-                WHERE terrain_type NOT IN ('ocean', 'mountains')
-                  AND (biome IS NULL OR biome NOT IN ('desert', 'tundra'))
-            `);
+            // Generate and store tiles_lands data in Redis
+            const eligibleTiles = hexasphere.tiles.filter(tile => {
+                const props = tile.getProperties ? tile.getProperties() : tile;
+                const centerPoint = tile.centerPoint ? { x: tile.centerPoint.x, y: tile.centerPoint.y, z: tile.centerPoint.z } : null;
+                const biome = (centerPoint && props.isLand) ? calculateBiome(tile.centerPoint, props.terrainType, seededRandom) : null;
+                return props.terrainType !== 'ocean' && props.terrainType !== 'mountains' &&
+                       (!biome || (biome !== 'desert' && biome !== 'tundra'));
+            });
 
             function getLandTypeDistribution(rng) {
                 const wastelandPercent = Math.floor(rng() * 31);
@@ -228,14 +217,9 @@ router.get('/', async (req, res) => {
                 }
             }
 
-            // Build all land values in memory first, then batch insert
-            const landValues = [];
-            const landParams = [];
-            let landParamIndex = 1;
-            const BATCH_SIZE = 5000; // Insert in chunks to avoid query size limits
-
-            for (const tile of eligibleTiles.rows) {
-                const rng = mulberry32(tile.id);
+            for (const tile of eligibleTiles) {
+                const props = tile.getProperties ? tile.getProperties() : tile;
+                const rng = mulberry32(props.id);
                 const dist = getLandTypeDistribution(rng);
                 let landTypes = [];
                 landTypes = landTypes.concat(Array(dist.wasteland).fill('wasteland'));
@@ -247,36 +231,26 @@ router.get('/', async (req, res) => {
                     [landTypes[i], landTypes[j]] = [landTypes[j], landTypes[i]];
                 }
 
+                const landsData = [];
                 for (let chunk_index = 0; chunk_index < 100; chunk_index++) {
-                    landValues.push(`($${landParamIndex}, $${landParamIndex + 1}, $${landParamIndex + 2}, $${landParamIndex + 3})`);
-                    landParams.push(tile.id, chunk_index, landTypes[chunk_index], landTypes[chunk_index] === 'cleared');
-                    landParamIndex += 4;
-
-                    // Insert in batches to avoid query size limits
-                    if (landValues.length >= BATCH_SIZE) {
-                        await pool.query(
-                            `INSERT INTO tiles_lands (tile_id, chunk_index, land_type, cleared) VALUES ${landValues.join(', ')} ON CONFLICT DO NOTHING`,
-                            landParams
-                        );
-                        landValues.length = 0;
-                        landParams.length = 0;
-                        landParamIndex = 1;
-                    }
+                    landsData.push({
+                        tile_id: props.id,
+                        chunk_index: chunk_index,
+                        land_type: landTypes[chunk_index],
+                        cleared: landTypes[chunk_index] === 'cleared'
+                    });
                 }
+
+                pipeline.hset('tile:lands', props.id.toString(), JSON.stringify(landsData));
             }
 
-            // Insert remaining land values
-            if (landValues.length > 0) {
-                await pool.query(
-                    `INSERT INTO tiles_lands (tile_id, chunk_index, land_type, cleared) VALUES ${landValues.join(', ')} ON CONFLICT DO NOTHING`,
-                    landParams
-                );
-            }
+            await pipeline.exec();
 
             const regenElapsed = Date.now() - regenStartTime;
-            if (serverConfig.verboseLogs) console.log(`⏱️ [API /api/tiles] Regenerated ${hexasphere.tiles.length} tiles + ${eligibleTiles.rows.length * 100} land chunks in ${regenElapsed}ms`);
+            if (serverConfig.verboseLogs) console.log(`⏱️ [API /api/tiles] Regenerated ${hexasphere.tiles.length} tiles + ${eligibleTiles.length * 100} land chunks in Redis in ${regenElapsed}ms`);
 
-            // Village seeding is now performed after population initialization (client-driven)
+            // Mark tiles as pending for Postgres save
+            await storage.sadd('pending:tiles:regenerate', 'true');
         }
 
         // If only regeneration side-effects are needed (no payload), exit early to keep response small
@@ -297,49 +271,61 @@ router.get('/', async (req, res) => {
                 props.centerPoint = undefined;
             }
 
-            // --- Fetch persisted tile data from database ---
+            // --- Fetch persisted tile data from Redis (only source of truth) ---
             try {
-                const { rows: dbTiles } = await pool.query(
-                    'SELECT terrain_type, is_land, is_habitable, biome, fertility FROM tiles WHERE id = $1',
-                    [props.id]
-                );
-                if (dbTiles.length > 0) {
-                    // Use persisted data from database (authoritative source of truth)
-                    props.terrainType = dbTiles[0].terrain_type;
-                    props.isLand = dbTiles[0].is_land;
-                    props.biome = dbTiles[0].biome;
-                    props.fertility = dbTiles[0].fertility;
-                    // Use the database is_habitable flag to set Habitable
-                    props.Habitable = dbTiles[0].is_habitable ? 'yes' : 'no';
-                } else {
-                    // Fallback to calculated values (should rarely happen)
-                    props.biome = calculateBiome(tile.centerPoint, props.terrainType, seededRandom);
-                    props.fertility = calculateFertility(props.biome, props.terrainType, seededRandom);
-                    // Recompute Habitable from calculated values
-                    props.Habitable = ((props.terrainType === 'flats' || props.terrainType === 'hills') && props.biome !== 'tundra' && props.biome !== 'desert' && props.biome !== 'alpine') ? 'yes' : 'no';
+                const tileDataJson = await storage.hget('tile', props.id.toString());
+                if (tileDataJson) {
+                    const tileData = JSON.parse(tileDataJson);
+                    // Use persisted data from Redis (only source of truth)
+                    props.terrainType = tileData.terrain_type;
+                    props.isLand = tileData.is_land;
+                    props.biome = tileData.biome;
+                    props.fertility = tileData.fertility;
+                    props.Habitable = tileData.is_habitable ? 'yes' : 'no';
                 }
+                // If not in Redis, use calculated values from HexaSphere
             } catch (e) {
                 console.error(`[ERROR] Failed to fetch tile data for tile ${props.id}:`, e.message);
-                // Fallback to calculated values
-                props.biome = calculateBiome(tile.centerPoint, props.terrainType, seededRandom);
-                props.fertility = calculateFertility(props.biome, props.terrainType, seededRandom);
             }
 
-            // --- Fetch tiles_lands for this tile ---
+            // --- Fetch tiles_lands for this tile from Redis (only source of truth) ---
             try {
-                const { rows: lands } = await pool.query(`
-                    SELECT tl.chunk_index, tl.land_type, tl.cleared, tl.owner_id,
-                           v.id AS village_id, v.name AS village_name, v.housing_slots, v.housing_capacity,
-                           v.food_stores, v.food_capacity, v.food_production_rate, v.last_food_update
-                    FROM tiles_lands tl
-                    LEFT JOIN villages v ON v.tile_id = tl.tile_id AND v.land_chunk_index = tl.chunk_index
-                    WHERE tl.tile_id = $1
-                    ORDER BY tl.chunk_index
-                `, [props.id]);
-                props.lands = lands;
+                const landsDataJson = await storage.hget('tile:lands', props.id.toString());
+                if (landsDataJson) {
+                    const landsData = JSON.parse(landsDataJson);
+                    // Add village information by joining with village data
+                    const villageData = await storage.hgetall('village');
+                    const landsWithVillages = landsData.map(land => {
+                        // Find village for this tile/chunk
+                        if (villageData) {
+                            for (const [villageId, villageJson] of Object.entries(villageData)) {
+                                try {
+                                    const village = JSON.parse(villageJson);
+                                    if (village.tile_id === land.tile_id && village.land_chunk_index === land.chunk_index) {
+                                        return {
+                                            ...land,
+                                            village_id: village.id,
+                                            village_name: village.name,
+                                            housing_slots: village.housing_slots,
+                                            housing_capacity: village.housing_capacity,
+                                            food_stores: village.food_stores,
+                                            food_capacity: village.food_capacity,
+                                            food_production_rate: village.food_production_rate,
+                                            last_food_update: village.last_food_update
+                                        };
+                                    }
+                                } catch (_) {}
+                            }
+                        }
+                        return land;
+                    });
+                    props.lands = landsWithVillages;
+                } else {
+                    props.lands = [];
+                }
 
                 // Update food production for villages on this tile
-                const villageIds = lands
+                const villageIds = props.lands
                     .filter(land => land.village_id)
                     .map(land => land.village_id)
                     .filter((id, index, arr) => arr.indexOf(id) === index); // Remove duplicates

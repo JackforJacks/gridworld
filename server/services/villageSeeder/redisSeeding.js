@@ -16,8 +16,8 @@ const idAllocator = require('../idAllocator');
 async function seedVillagesStorageFirst() {
     console.log('[villageSeeder] seedVillagesStorageFirst called');
     if (!storage.isAvailable()) {
-        console.warn('[villageSeeder] storage not available - falling back to Postgres seeding');
-        return seedRandomVillages();
+        console.error('[villageSeeder] storage not available - cannot seed villages');
+        return { created: 0, villages: [] };
     }
 
     await ensureVillageIdColumn();
@@ -78,28 +78,38 @@ async function seedVillagesStorageFirst() {
 
         if (require('../../config/server').verboseLogs) console.log(`[villageSeeder] Found ${populatedTileIds.length} populated tiles in storage`);
 
-        // Set tile fertility in storage
-        const { rows: tileRows } = await pool.query('SELECT id, fertility FROM tiles WHERE id = ANY($1)', [populatedTileIds.map(id => parseInt(id))]);
-        for (const row of tileRows) {
-            await storage.hset('tile:fertility', row.id.toString(), row.fertility.toString());
+        // Set tile fertility in storage (get from Redis tile data)
+        for (const tileId of populatedTileIds) {
+            const tileJson = await storage.hget('tile', tileId.toString());
+            if (tileJson) {
+                const tile = JSON.parse(tileJson);
+                if (tile.fertility !== null) {
+                    await storage.hset('tile:fertility', tileId.toString(), tile.fertility.toString());
+                }
+            }
         }
 
         // Clear existing villages in storage
         await storage.del('village');
 
-        // Get cleared chunks from Postgres
-        const { rows: allChunks } = await pool.query(`
-            SELECT tl.tile_id, tl.chunk_index
-            FROM tiles_lands tl
-            WHERE tl.tile_id = ANY($1) AND tl.land_type = 'cleared'
-            ORDER BY tl.tile_id, RANDOM()
-        `, [populatedTileIds.map(id => parseInt(id))]);
-
-        // Group chunks by tile_id
+        // Get cleared chunks from Redis (only source of truth)
+        const landsData = await storage.hgetall('tile:lands');
         const chunksByTile = {};
-        for (const chunk of allChunks) {
-            if (!chunksByTile[chunk.tile_id]) chunksByTile[chunk.tile_id] = [];
-            chunksByTile[chunk.tile_id].push(chunk.chunk_index);
+        for (const tileIdStr of populatedTileIds) {
+            const tileId = parseInt(tileIdStr);
+            const landsJson = landsData ? landsData[tileIdStr] : null;
+            if (landsJson) {
+                const lands = JSON.parse(landsJson);
+                const clearedChunks = lands
+                    .filter(land => land.land_type === 'cleared')
+                    .map(land => land.chunk_index);
+                // Shuffle cleared chunks for randomness
+                for (let i = clearedChunks.length - 1; i > 0; i--) {
+                    const j = Math.floor(Math.random() * (i + 1));
+                    [clearedChunks[i], clearedChunks[j]] = [clearedChunks[j], clearedChunks[i]];
+                }
+                chunksByTile[tileId] = clearedChunks;
+            }
         }
 
         // Calculate total villages needed

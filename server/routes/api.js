@@ -188,6 +188,21 @@ router.post('/worldrestart', async (req, res) => {
         // Mark restarting so tick handlers skip processing
         PopulationState.isRestarting = true;
 
+        // Generate a new random seed for world restart to create different environments
+        const newWorldSeed = Math.floor(Math.random() * 2147483647);
+        process.env.WORLD_SEED = newWorldSeed.toString();
+        if (serverConfig.verboseLogs) console.log(`🎲 [worldrestart] Generated new random world seed: ${newWorldSeed}`);
+
+        // Always regenerate tiles with new seed for truly random environments
+        let stepStart = Date.now();
+        try {
+            await selfGet('/api/tiles?regenerate=true&silent=1');
+            if (serverConfig.verboseLogs) console.log(`⏱️ [worldrestart] Tiles regeneration with new seed: ${Date.now() - stepStart}ms`);
+        } catch (regenErr) {
+            console.error('[API /api/worldrestart] Tile regeneration failed:', regenErr.message || regenErr);
+            throw regenErr;
+        }
+
         // Pause calendar during world restart to prevent tick events
         const calendarService = req.app.locals.calendarService;
         if (calendarService && calendarService.state && calendarService.state.isRunning) {
@@ -196,46 +211,39 @@ router.post('/worldrestart', async (req, res) => {
             calendarService.stop();
         }
 
-        // Only regenerate tiles if explicitly requested (slower - ~40s for 1442 tiles)
-        // Default: skip tile regeneration for faster restarts (~7-11s)
-        const shouldRegenerateTiles = req.body.regenerateTiles === true;
-        let stepStart = Date.now();
-        if (shouldRegenerateTiles) {
-            try {
-                await selfGet('/api/tiles?regenerate=true&silent=1');
-                if (serverConfig.verboseLogs) console.log(`⏱️ [worldrestart] Tiles regeneration: ${Date.now() - stepStart}ms`);
-            } catch (regenErr) {
-                console.error('[API /api/worldrestart] Regeneration failed:', regenErr.message || regenErr);
-                throw regenErr;
-            }
-        } else {
-            if (serverConfig.verboseLogs) console.log('⏱️ [worldrestart] Skipping tile regeneration (use regenerateTiles: true to force)');
-
-            // Check if tiles_lands is empty and regenerate just the lands if needed
-            stepStart = Date.now();
-            const { rows: landCount } = await pool.query('SELECT COUNT(*) as cnt FROM tiles_lands');
-            if (parseInt(landCount[0].cnt) === 0) {
-                console.log('[worldrestart] tiles_lands is empty, regenerating lands for habitable tiles...');
-                await selfGet('/api/tiles?regenerate=true&silent=1');
-                if (serverConfig.verboseLogs) console.log(`⏱️ [worldrestart] Lands regeneration: ${Date.now() - stepStart}ms`);
-            }
-        }
-
+        // Skip the old tile regeneration logic since we always regenerate now
         // Reset population and reinitialize on habitable tiles
         stepStart = Date.now();
         await populationService.resetPopulation();
         if (serverConfig.verboseLogs) console.log(`⏱️ [worldrestart] Population reset: ${Date.now() - stepStart}ms`);
 
         stepStart = Date.now();
-        // Select habitable tiles that also have cleared lands in tiles_lands
-        // This ensures villages can be seeded on those tiles
-        const { rows: habitable } = await pool.query(`
-            SELECT DISTINCT t.id 
-            FROM tiles t 
-            INNER JOIN tiles_lands tl ON t.id = tl.tile_id AND tl.land_type = 'cleared'
-            WHERE t.is_habitable = TRUE
-        `);
-        const habitableIds = habitable.map((r) => r.id);
+        // Select habitable tiles that also have cleared lands from Redis
+        const habitableIds = [];
+        try {
+            const tileData = await storage.hgetall('tile');
+            const landsData = await storage.hgetall('tile:lands');
+
+            if (tileData && landsData) {
+                for (const [tileId, tileJson] of Object.entries(tileData)) {
+                    const tile = JSON.parse(tileJson);
+                    if (tile.is_habitable) {
+                        // Check if this tile has cleared lands
+                        const landsJson = landsData[tileId];
+                        if (landsJson) {
+                            const lands = JSON.parse(landsJson);
+                            const hasClearedLand = lands.some(land => land.cleared);
+                            if (hasClearedLand) {
+                                habitableIds.push(parseInt(tileId));
+                            }
+                        }
+                    }
+                }
+            }
+        } catch (e) {
+            console.error('[API /api/worldrestart] Failed to get habitable tiles from Redis:', e.message);
+        }
+
         if (habitableIds.length > 0) {
             await populationService.initializeTilePopulations(habitableIds);
         }

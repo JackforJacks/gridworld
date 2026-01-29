@@ -39,7 +39,10 @@ class PeopleState {
      * @param {boolean} isNew - If true, track as pending insert
      */
     static async addPerson(person, isNew = false) {
-        if (!storage.isAvailable()) return false;
+        if (!storage.isAvailable()) {
+            console.warn('[PeopleState] addPerson failed: storage not available');
+            return false;
+        }
         if (!person || person.id === undefined || person.id === null) {
             console.warn('[PeopleState] addPerson failed: person.id is missing or undefined:', person);
             return false;
@@ -56,7 +59,7 @@ class PeopleState {
                 family_id: person.family_id || null,
                 _isNew: isNew
             };
-            await storage.hset('person', id, JSON.stringify(p));
+            const hsetResult = await storage.hset('person', id, JSON.stringify(p));
             // Add to tile's village population set
             if (p.tile_id && p.residency !== null && p.residency !== undefined) {
                 await storage.sadd(`village:${p.tile_id}:${p.residency}:people`, id);
@@ -625,6 +628,8 @@ class PeopleState {
             console.log('[PeopleState] Syncing population from Postgres to storage...');
             // Clear person hash and all village sets keys that match our pattern
             try {
+                console.log('[PeopleState.syncFromPostgres] About to delete person hash!');
+                console.trace('[PeopleState.syncFromPostgres] Stack trace:');
                 await storage.del('person');
                 // Clear all village:*:people sets by scanning keys
                 const stream = storage.scanStream({ match: 'village:*:*:people', count: 1000 });

@@ -24,9 +24,21 @@ async function clearStoragePopulation() {
         }
 
         // Clear person hash
+        console.log('[clearStoragePopulation] About to delete person hash!');
+        console.trace('[clearStoragePopulation] Stack trace:');
         await storage.del('person');
         // Clear village hash (village objects)
         await storage.del('village');
+        // Clear family hash
+        await storage.del('family');
+        // Clear all pending operations (prevent stale pending entries from previous sessions)
+        await storage.del('pending:person:inserts');
+        await storage.del('pending:person:updates');
+        await storage.del('pending:person:deletes');
+        await storage.del('pending:family:inserts');
+        await storage.del('pending:family:updates');
+        await storage.del('pending:family:deletes');
+        await storage.del('pending:village:inserts');
         // Clear all village:*:*:people sets
         const stream = storage.scanStream({ match: 'village:*:*:people', count: 1000 });
         const keys = [];
@@ -150,15 +162,33 @@ async function initializeTilePopulations(pool, calendarService, serviceInstance,
 
         if (serverConfig.verboseLogs) console.log('[PopulationOperations] No existing population found. Proceeding with storage-first initialization...');
 
-        // Fetch habitable tiles that also have cleared lands in tiles_lands
-        // This ensures villages can be seeded on those tiles
-        const habitableResult = await pool.query(`
-            SELECT DISTINCT t.id 
-            FROM tiles t 
-            INNER JOIN tiles_lands tl ON t.id = tl.tile_id AND tl.land_type = 'cleared'
-            WHERE t.is_habitable = TRUE
-        `);
-        const habitableFromDb = habitableResult.rows.map(r => r.id);
+        // Fetch habitable tiles that also have cleared lands from Redis (only source of truth)
+        const storage = require('../storage');
+        const habitableFromDb = [];
+        try {
+            const tileData = await storage.hgetall('tile');
+            const landsData = await storage.hgetall('tile:lands');
+
+            if (tileData && landsData) {
+                for (const [tileId, tileJson] of Object.entries(tileData)) {
+                    const tile = JSON.parse(tileJson);
+                    if (tile.is_habitable) {
+                        // Check if this tile has cleared lands
+                        const landsJson = landsData[tileId];
+                        if (landsJson) {
+                            const lands = JSON.parse(landsJson);
+                            const hasClearedLand = lands.some(land => land.cleared);
+                            if (hasClearedLand) {
+                                habitableFromDb.push(parseInt(tileId));
+                            }
+                        }
+                    }
+                }
+            }
+        } catch (e) {
+            console.error('[PopulationOperations] Failed to get habitable tiles from Redis:', e.message);
+        }
+
         const candidateTiles = Array.isArray(tileIds) && tileIds.length > 0
             ? tileIds.filter(id => habitableFromDb.includes(id))
             : habitableFromDb;

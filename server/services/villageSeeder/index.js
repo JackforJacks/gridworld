@@ -65,6 +65,11 @@ async function seedIfNoVillages() {
         // Now seed villages using storage-first approach since people are in Redis
         const result = await seedVillagesStorageFirst();
 
+        // DEBUG: Check Redis state after seeding
+        const debugPersonCount = Object.keys(await storage.hgetall('person') || {}).length;
+        const debugVillageCount = Object.keys(await storage.hgetall('village') || {}).length;
+        console.log(`[DEBUG] After seeding - person hash: ${debugPersonCount}, village hash: ${debugVillageCount}`);
+
         console.log(`[villageSeeder] Seeded ${result.created} initial villages`);
         return result;
 
@@ -172,6 +177,7 @@ async function createInitialTiles() {
         `, [tile.id, tile.center_x, tile.center_y, tile.center_z, tile.latitude, tile.longitude, tile.terrain_type, tile.is_land, tile.is_habitable, tile.fertility, 'temperate_grassland', '[]', '[]']);
 
         // Create tiles_lands for this tile
+        const landsForTile = [];
         for (let chunkIndex = 0; chunkIndex < 100; chunkIndex++) {
             const landType = chunkIndex < 5 ? 'cleared' : (Math.random() > 0.3 ? 'forest' : 'wasteland');
             await pool.query(`
@@ -179,7 +185,23 @@ async function createInitialTiles() {
                 VALUES ($1, $2, $3, $4)
                 ON CONFLICT (tile_id, chunk_index) DO NOTHING
             `, [tile.id, chunkIndex, landType, landType === 'cleared']);
+            
+            landsForTile.push({
+                tile_id: tile.id,
+                chunk_index: chunkIndex,
+                land_type: landType,
+                cleared: landType === 'cleared'
+            });
         }
+        
+        // ALSO store in Redis so seedVillagesStorageFirst can find cleared chunks
+        await storage.hset('tile', tile.id.toString(), JSON.stringify({
+            ...tile,
+            biome: 'temperate_grassland',
+            boundary_points: [],
+            neighbor_ids: []
+        }));
+        await storage.hset('tile:lands', tile.id.toString(), JSON.stringify(landsForTile));
     }
 
     console.log(`[villageSeeder] Created ${initialTiles.length} initial habitable tiles with land chunks`);
@@ -214,7 +236,14 @@ async function createInitialPopulation(tileId) {
             family_id: null
         };
 
-        await PopulationState.addPerson(personObj, true);
+        const result = await PopulationState.addPerson(personObj, true);
+        
+        // Debug: verify first person was added
+        if (i === 0) {
+            const storage = require('../storage');
+            const check = await storage.hget('person', tempId.toString());
+            console.log(`[DEBUG] First person add result: ${result}, verification hget: ${check ? 'OK' : 'MISSING'}`);
+        }
     }
 
     console.log(`[villageSeeder] Created ${peopleCount} people on tile ${tileId}`);

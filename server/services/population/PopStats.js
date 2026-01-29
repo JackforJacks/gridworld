@@ -139,13 +139,13 @@ async function getDemographicStats(pool, calendarService) {
 
 /**
  * Gets all population data including statistics (consolidated data function)
- * Uses storage as primary source for tile populations, falls back to Postgres
+ * Uses storage as the only source of truth
  */
 async function getAllPopulationData(pool, calendarService, populationServiceInstance) {
     const { loadPopulationData, formatPopulationData } = require('./dataOperations.js');
     const PopulationState = require('../populationState');
 
-    // Try storage first for tile populations (hot data after restart)
+    // Get tile populations from storage (only source of truth)
     let populations = {};
     if (storage.isAvailable()) {
         try {
@@ -166,7 +166,7 @@ async function getAllPopulationData(pool, calendarService, populationServiceInst
             }
             populations = best;
         } catch (e) {
-            console.warn('[getAllPopulationData] storage.getAllTilePopulations failed, falling back to Postgres:', e.message);
+            console.warn('[getAllPopulationData] storage.getAllTilePopulations failed:', e.message);
         }
     }
 
@@ -192,11 +192,11 @@ async function getAllPopulationData(pool, calendarService, populationServiceInst
                 }
             }
         } catch (e) {
-            // ignore and fall back to Postgres
+            // ignore - no fallback
         }
     }
 
-    // If still empty after attempted repair, fall back to Postgres
+    // If still empty, use loadPopulationData which also reads from Redis only
     if (Object.keys(populations).length === 0) {
         populations = await loadPopulationData(pool);
     }
@@ -204,7 +204,7 @@ async function getAllPopulationData(pool, calendarService, populationServiceInst
     const stats = await getPopulationStats(pool, calendarService, populationServiceInstance);
     const familyStats = await getFamilyStatistics(pool);
 
-    // Use stats.totalPopulation (from Redis/SQL) as the only source of truth
+    // Use stats.totalPopulation (from Redis) as the only source of truth
     const formatted = formatPopulationData(populations);
     formatted.totalPopulation = stats.totalPopulation;
 
