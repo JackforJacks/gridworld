@@ -125,17 +125,17 @@ async function createInitialTiles() {
 async function createInitialPopulation(tileId) {
     const PopulationState = require('../populationState');
     const { getRandomSex, getRandomAge, getRandomBirthDate } = require('../population/calculator.js');
-    
+
     // Add 100-200 people per tile
     const peopleCount = 100 + Math.floor(Math.random() * 100);
-    
+
     for (let i = 0; i < peopleCount; i++) {
         const sex = getRandomSex();
         const age = getRandomAge();
         const birthDate = getRandomBirthDate(1, 1, 1, age); // Year 1, month 1, day 1
-        
+
         const tempId = await PopulationState.getNextTempId();
-        
+
         const personObj = {
             id: tempId,
             tile_id: tileId,
@@ -145,10 +145,10 @@ async function createInitialPopulation(tileId) {
             health: 100,
             family_id: null
         };
-        
+
         await PopulationState.addPerson(personObj, true);
     }
-    
+
     console.log(`[villageSeeder] Created ${peopleCount} people on tile ${tileId}`);
 }
 

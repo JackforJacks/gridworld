@@ -44,7 +44,7 @@ describe('World restart -> Village seeding -> storage-to-ui flow (e2e)', () => {
                 }
                 // tiles_lands query in redisSeeding: return some cleared chunks for our tile
                 if (text && text.includes('FROM tiles_lands tl') && params && Array.isArray(params[0])) {
-                    return { rows: [ { tile_id: fakeTileId, chunk_index: 0 }, { tile_id: fakeTileId, chunk_index: 1 } ] };
+                    return { rows: [{ tile_id: fakeTileId, chunk_index: 0 }, { tile_id: fakeTileId, chunk_index: 1 }] };
                 }
                 // TRUNCATE / ALTER / other statements - return empty success
                 return { rows: [] };
@@ -61,7 +61,7 @@ describe('World restart -> Village seeding -> storage-to-ui flow (e2e)', () => {
         idAllocator = require('../../idAllocator');
 
         const calendarService = { getCurrentDate: () => ({ year: 4000, month: 1, day: 1 }) };
-        const serviceInstance = { broadcastUpdate: async () => {} };
+        const serviceInstance = { broadcastUpdate: async () => { } };
 
         // Run population initialization to create people in storage
         const initRes = await initializeTilePopulations(pool, calendarService, serviceInstance, [fakeTileId]);
@@ -112,7 +112,7 @@ describe('World restart -> Village seeding -> storage-to-ui flow (e2e)', () => {
             expect(matchingVillage).toBeDefined();
             if (matchingVillage) {
                 // matchingVillage.housing_slots may contain ids (numbers or strings)
-                const slots = matchingVillage.housing_slots.map(s => (typeof s === 'string' ? parseInt(s,10) : s));
+                const slots = matchingVillage.housing_slots.map(s => (typeof s === 'string' ? parseInt(s, 10) : s));
                 expect(slots.includes(assigned.id)).toBeTruthy();
             }
         }
