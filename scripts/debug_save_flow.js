@@ -7,15 +7,15 @@ const storage = require('../server/services/storage');
 
 async function debugSaveFlow() {
     console.log('=== Debug Save Flow ===\n');
-    
+
     // Wait for storage to be ready
     if (!storage.isAvailable()) {
         console.log('Waiting for storage...');
         await new Promise(resolve => setTimeout(resolve, 2000));
     }
-    
+
     console.log('Storage available:', storage.isAvailable());
-    
+
     // Check all keys
     try {
         const keys = await storage.keys('*');
@@ -23,7 +23,7 @@ async function debugSaveFlow() {
     } catch (e) {
         console.log('Could not get keys:', e.message);
     }
-    
+
     // Check person hash
     try {
         const people = await storage.hgetall('person');
@@ -35,7 +35,7 @@ async function debugSaveFlow() {
     } catch (e) {
         console.log('Could not get person hash:', e.message);
     }
-    
+
     // Check village hash
     try {
         const villages = await storage.hgetall('village');
@@ -44,7 +44,7 @@ async function debugSaveFlow() {
     } catch (e) {
         console.log('Could not get village hash:', e.message);
     }
-    
+
     // Check tile hash
     try {
         const tiles = await storage.hgetall('tile');
@@ -53,7 +53,7 @@ async function debugSaveFlow() {
     } catch (e) {
         console.log('Could not get tile hash:', e.message);
     }
-    
+
     // Check family hash
     try {
         const families = await storage.hgetall('family');
@@ -62,7 +62,7 @@ async function debugSaveFlow() {
     } catch (e) {
         console.log('Could not get family hash:', e.message);
     }
-    
+
     // Check pending sets
     try {
         const pendingPeople = await storage.smembers('pending:person:inserts');
@@ -70,7 +70,7 @@ async function debugSaveFlow() {
     } catch (e) {
         console.log('Could not get pending person inserts:', e.message);
     }
-    
+
     console.log('\n=== End Debug ===');
     process.exit(0);
 }

@@ -72,7 +72,7 @@ class GridWorldServer {
                 console.log(`🌱 Seeded ${seeded.created} villages at startup`);
                 // Mark that we just seeded, so storage reconnect handler won't wipe the fresh data
                 if (this._setJustSeeded) this._setJustSeeded(true);
-                
+
                 // DEBUG: Verify person hash is still populated
                 const _storage = require('./services/storage');
                 const personCheck = await _storage.hgetall('person');
@@ -296,7 +296,7 @@ class GridWorldServer {
     async shutdown() {
         try {
             console.log('\n🛑 Shutting down server...');
-            
+
             // DEBUG: Check person hash at shutdown start
             const _storage = require('./services/storage');
             const personCheck = await _storage.hgetall('person');

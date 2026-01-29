@@ -194,7 +194,7 @@ router.get('/', async (req, res) => {
                 const centerPoint = tile.centerPoint ? { x: tile.centerPoint.x, y: tile.centerPoint.y, z: tile.centerPoint.z } : null;
                 const biome = (centerPoint && props.isLand) ? calculateBiome(tile.centerPoint, props.terrainType, seededRandom) : null;
                 return props.terrainType !== 'ocean' && props.terrainType !== 'mountains' &&
-                       (!biome || (biome !== 'desert' && biome !== 'tundra'));
+                    (!biome || (biome !== 'desert' && biome !== 'tundra'));
             });
 
             function getLandTypeDistribution(rng) {
@@ -314,7 +314,7 @@ router.get('/', async (req, res) => {
                                             last_food_update: village.last_food_update
                                         };
                                     }
-                                } catch (_) {}
+                                } catch (_) { }
                             }
                         }
                         return land;

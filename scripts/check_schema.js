@@ -8,7 +8,7 @@ async function checkSchema() {
             WHERE table_name = 'villages' AND column_name = 'id'
         `);
         console.log('Villages ID column:', res.rows[0]);
-        
+
         // Also check current sequence value
         const seq = await pool.query(`SELECT last_value FROM villages_id_seq`);
         console.log('Villages sequence last_value:', seq.rows[0].last_value);

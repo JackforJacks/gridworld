@@ -181,7 +181,7 @@ async function loadTiles(pipeline) {
  */
 async function loadTilesLands(pipeline) {
     const { rows: lands } = await pool.query('SELECT * FROM tiles_lands ORDER BY tile_id, chunk_index');
-    
+
     // Group lands by tile_id
     const landsByTile = {};
     for (const land of lands) {
@@ -196,12 +196,12 @@ async function loadTilesLands(pipeline) {
             village_id: land.village_id
         });
     }
-    
+
     // Store grouped lands in Redis
     for (const [tileId, tileLands] of Object.entries(landsByTile)) {
         pipeline.hset('tile:lands', tileId, JSON.stringify(tileLands));
     }
-    
+
     return lands.length;
 }
 

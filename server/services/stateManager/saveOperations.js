@@ -26,12 +26,12 @@ async function saveToDatabase(context) {
         console.log('💾 Saving ALL game state from Redis to PostgreSQL...');
         const startTime = Date.now();
         const PopulationState = require('../populationState');
-        
+
         // DEBUG: Check storage adapter info
         const adapter = storage.getAdapter ? storage.getAdapter() : null;
         const adapterName = adapter?.constructor?.name || adapter?.client?.constructor?.name || 'unknown';
         console.log(`💾 [DEBUG] Storage adapter: ${adapterName}, isAvailable: ${storage.isAvailable()}`);
-        
+
         // DEBUG: Check if we can reach Redis at all
         try {
             const allKeys = await storage.keys('*');
@@ -44,11 +44,11 @@ async function saveToDatabase(context) {
         const allTileData = await storage.hgetall('tile') || {};
         const allLandsData = await storage.hgetall('tile:lands') || {};
         const allVillageData = await storage.hgetall('village') || {};
-        
+
         console.log(`💾 [DEBUG] About to call hgetall('person')...`);
         const allPeopleData = await storage.hgetall('person') || {};
         console.log(`💾 [DEBUG] hgetall('person') returned: ${allPeopleData ? Object.keys(allPeopleData).length : 'null'} entries`);
-        
+
         const allFamilyData = await storage.hgetall('family') || {};
 
         const tileCount = Object.keys(allTileData).length;
@@ -67,7 +67,7 @@ async function saveToDatabase(context) {
         // ========== STEP 1: Save tiles (with TRUNCATE CASCADE to clear dependent tables) ==========
         if (tileCount > 0) {
             console.log('💾 Step 1: Saving tiles to Postgres (TRUNCATE CASCADE will clear dependent tables)...');
-            
+
             // Clear existing tiles and lands - CASCADE will also clear villages/people/families
             await pool.query('TRUNCATE TABLE tiles RESTART IDENTITY CASCADE');
             await pool.query('TRUNCATE TABLE tiles_lands RESTART IDENTITY CASCADE');
@@ -244,7 +244,7 @@ async function saveToDatabase(context) {
         // Clear all pending operation sets since we just saved everything
         await PopulationState.clearPendingOperations();
         await PopulationState.clearPendingFamilyOperations();
-        try { await storage.del('pending:village:inserts'); } catch (_) {}
+        try { await storage.del('pending:village:inserts'); } catch (_) { }
 
         const elapsed = Date.now() - startTime;
         console.log(`✅ Save complete in ${elapsed}ms: ${tilesSaved} tiles, ${villagesInserted} villages, ${insertedCount} people, ${familiesInserted} families`);

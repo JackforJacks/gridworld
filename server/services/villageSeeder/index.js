@@ -185,7 +185,7 @@ async function createInitialTiles() {
                 VALUES ($1, $2, $3, $4)
                 ON CONFLICT (tile_id, chunk_index) DO NOTHING
             `, [tile.id, chunkIndex, landType, landType === 'cleared']);
-            
+
             landsForTile.push({
                 tile_id: tile.id,
                 chunk_index: chunkIndex,
@@ -193,7 +193,7 @@ async function createInitialTiles() {
                 cleared: landType === 'cleared'
             });
         }
-        
+
         // ALSO store in Redis so seedVillagesStorageFirst can find cleared chunks
         await storage.hset('tile', tile.id.toString(), JSON.stringify({
             ...tile,
@@ -237,7 +237,7 @@ async function createInitialPopulation(tileId) {
         };
 
         const result = await PopulationState.addPerson(personObj, true);
-        
+
         // Debug: verify first person was added
         if (i === 0) {
             const storage = require('../storage');
