@@ -15,7 +15,7 @@ describe('resetAllPopulation storage readiness', () => {
             .mockImplementation(() => true);
 
         const delSpy = jest.spyOn(storage, 'del').mockResolvedValue(0);
-        const scanStreamSpy = jest.spyOn(storage, 'scanStream').mockImplementation(async function*(){ yield []; });
+        const scanStreamSpy = jest.spyOn(storage, 'scanStream').mockImplementation(async function* () { yield []; });
 
         // Trigger reset in background and emit 'ready' shortly after
         const resetPromise = ops.resetAllPopulation(fakePool, fakeService);
