@@ -12,6 +12,7 @@
 
 const storage = require('../storage');
 const pool = require('../../config/database');
+const { acquireLock, releaseLock } = require('../../utils/lock');
 const idAllocator = require('../idAllocator');
 
 class PeopleState {
@@ -484,6 +485,43 @@ class PeopleState {
                 for (const set of tileSets.values()) totalUnique += set.size;
                 if (totalScards > totalUnique) {
                     console.warn('[PeopleState] Duplicate memberships detected: total memberships=', totalScards, 'unique persons=', totalUnique);
+
+                    // Diagnostic: find persons that appear in multiple village sets and log top samples
+                    try {
+                        const personMap = new Map(); // id -> Set of keys
+                        const warnStream2 = storage.scanStream({ match: 'village:*:*:people', count: 100 });
+                        for await (const keys2 of warnStream2) {
+                            for (const key of keys2) {
+                                const members = await storage.smembers(key);
+                                for (const m of members) {
+                                    const id = String(m);
+                                    if (!personMap.has(id)) personMap.set(id, new Set());
+                                    personMap.get(id).add(key);
+                                }
+                            }
+                        }
+
+                        const duplicates = [];
+                        for (const [id, set] of personMap.entries()) {
+                            if (set.size > 1) duplicates.push({ id, sets: Array.from(set), count: set.size });
+                        }
+
+                        duplicates.sort((a,b) => b.count - a.count);
+                        console.warn('[PeopleState] Diagnostic: duplicate persons count=', duplicates.length);
+                        for (let i = 0; i < Math.min(20, duplicates.length); i++) {
+                            const d = duplicates[i];
+                            console.warn(`[PeopleState] Duplicate sample ${i+1}: id=${d.id}, count=${d.count}, sets=${d.sets.join(', ')}`);
+                        }
+
+                        if (duplicates.length > 0) {
+                            const sampleId = duplicates[0].id;
+                            const personJson = await storage.hget('person', sampleId);
+                            console.warn('[PeopleState] Sample duplicated person hash:', personJson);
+                            try { console.warn('[PeopleState] Sample parsed:', JSON.parse(personJson)); } catch (_) {}
+                        }
+                    } catch (e) {
+                        console.warn('[PeopleState] Duplicate diagnostic failed:', e && e.message ? e.message : e);
+                    }
                 }
             } catch (e) {
                 /* best-effort warning - ignore errors */
@@ -575,6 +613,14 @@ class PeopleState {
      */
     static async syncFromPostgres() {
         if (!storage.isAvailable()) return { skipped: true, reason: 'storage not available' };
+
+        const lockKey = 'population:sync:lock';
+        const token = await acquireLock(lockKey, 30000, 5000);
+        if (!token) {
+            console.warn('[PeopleState] syncFromPostgres skipped: could not acquire sync lock');
+            return { skipped: true, reason: 'could not acquire sync lock' };
+        }
+
         try {
             console.log('[PeopleState] Syncing population from Postgres to storage...');
             // Clear person hash and all village sets keys that match our pattern
@@ -637,6 +683,112 @@ class PeopleState {
         } catch (err) {
             console.error('[PeopleState] syncFromPostgres failed:', err.message);
             throw err;
+        }
+    }
+
+    /**
+     * Rebuild village membership sets from the authoritative 'person' hash.
+     * This clears all village:*:*:people sets then re-populates them from person records
+     * ensuring each person appears only in the set matching their current tile_id/residency.
+     */
+    static async rebuildVillageMemberships() {
+        if (!storage.isAvailable()) return { skipped: true, reason: 'storage not available' };
+
+        const lockKey = 'population:sync:lock';
+        const token = await acquireLock(lockKey, 30000, 5000);
+        if (!token) {
+            console.warn('[PeopleState] rebuildVillageMemberships skipped: could not acquire sync lock');
+            return { skipped: true, reason: 'could not acquire sync lock' };
+        }
+
+        try {
+            console.log('[PeopleState] Rebuilding village membership sets from person hash...');
+            // Clear all village:*:*:people sets
+            const stream = storage.scanStream({ match: 'village:*:*:people', count: 1000 });
+            const keysToDelete = [];
+            for await (const ks of stream) {
+                for (const k of ks) keysToDelete.push(k);
+            }
+            if (keysToDelete.length > 0) await storage.del(...keysToDelete);
+
+            // Read all persons and repopulate sets
+            const peopleObj = await storage.hgetall('person');
+            const ids = Object.keys(peopleObj || {});
+            const pipeline = storage.pipeline();
+            let total = 0;
+            for (const id of ids) {
+                const json = peopleObj[id];
+                if (!json) continue;
+                let person = null;
+                try { person = JSON.parse(json); } catch (e) { continue; }
+                if (person.tile_id && person.residency !== null && person.residency !== undefined) {
+                    pipeline.sadd(`village:${person.tile_id}:${person.residency}:people`, id);
+                    total++;
+                }
+            }
+            await pipeline.exec();
+            console.log(`[PeopleState] Rebuilt village membership sets: added ${total} memberships`);
+            return { success: true, total };
+        } catch (e) {
+            console.warn('[PeopleState] rebuildVillageMemberships failed:', e && e.message ? e.message : e);
+            return { success: false, error: e && e.message ? e.message : e };
+        } finally {
+            // release lock if held
+            if (typeof token !== 'undefined' && token) {
+                try { await releaseLock(lockKey, token); } catch (_) {}
+            }
+        }
+    }
+
+    /**
+     * Quick integrity check and repair: if duplicate memberships detected, rebuild sets
+     */
+    static async repairIfNeeded() {
+        if (!storage.isAvailable()) return { skipped: true, reason: 'storage not available' };
+
+        const lockKey = 'population:sync:lock';
+        const token = await acquireLock(lockKey, 30000, 5000);
+        if (!token) {
+            console.warn('[PeopleState] repairIfNeeded skipped: could not acquire sync lock');
+            return { skipped: true, reason: 'could not acquire sync lock' };
+        }
+
+        try {
+            // Quick scan: sum scard and count unique ids
+            let totalScards = 0;
+            const stream = storage.scanStream({ match: 'village:*:*:people', count: 100 });
+            const keys = [];
+            for await (const ks of stream) {
+                for (const k of ks) keys.push(k);
+            }
+            if (keys.length === 0) return { ok: true, reason: 'no village sets' };
+            const pipeline = storage.pipeline();
+            for (const key of keys) pipeline.scard(key);
+            const results = await pipeline.exec();
+            for (const [err, sc] of results) {
+                if (!err && typeof sc === 'number') totalScards += sc;
+            }
+
+            // Build unique count
+            const personSet = new Set();
+            for (const key of keys) {
+                const members = await storage.smembers(key);
+                for (const m of members) personSet.add(String(m));
+            }
+            const totalUnique = personSet.size;
+            if (totalScards > totalUnique) {
+                console.warn('[PeopleState] repairIfNeeded detected duplicate memberships: total=', totalScards, 'unique=', totalUnique);
+                const res = await PeopleState.rebuildVillageMemberships();
+                return { repaired: true, before: { totalScards, totalUnique }, result: res };
+            }
+            return { ok: true };
+        } catch (e) {
+            console.warn('[PeopleState] repairIfNeeded failed:', e && e.message ? e.message : e);
+            return { ok: false, error: e && e.message ? e.message : e };
+        } finally {
+            if (token) {
+                try { await releaseLock(lockKey, token); } catch (_) {}
+            }
         }
     }
 }

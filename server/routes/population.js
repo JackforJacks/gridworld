@@ -2,6 +2,20 @@
 const express = require('express');
 const router = express.Router();
 
+const StateManager = require('../services/stateManager');
+
+// Enforce Redis-first: all population API calls require Redis to be available
+router.use((req, res, next) => {
+    try {
+        if (!StateManager.isRedisAvailable()) {
+            return res.status(503).json({ success: false, error: 'Redis not available - population API requires Redis as the source of truth' });
+        }
+    } catch (e) {
+        return res.status(500).json({ success: false, error: 'Server error checking storage availability' });
+    }
+    next();
+});
+
 // Get all population data
 router.get('/', async (req, res, next) => {
     try {
@@ -152,6 +166,28 @@ router.post('/create-families', async (req, res, next) => {
         const populationService = req.app.locals.populationService;
         const responseData = await populationService.createFamiliesForExistingPopulation();
         res.json(responseData);
+    } catch (error) {
+        next(error);
+    }
+});
+
+// Stop autosave at runtime
+router.post('/autosave/stop', async (req, res, next) => {
+    try {
+        const populationService = req.app.locals.populationService;
+        populationService.stopAutoSave();
+        res.json({ success: true, message: 'Autosave stopped' });
+    } catch (error) {
+        next(error);
+    }
+});
+
+// Start autosave at runtime (uses configured interval)
+router.post('/autosave/start', async (req, res, next) => {
+    try {
+        const populationService = req.app.locals.populationService;
+        populationService.startAutoSave();
+        res.json({ success: true, message: 'Autosave started' });
     } catch (error) {
         next(error);
     }

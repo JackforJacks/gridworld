@@ -52,7 +52,18 @@ async function loadFromDatabase(context) {
 
     // Populate eligible matchmaking sets
     await populateEligibleSets(people, context.calendarService);
-
+    // Defensive repair: rebuild village membership sets to match authoritative 'person' hash
+    try {
+        const PeopleState = require('../populationState/PeopleState');
+        const repairRes = await PeopleState.rebuildVillageMemberships();
+        if (repairRes && repairRes.success) {
+            console.log('[StateManager] Rebuilt village membership sets after load');
+        } else {
+            console.warn('[StateManager] Rebuild village membership sets reported:', repairRes);
+        }
+    } catch (e) {
+        console.warn('[StateManager] Failed to run rebuildVillageMemberships:', e && e.message ? e.message : e);
+    }
     return {
         villages: villages.length,
         people: people.length,
@@ -62,29 +73,52 @@ async function loadFromDatabase(context) {
     };
 }
 
-/**
- * Clear existing storage state keys to avoid stale data
- */
 async function clearExistingStorageState() {
     try {
-        await storage.del(
-            'village', 'person', 'family', 'tile:fertility',
-            'village:cleared', 'counts:global', 'pending:inserts',
-            'pending:deletes', 'pending:family:inserts', 'pending:family:updates'
-        );
+        // Check what keys exist before flush (guard for tests/mocks that don't implement it)
+        let keysBefore = [];
+        if (typeof storage.keys === 'function') {
+            keysBefore = await storage.keys('*') || [];
+        }
+        console.log(`🧹 Keys before flush: ${keysBefore.length} keys`);
 
-        // Clear all village:*:*:people sets
-        const stream = storage.scanStream({ match: 'village:*:*:people', count: 1000 });
-        const keysToDelete = [];
-        for await (const resultKeys of stream) {
-            for (const key of resultKeys) keysToDelete.push(key);
+        // Flush the entire Redis database to ensure clean state (guard when not supported)
+        if (typeof storage.flushdb === 'function') {
+            await storage.flushdb();
+            console.log('🧹 Flushed entire Redis database for clean state load');
+        } else {
+            throw new Error('flushdb not supported');
         }
-        if (keysToDelete.length > 0) {
-            await storage.del(...keysToDelete);
+
+        // Check what keys exist after flush (guard for tests/mocks that don't implement it)
+        let keysAfter = [];
+        if (typeof storage.keys === 'function') {
+            keysAfter = await storage.keys('*') || [];
         }
-        console.log('🧹 Cleared existing storage state keys (including counts:global, village sets, family, and pending ops)');
+        console.log(`🧹 Keys after flush: ${keysAfter.length} keys`);
     } catch (e) {
-        console.warn('⚠️ Failed to clear storage keys before load:', e.message);
+        console.warn('⚠️ Failed to flush Redis database:', e && e.message ? e.message : e);
+        // Fallback to selective clearing
+        try {
+            await storage.del(
+                'village', 'person', 'family', 'tile:fertility',
+                'village:cleared', 'counts:global', 'pending:inserts',
+                'pending:deletes', 'pending:family:inserts', 'pending:family:updates'
+            );
+
+            // Clear all village:*:*:people sets
+            const stream = storage.scanStream({ match: 'village:*:*:people', count: 1000 });
+            const keysToDelete = [];
+            for await (const resultKeys of stream) {
+                for (const key of resultKeys) keysToDelete.push(key);
+            }
+            if (keysToDelete.length > 0) {
+                await storage.del(...keysToDelete);
+            }
+            console.log('🧹 Cleared existing storage state keys (fallback method)');
+        } catch (e2) {
+            console.warn('⚠️ Failed to clear storage keys even with fallback:', e2 && e2.message ? e2.message : e2);
+        }
     }
 }
 

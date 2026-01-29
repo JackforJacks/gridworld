@@ -102,12 +102,20 @@ function startAutoSave(serviceInstance) {
                 calendarService.stop();
             }
 
-            // Perform save
+            // Perform save only if there are pending changes in Redis
             let saveResult = null;
-            if (serviceInstance.saveData && typeof serviceInstance.saveData === 'function') {
-                saveResult = await serviceInstance.saveData();
-            } else {
-                console.warn('[initializer.js] serviceInstance.saveData is not a function or not available.');
+            const StateManager = require('../stateManager');
+            try {
+                const hasPending = StateManager.isRedisAvailable() && await StateManager.hasPendingChanges();
+                if (!hasPending) {
+                    if (config.verboseLogs) console.log('💤 Auto-save skipped (no pending changes in Redis).');
+                } else if (serviceInstance.saveData && typeof serviceInstance.saveData === 'function') {
+                    saveResult = await serviceInstance.saveData();
+                } else {
+                    console.warn('[initializer.js] serviceInstance.saveData is not a function or not available.');
+                }
+            } catch (err) {
+                console.warn('[initializer.js] Error checking pending changes for autosave:', err.message);
             }
 
             // Resume calendar if it was running
@@ -191,8 +199,16 @@ async function initializePopulationService(serviceInstance, io, calendarService)
             console.warn('[initializer.js] serviceInstance.startGrowth is not a function or not available.');
         }
     }
-    // Auto-save disabled - use manual save instead
-    // startAutoSave(serviceInstance);
+    // Auto-save controlled by config flag
+    if (config.autoSaveEnabled) {
+        startAutoSave(serviceInstance);
+    } else {
+        // Ensure any running autosave is stopped
+        if (serviceInstance.autoSaveInterval) {
+            serviceInstance.stopAutoSave();
+        }
+        if (config.verboseLogs) console.log('💤 Auto-save is disabled by configuration (AUTO_SAVE_ENABLED=false).');
+    }
     startRateTracking(serviceInstance); // Pass serviceInstance as context
     if (config.verboseLogs) console.log('🌱 Population service initialized (from initializer.js)');
 

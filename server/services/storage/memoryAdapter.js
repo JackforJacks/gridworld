@@ -89,10 +89,18 @@ class MemoryAdapter {
         this.hashes = Object.create(null);
         this.sets = Object.create(null);
         this.kv = Object.create(null);
+        this.zsets = Object.create(null);
     }
 
     isAvailable() {
         return true; // Always available in-memory (for tests/dev)
+    }
+
+    clear() {
+        this.hashes = Object.create(null);
+        this.sets = Object.create(null);
+        this.kv = Object.create(null);
+        this.zsets = Object.create(null);
     }
 
     pipeline() {
@@ -151,6 +159,11 @@ class MemoryAdapter {
         return s ? Array.from(s) : [];
     }
 
+    async sismember(key, member) {
+        const s = this.sets[key];
+        return s ? (s.has(String(member)) ? 1 : 0) : 0;
+    }
+
     async hincrby(key, field, amount) {
         this.hashes[key] ||= {};
         const current = parseInt(this.hashes[key][field] || '0', 10);
@@ -182,15 +195,37 @@ class MemoryAdapter {
         return 1;
     }
 
+    async zadd(key, score, member) {
+        this.zsets[key] ||= new Map();
+        this.zsets[key].set(String(member), Number(score));
+        return 1;
+    }
+
+    async zrangebyscore(key, min, max) {
+        const map = this.zsets[key];
+        if (!map) return [];
+        const entries = Array.from(map.entries()).filter(([m, s]) => s >= Number(min) && s <= Number(max));
+        entries.sort((a, b) => a[1] - b[1]);
+        return entries.map(([m]) => m);
+    }
+
+    async zrem(key, member) {
+        const map = this.zsets[key];
+        if (!map) return 0;
+        const had = map.delete(String(member));
+        if (map.size === 0) delete this.zsets[key];
+        return had ? 1 : 0;
+    }
+
     async keys(pattern = '*') {
-        const allKeys = new Set([...Object.keys(this.kv), ...Object.keys(this.hashes), ...Object.keys(this.sets)]);
+        const allKeys = new Set([...Object.keys(this.kv), ...Object.keys(this.hashes), ...Object.keys(this.sets), ...Object.keys(this.zsets)]);
         const regex = new RegExp('^' + pattern.replace(/\*/g, '.*') + '$');
         return Array.from(allKeys).filter(k => regex.test(k));
     }
 
     scanStream({ match = '*', count = 100 } = {}) {
         // Return an async iterable that yields arrays of keys matching the glob
-        const allKeys = new Set([...Object.keys(this.kv), ...Object.keys(this.hashes), ...Object.keys(this.sets)]);
+        const allKeys = new Set([...Object.keys(this.kv), ...Object.keys(this.hashes), ...Object.keys(this.sets), ...Object.keys(this.zsets)]);
         const pattern = new RegExp('^' + match.replace(/\*/g, '.*') + '$');
         const matches = Array.from(allKeys).filter(k => pattern.test(k));
         let index = 0;

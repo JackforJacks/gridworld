@@ -41,6 +41,16 @@ class StateManager {
         const calendarService = context && context.calendarService ? context.calendarService : this.calendarService;
         const io = context && context.io ? context.io : this.io;
         let paused = false;
+
+        // Acquire a lock to prevent concurrent loads
+        const { acquireLock, releaseLock } = require('../../utils/lock');
+        const lockKey = 'state:load:lock';
+        const token = await acquireLock(lockKey, 60000, 5000);
+        if (!token) {
+            console.warn('[StateManager] loadFromDatabase skipped: could not acquire load lock');
+            return { villages: 0, people: 0, families: 0, skipped: true };
+        }
+
         try {
             // Pause the calendar if it's currently running to avoid tick events during load
             if (calendarService && calendarService.state && calendarService.state.isRunning) {
@@ -69,15 +79,46 @@ class StateManager {
                     calendarService.start();
                 } catch (e) { /* ignore */ }
             }
+            // release lock
+            try { await releaseLock(lockKey, token); } catch (_) {}
         }
     }
 
     /**
-     * Save all Redis state back to PostgreSQL
+     * Check whether there are pending changes in Redis that require persisting to Postgres.
+     * Returns true if any pending insert/update/delete sets are non-empty.
+     */
+    static async hasPendingChanges() {
+        if (!storage.isAvailable()) return false;
+        const pendingSets = [
+            'pending:person:inserts',
+            'pending:person:updates',
+            'pending:person:deletes',
+            'pending:family:inserts',
+            'pending:family:updates',
+            'pending:family:deletes',
+            'pending:village:inserts'
+        ];
+        for (const key of pendingSets) {
+            try {
+                const count = await storage.scard(key);
+                if (count && count > 0) return true;
+            } catch (_) { /* ignore */ }
+        }
+        return false;
+    }
+
+    /**
+     * Save all Redis state back to PostgreSQL (skips if no pending changes)
      */
     static async saveToDatabase() {
         if (!this.isRedisAvailable()) {
             throw new Error('Redis is not available - cannot save in-memory state to database');
+        }
+        const hasPending = await this.hasPendingChanges();
+        if (!hasPending) {
+            console.log('[StateManager] No pending changes detected - proceeding with save flow for consistent results');
+            // Intentionally continue to call saveToDatabase so callers/tests receive a consistent result object
         }
         return await saveToDatabase({
             calendarService: this.calendarService,

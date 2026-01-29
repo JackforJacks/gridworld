@@ -31,11 +31,11 @@ async function seedVillagesStorageFirst() {
         const populatedTileIds = Object.keys(tilePopulations).filter(id => tilePopulations[id] > 0);
 
         if (populatedTileIds.length === 0) {
-            console.log('[villageSeeder] No populated tiles in storage');
+            if (require('../../config/server').verboseLogs) console.log('[villageSeeder] No populated tiles in storage');
             return { created: 0, villages: [] };
         }
 
-        console.log(`[villageSeeder] Found ${populatedTileIds.length} populated tiles in storage`);
+        if (require('../../config/server').verboseLogs) console.log(`[villageSeeder] Found ${populatedTileIds.length} populated tiles in storage`);
 
         // Clear existing villages in storage
         await storage.del('village');
@@ -106,7 +106,8 @@ async function seedVillagesStorageFirst() {
         }
         await pipeline.exec();
 
-        console.log(`[villageSeeder] Created ${allVillages.length} villages in storage (pending Postgres save)`);
+        const serverConfig = require('../../config/server');
+        if (serverConfig.verboseLogs) console.log(`[villageSeeder] Created ${allVillages.length} villages in storage (pending Postgres save)`);
 
         // Assign residency to people in storage
         await assignResidencyStorage(populatedTileIds, allVillages);
@@ -169,7 +170,12 @@ async function assignResidencyStorage(populatedTileIds, allVillages) {
                 const assignedPeople = people.slice(peopleIndex, peopleIndex + toAssign);
 
                 for (const person of assignedPeople) {
-                    person.residency = village.land_chunk_index;
+                    // record old residency so we can remove from the old set when writing
+                    const oldResidency = person.residency;
+                    const newResidency = village.land_chunk_index;
+                    person.residency = newResidency;
+                    // _oldResidency is used only for pipeline update; delete later to avoid persisting it
+                    person._oldResidency = oldResidency; // temporary marker for pipeline
                     personUpdates.push(person);
                     village.housing_slots.push(person.id);
                 }
@@ -183,10 +189,13 @@ async function assignResidencyStorage(populatedTileIds, allVillages) {
         if (personUpdates.length > 0) {
             const personPipeline = storage.pipeline();
             for (const person of personUpdates) {
-                personPipeline.hset('person', person.id.toString(), JSON.stringify(person));
-                if (person.tile_id && person.residency !== null && person.residency !== undefined) {
-                    personPipeline.sadd(`village:${person.tile_id}:${person.residency}:people`, person.id.toString());
+                // If we recorded an old residency, remove person from that set first
+                if (person.tile_id && person._oldResidency !== undefined && person._oldResidency !== null && person._oldResidency !== person.residency) {
+                    personPipeline.srem(`village:${person.tile_id}:${person._oldResidency}:people`, person.id.toString());
                 }
+                // Write updated person
+                personPipeline.hset('person', person.id.toString(), JSON.stringify(person));
+                // Add to new residency set
             }
             await personPipeline.exec();
         }
@@ -200,7 +209,8 @@ async function assignResidencyStorage(populatedTileIds, allVillages) {
             await villagePipeline.exec();
         }
 
-        console.log(`[villageSeeder] Assigned residency to ${personUpdates.length} people in storage`);
+        const serverConfig = require('../../config/server');
+        if (serverConfig.verboseLogs) console.log(`[villageSeeder] Assigned residency to ${personUpdates.length} people in storage`);
     } catch (err) {
         console.error('[villageSeeder] Failed to assign residency in storage:', err);
     }

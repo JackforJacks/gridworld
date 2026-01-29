@@ -114,7 +114,7 @@ router.get('/', async (req, res) => {
     if (req.query.regenerate === 'true' || req.query.t) {
         // Only regenerate when explicitly requested
         const newSeed = req.query.t ? parseFloat(req.query.t) : Date.now();
-        console.log(`[API /api/tiles] Regenerating world - old seed: ${worldSeed}, new seed: ${newSeed}`);
+        if (serverConfig.verboseLogs) console.log(`[API /api/tiles] Regenerating world - old seed: ${worldSeed}, new seed: ${newSeed}`);
         worldSeed = newSeed;
         // Update environment variable for future restarts
         process.env.WORLD_SEED = worldSeed.toString();
@@ -274,7 +274,7 @@ router.get('/', async (req, res) => {
             }
 
             const regenElapsed = Date.now() - regenStartTime;
-            console.log(`⏱️ [API /api/tiles] Regenerated ${hexasphere.tiles.length} tiles + ${eligibleTiles.rows.length * 100} land chunks in ${regenElapsed}ms`);
+            if (serverConfig.verboseLogs) console.log(`⏱️ [API /api/tiles] Regenerated ${hexasphere.tiles.length} tiles + ${eligibleTiles.rows.length * 100} land chunks in ${regenElapsed}ms`);
 
             // Village seeding is now performed after population initialization (client-driven)
         }

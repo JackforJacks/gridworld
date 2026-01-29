@@ -138,7 +138,19 @@ class FamilyState {
     static async addFertileFamily(familyId, tileId) {
         if (!storage.isAvailable()) return false;
         try {
+            // Keep legacy per-tile fertile set for compatibility
             await storage.sadd(`fertile:${tileId}`, familyId.toString());
+            // Also enqueue into the global fertile queue so consumers can pop due families without scanning
+            try {
+                const score = Date.now(); // immediate
+                if (typeof storage.atomicEnqueueFertile === 'function') {
+                    await storage.atomicEnqueueFertile(familyId, score);
+                } else {
+                    // Fallback: add to global members + zset
+                    await storage.sadd('fertile:members', String(familyId));
+                    if (typeof storage.zadd === 'function') await storage.zadd('fertile:queue', score, String(familyId));
+                }
+            } catch (e) { /* non-fatal */ }
             return true;
         } catch (err) {
             console.warn('[FamilyState] addFertileFamily failed:', err.message);
@@ -363,7 +375,7 @@ class FamilyState {
             let total = 0;
 
             while (true) {
-                const res = await pool.query('SELECT id, husband_id, wife_id, tile_id, pregnancy, delivery_date, children_ids FROM families ORDER BY id LIMIT $1 OFFSET $2', [batchSize, offset]);
+                const res = await pool.query('SELECT id, husband_id, wife_id, tile_id, pregnancy, delivery_date, children_ids FROM family ORDER BY id LIMIT $1 OFFSET $2', [batchSize, offset]);
                 if (!res.rows || res.rows.length === 0) break;
                 const pipeline = storage.pipeline();
                 for (const f of res.rows) {

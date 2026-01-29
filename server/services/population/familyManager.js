@@ -3,6 +3,8 @@ const { calculateAge } = require('./calculator.js');
 const storage = require('../storage');
 const serverConfig = require('../../config/server.js');
 
+// Delivery retry configuration - read from serverConfig at runtime to allow tests to modify values in beforeEach
+
 /**
  * Creates a new family unit - storage-only, batched to Postgres on Save
  * @param {Pool} pool - Database pool instance (unused, kept for API compatibility)
@@ -115,10 +117,18 @@ async function startPregnancy(pool, calendarService, familyId) {
         }
 
         // Try to acquire an atomic lock for this family to avoid concurrent pregnancies
-        lockToken = await acquireLock(lockKey, 5000, 2000, 50);
+        // Increased TTL/timeout/retry to reduce spurious contention under load
+        lockToken = await acquireLock(lockKey, 10000, 5000, 100);
         if (!lockToken) {
             try { await storage.incr('stats:pregnancy:contention'); } catch (_) { }
-            console.warn(`[startPregnancy] Could not acquire lock for family ${familyId} - another operation in progress`);
+            // Attempt to inspect current lock holder (if using Redis) to aid debugging
+            try {
+                const adapter = storage.getAdapter ? storage.getAdapter() : storage;
+                const holder = adapter && adapter.client && typeof adapter.client.get === 'function' ? await adapter.client.get(lockKey) : null;
+                console.warn(`[startPregnancy] Could not acquire lock for family ${familyId} - holder=${holder || 'unknown'} - another operation in progress`);
+            } catch (e) {
+                console.warn(`[startPregnancy] Could not acquire lock for family ${familyId} - another operation in progress (could not inspect holder)`);
+            }
             return null;
         }
 
@@ -228,9 +238,20 @@ async function deliverBaby(pool, calendarService, populationServiceInstance, fam
 
     try {
         // Acquire lock to ensure single delivery per family
-        lockToken = await acquireLock(lockKey, 5000, 2000, 50);
+        // Use server-configurable timeouts so tests can control contention behaviour
+        const lockTtl = serverConfig.deliveryLockTtlMs ?? 10000;
+        const lockTimeout = serverConfig.deliveryLockAcquireTimeoutMs ?? 0; // immediate fail on contention by default
+        const lockRetryDelay = serverConfig.deliveryLockRetryDelayMs ?? 0;
+        lockToken = await acquireLock(lockKey, lockTtl, lockTimeout, lockRetryDelay);
         if (!lockToken) {
-            console.warn(`[deliverBaby] Could not acquire lock for family ${familyId} - skipping delivery`);
+            try { await storage.incr('stats:deliveries:contention'); } catch (_) { }
+            try {
+                const adapter = storage.getAdapter ? storage.getAdapter() : storage;
+                const holder = adapter && adapter.client && typeof adapter.client.get === 'function' ? await adapter.client.get(lockKey) : null;
+                console.warn(`[deliverBaby] Could not acquire lock for family ${familyId} - holder=${holder || 'unknown'} - skipping delivery`);
+            } catch (e) {
+                console.warn(`[deliverBaby] Could not acquire lock for family ${familyId} - skipping delivery (could not inspect holder)`);
+            }
             return null;
         }
 
@@ -354,13 +375,48 @@ async function processDeliveries(pool, calendarService, populationServiceInstanc
         const currentDateStr = `${year}-${String(month).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
         const currentDateValue = new Date(currentDateStr).getTime();
 
-        // Find families ready to deliver from Redis
-        const allFamilies = await PopulationState.getAllFamilies();
-        const readyFamilies = allFamilies.filter(f => {
-            if (!f.pregnancy || !f.delivery_date) return false;
-            const deliveryValue = new Date(f.delivery_date.split('T')[0]).getTime();
-            return deliveryValue <= currentDateValue;
-        });
+        // Collect retry candidates that are scheduled for immediate retry
+        let retryCandidateIds = [];
+        try {
+            const due = await storage.zrangebyscore('pending:deliveries:retry', 0, Date.now());
+            if (due && due.length > 0) {
+                retryCandidateIds = due.map(id => parseInt(id, 10));
+                // remove them from the retry zset (we'll re-attempt now)
+                for (const id of due) {
+                    try { await storage.zrem('pending:deliveries:retry', id); } catch (_) { }
+                }
+            }
+        } catch (e) { /* ignore */ }
+
+        // Prefer consuming from the global fertile queue if storage supports it, otherwise fall back to scanning
+        let readyFamilies = [];
+        if (storage.isAvailable() && typeof storage.atomicPopDueFertile === 'function') {
+            // First, requeue any retry candidates we collected earlier (they were already removed from retry zset)
+            // Now pop due items from the global queue until exhausted
+            while (true) {
+                const id = await storage.atomicPopDueFertile(Date.now());
+                if (!id) break;
+                try {
+                    const f = await PopulationState.getFamily(parseInt(id, 10));
+                    if (f) readyFamilies.push(f);
+                } catch (e) { /* ignore */ }
+            }
+            // Also append retryCandidateIds that may have come from earlier code path
+            for (const id of retryCandidateIds) {
+                try { const f = await PopulationState.getFamily(id); if (f) readyFamilies.push(f); } catch (_) { }
+            }
+        } else {
+            // Fallback: scan all families as before
+            const allFamilies = await PopulationState.getAllFamilies();
+            readyFamilies = allFamilies.filter(f => {
+                if (!f.pregnancy || !f.delivery_date) return false;
+                const deliveryValue = new Date(f.delivery_date.split('T')[0]).getTime();
+                return deliveryValue <= currentDateValue;
+            });
+            for (const id of retryCandidateIds) {
+                try { const f = await PopulationState.getFamily(id); if (f && !readyFamilies.find(r => r.id === f.id)) readyFamilies.push(f); } catch (_) { }
+            }
+        }
 
         let babiesDelivered = 0;
         for (const family of readyFamilies) {
@@ -369,10 +425,38 @@ async function processDeliveries(pool, calendarService, populationServiceInstanc
             let lockToken = null;
             try {
                 // Try to acquire a lock for this family to prevent concurrent deliveries
-                lockToken = await acquireLock(lockKey, 5000, 1500, 50);
+                // Increased TTL/timeout/retry to reduce contention under load
+                lockToken = await acquireLock(lockKey, 10000, 5000, 100);
                 if (!lockToken) {
                     try { await storage.incr('stats:deliveries:contention'); } catch (_) { }
-                    console.warn(`[processDeliveries] Could not acquire lock for family ${family.id} - skipping delivery this cycle`);
+                    // Increment retry attempts and schedule a retry if under the max attempts
+                    try {
+                        const attempts = await storage.hincrby('pending:delivery:attempts', String(family.id), 1);
+                        const baseDelay = serverConfig.deliveryRetryDelayMs ?? 5000;
+                        const retryMaxAttempts = serverConfig.deliveryRetryMaxAttempts ?? 5;
+                        const backoffMultiplier = serverConfig.deliveryRetryBackoffMultiplier ?? 2;
+                        if (attempts <= retryMaxAttempts) {
+                            const delay = Math.round(baseDelay * Math.pow(serverConfig.deliveryRetryBackoffMultiplier || 2, attempts - 1));
+
+                            await storage.zadd('pending:deliveries:retry', Date.now() + delay, String(family.id));
+                            try { await storage.incr('stats:deliveries:retries'); } catch(_){}
+                            const adapter = storage.getAdapter ? storage.getAdapter() : storage;
+                            const holder = adapter && adapter.client && typeof adapter.client.get === 'function' ? await adapter.client.get(lockKey) : null;
+                            console.warn(`[processDeliveries] Could not acquire lock for family ${family.id} - requeued for retry (attempt ${attempts}, delay ${delay}ms) - holder=${holder || 'unknown'}`);
+                        } else {
+                            try { await storage.incr('stats:deliveries:permanent_failures'); } catch(_){}
+                            console.warn(`[processDeliveries] Family ${family.id} reached max delivery retry attempts (${attempts}) - skipping permanently`);
+                        }
+                    } catch (e) {
+                        // Fallback: just log and skip this cycle
+                        try {
+                            const adapter = storage.getAdapter ? storage.getAdapter() : storage;
+                            const holder = adapter && adapter.client && typeof adapter.client.get === 'function' ? await adapter.client.get(lockKey) : null;
+                            console.warn(`[processDeliveries] Could not acquire lock for family ${family.id} - holder=${holder || 'unknown'} - skipping delivery this cycle`);
+                        } catch (err) {
+                            console.warn(`[processDeliveries] Could not acquire lock for family ${family.id} - skipping delivery this cycle (could not inspect holder)`);
+                        }
+                    }
                     continue;
                 }
 
@@ -404,6 +488,11 @@ async function processDeliveries(pool, calendarService, populationServiceInstanc
                         }
                     }
                 } catch (e) { /* ignore */ }
+                // Clear retry attempts and any queued retry entries after successful delivery
+                try {
+                    await storage.hdel('pending:delivery:attempts', String(family.id));
+                    await storage.zrem('pending:deliveries:retry', String(family.id));
+                } catch (_) { }
                 babiesDelivered++;
             } catch (error) {
                 // Suppress "Family not found" errors (race condition with save)

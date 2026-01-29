@@ -119,7 +119,8 @@ async function seedRandomVillages(count = null) {
         }
 
         await pool.query('COMMIT');
-        console.log(`[villageSeeder] Created ${insertedCount} villages`);
+        const serverConfig = require('../../config/server');
+        if (serverConfig.verboseLogs) console.log(`[villageSeeder] Created ${insertedCount} villages`);
         return { created: insertedCount, villages: [] };
     } catch (err) {
         await pool.query('ROLLBACK');

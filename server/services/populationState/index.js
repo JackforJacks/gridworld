@@ -58,6 +58,8 @@ class PopulationState {
     static async getAllTilePopulations() { return PeopleState.getAllTilePopulations(); }
     static async getDemographicStats(currentDate) { return PeopleState.getDemographicStats(currentDate); }
     static async syncFromPostgres() { return PeopleState.syncFromPostgres(); }
+    static async rebuildVillageMemberships() { return PeopleState.rebuildVillageMemberships(); }
+    static async repairIfNeeded() { return PeopleState.repairIfNeeded(); }
 
     // =========== FAMILY OPERATIONS (delegates to FamilyState) ===========
     static async getNextFamilyTempId() { return FamilyState.getNextTempId(); }

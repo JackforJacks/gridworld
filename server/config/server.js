@@ -3,8 +3,8 @@ module.exports = {
     port: process.env.PORT || 3000,
     environment: process.env.NODE_ENV || 'development',
     dataFile: 'data.json',
-    autoSaveInterval: 60000, // 1 minute
-    populationGrowthInterval: 1000, // 1 second
+    autoSaveInterval: 10000, // 10 seconds    // Enable autosave by setting AUTO_SAVE_ENABLED=1 or AUTO_SAVE_ENABLED=true in env. Defaults to false to avoid excessive writes.
+    autoSaveEnabled: (process.env.AUTO_SAVE_ENABLED === '1' || process.env.AUTO_SAVE_ENABLED === 'true'),    populationGrowthInterval: 1000, // 1 second
     defaultGrowthRate: 1,
     populationBatchSize: 100, // Added during previous refactoring, ensure it's here
     // Toggle verbose server logs with VERBOSE_LOGS=1 or VERBOSE_LOGS=true in environment
@@ -22,4 +22,12 @@ module.exports = {
     integrityAuditInterval: parseInt(process.env.INTEGRITY_AUDIT_INTERVAL_MS, 10) || 24 * 60 * 60 * 1000,
     // If true, scheduled audits may perform repairs when issues are detected
     integrityRepairOnSchedule: (process.env.INTEGRITY_REPAIR_SCHEDULE === '1' || process.env.INTEGRITY_REPAIR_SCHEDULE === 'true')
+    ,
+    // Delivery retry configuration for contested family locks
+    // Base delay (ms) used for retry scheduling. Backoff multiplier applied per attempt.
+    deliveryRetryDelayMs: parseInt(process.env.DELIVERY_RETRY_DELAY_MS, 10) || 5000,
+    // Max retry attempts before giving up on a delivery
+    deliveryRetryMaxAttempts: parseInt(process.env.DELIVERY_RETRY_MAX_ATTEMPTS, 10) || 5,
+    // Backoff multiplier applied to the base delay each retry (exponential)
+    deliveryRetryBackoffMultiplier: parseFloat(process.env.DELIVERY_RETRY_BACKOFF_MULTIPLIER) || 2
 };

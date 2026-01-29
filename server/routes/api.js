@@ -14,6 +14,7 @@ const pool = require('../config/database');
 const villageSeeder = require('../services/villageSeeder');
 const StateManager = require('../services/stateManager');
 const storage = require('../services/storage');
+const serverConfig = require('../config/server');
 
 // Use route modules
 router.use('/population', populationRoutes);
@@ -170,7 +171,7 @@ router.post('/worldrestart', async (req, res) => {
         });
     }
 
-    console.log('🔴 [worldrestart] CONFIRMED - Starting world restart (all data will be wiped)...');
+    if (serverConfig.verboseLogs) console.log('🔴 [worldrestart] CONFIRMED - Starting world restart (all data will be wiped)...');
 
     const populationService = req.app.locals.populationService;
     if (!populationService) {
@@ -191,7 +192,7 @@ router.post('/worldrestart', async (req, res) => {
         const calendarService = req.app.locals.calendarService;
         if (calendarService && calendarService.state && calendarService.state.isRunning) {
             wasRunning = true;
-            console.log('⏸️ Pausing calendar for world restart...');
+            if (serverConfig.verboseLogs) console.log('⏸️ Pausing calendar for world restart...');
             calendarService.stop();
         }
 
@@ -199,7 +200,7 @@ router.post('/worldrestart', async (req, res) => {
         let stepStart = Date.now();
         try {
             await selfGet('/api/tiles?regenerate=true&silent=1');
-            console.log(`⏱️ [worldrestart] Tiles regeneration: ${Date.now() - stepStart}ms`);
+            if (serverConfig.verboseLogs) console.log(`⏱️ [worldrestart] Tiles regeneration: ${Date.now() - stepStart}ms`);
         } catch (regenErr) {
             console.error('[API /api/worldrestart] Regeneration failed:', regenErr.message || regenErr);
             throw regenErr;
@@ -208,7 +209,7 @@ router.post('/worldrestart', async (req, res) => {
         // Reset population and reinitialize on habitable tiles
         stepStart = Date.now();
         await populationService.resetPopulation();
-        console.log(`⏱️ [worldrestart] Population reset: ${Date.now() - stepStart}ms`);
+        if (serverConfig.verboseLogs) console.log(`⏱️ [worldrestart] Population reset: ${Date.now() - stepStart}ms`);
 
         stepStart = Date.now();
         const { rows: habitable } = await pool.query('SELECT id FROM tiles WHERE is_habitable = TRUE');
@@ -216,7 +217,7 @@ router.post('/worldrestart', async (req, res) => {
         if (habitableIds.length > 0) {
             await populationService.initializeTilePopulations(habitableIds);
         }
-        console.log(`⏱️ [worldrestart] Population initialization: ${Date.now() - stepStart}ms`);
+        if (serverConfig.verboseLogs) console.log(`⏱️ [worldrestart] Population initialization: ${Date.now() - stepStart}ms`);
 
         // Seed villages using storage-first approach (non-fatal)
         let seedResult = null;
@@ -224,7 +225,7 @@ router.post('/worldrestart', async (req, res) => {
         try {
             // Use storage-first seeding - reads from storage, writes to storage
             seedResult = await villageSeeder.seedVillagesStorageFirst();
-            console.log(`⏱️ [worldrestart] Village seeding (storage-first): ${Date.now() - stepStart}ms`);
+            if (serverConfig.verboseLogs) console.log(`⏱️ [worldrestart] Village seeding (storage-first): ${Date.now() - stepStart}ms`);
         } catch (seedErr) {
             console.warn('[API /api/worldrestart] Village seeding failed:', seedErr.message || seedErr);
         }
@@ -234,7 +235,7 @@ router.post('/worldrestart', async (req, res) => {
             const villages = await StateManager.getAllVillages();
             if (req.app.locals.io && villages.length > 0) {
                 req.app.locals.io.emit('villagesUpdated', villages);
-                console.log(`[API /api/worldrestart] Broadcasted ${villages.length} villages to clients`);
+                if (serverConfig.verboseLogs) console.log(`[API /api/worldrestart] Broadcasted ${villages.length} villages to clients`);
             }
         } catch (villageErr) {
             console.warn('[API /api/worldrestart] Village broadcast failed:', villageErr.message || villageErr);
@@ -263,7 +264,7 @@ router.post('/worldrestart', async (req, res) => {
                     calendarService.io.emit('calendarState', calendarState);
                     calendarService.io.emit('calendarDateSet', calendarState);
                 }
-                console.log('[API /api/worldrestart] Calendar reset to Year 4000');
+                if (serverConfig.verboseLogs) console.log('[API /api/worldrestart] Calendar reset to Year 4000');
             }
         } catch (calErr) {
             console.warn('[API /api/worldrestart] Calendar reset failed:', calErr.message || calErr);
@@ -272,7 +273,7 @@ router.post('/worldrestart', async (req, res) => {
         // Broadcast population update to all clients after restart
         try {
             await populationService.broadcastUpdate('populationReset');
-            console.log('[API /api/worldrestart] Population update broadcasted to clients');
+            if (serverConfig.verboseLogs) console.log('[API /api/worldrestart] Population update broadcasted to clients');
         } catch (broadcastErr) {
             console.warn('[API /api/worldrestart] Failed to broadcast population update:', broadcastErr.message || broadcastErr);
         }
@@ -284,7 +285,7 @@ router.post('/worldrestart', async (req, res) => {
         // Clear restarting flag and resume calendar if it was running
         PopulationState.isRestarting = false;
         if (wasRunning && req.app.locals.calendarService) {
-            console.log('▶️ Resuming calendar after world restart...');
+            if (serverConfig.verboseLogs) console.log('▶️ Resuming calendar after world restart...');
             req.app.locals.calendarService.start();
         }
 

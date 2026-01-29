@@ -44,7 +44,8 @@ class IdAllocator {
             poolInfo.next = parseInt(result.rows[0].first_id, 10);
             poolInfo.max = poolInfo.next + blockSize;
 
-            console.log(`🔢 Reserved ${blockSize} ${entityType} IDs: ${poolInfo.next} - ${poolInfo.max - 1}`);
+            const serverConfig = require('../config/server');
+            if (serverConfig.verboseLogs) console.log(`🔢 Reserved ${blockSize} ${entityType} IDs: ${poolInfo.next} - ${poolInfo.max - 1}`);
         } catch (err) {
             console.error(`Failed to reserve ${entityType} IDs:`, err.message);
             throw err;

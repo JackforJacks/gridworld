@@ -103,6 +103,13 @@ module.exports = {
         if (typeof adapter.del === 'function') return adapter.del(...keys);
         return Promise.resolve(0);
     },
+    flushdb: () => {
+        if (adapter && adapter.client && typeof adapter.client.flushdb === 'function') return adapter.client.flushdb();
+        if (typeof adapter.flushdb === 'function') return adapter.flushdb();
+        // For memory adapter, clear all data
+        if (adapter && typeof adapter.clear === 'function') return adapter.clear();
+        return Promise.resolve();
+    },
     scanStream: (opts) => adapter.scanStream(opts),
     scard: (k) => {
         if (adapter && adapter.client && typeof adapter.client.scard === 'function') return adapter.client.scard(k);
@@ -150,5 +157,91 @@ module.exports = {
         if (adapter && adapter.client && typeof adapter.client.incr === 'function') return adapter.client.incr(k);
         if (typeof adapter.incr === 'function') return adapter.incr(k);
         return Promise.resolve(0);
+    },
+
+    // Sorted-set helpers (zset) for requeueing / retry scheduling
+    zadd: (k, score, member) => {
+        if (adapter && adapter.client && typeof adapter.client.zadd === 'function') return adapter.client.zadd(k, score, member);
+        if (typeof adapter.zadd === 'function') return adapter.zadd(k, score, member);
+        return Promise.resolve(0);
+    },
+    zrangebyscore: (k, min, max) => {
+        if (adapter && adapter.client && typeof adapter.client.zrangebyscore === 'function') return adapter.client.zrangebyscore(k, min, max);
+        if (typeof adapter.zrangebyscore === 'function') return adapter.zrangebyscore(k, min, max);
+        return Promise.resolve([]);
+    },
+    zrem: (k, member) => {
+        if (adapter && adapter.client && typeof adapter.client.zrem === 'function') return adapter.client.zrem(k, member);
+        if (typeof adapter.zrem === 'function') return adapter.zrem(k, member);
+        return Promise.resolve(0);
+    }
+    ,
+    // Atomic enqueue for fertile family queue: ensures membership set + queue entry added only once
+    atomicEnqueueFertile: async (familyId, score) => {
+        const member = String(familyId);
+        const membersKey = 'fertile:members';
+        const queueKey = 'fertile:queue';
+        try {
+            const adapterInst = adapter;
+            if (adapterInst && adapterInst.client && typeof adapterInst.client.eval === 'function') {
+                // Lua: if not sismember then sadd + zadd and return 1 else return 0
+                const lua = `
+                    if redis.call('sismember', KEYS[1], ARGV[1]) == 0 then
+                        redis.call('sadd', KEYS[1], ARGV[1])
+                        redis.call('zadd', KEYS[2], ARGV[2], ARGV[1])
+                        return 1
+                    end
+                    return 0
+                `;
+                const res = await adapterInst.client.eval(lua, 2, membersKey, queueKey, member, String(score));
+                return Number(res);
+            } else {
+                // Fallback for memory adapter: check membership then add
+                const exists = (await (typeof adapter.smembers === 'function' ? adapter.smembers(membersKey) : [])) || [];
+                if (!exists.includes(member)) {
+                    if (typeof adapter.sadd === 'function') await adapter.sadd(membersKey, member);
+                    if (typeof adapter.zadd === 'function') await adapter.zadd(queueKey, score, member);
+                    return 1;
+                }
+                return 0;
+            }
+        } catch (e) {
+            console.warn('[storage] atomicEnqueueFertile failed:', e && e.message ? e.message : e);
+            return 0;
+        }
+    },
+
+    // Atomic pop one due fertile family (score <= now). Returns member or null.
+    atomicPopDueFertile: async (now) => {
+        const membersKey = 'fertile:members';
+        const queueKey = 'fertile:queue';
+        try {
+            const adapterInst = adapter;
+            if (adapterInst && adapterInst.client && typeof adapterInst.client.eval === 'function') {
+                // Lua: get one member with score <= now, remove from zset and set atomically and return it
+                const lua = `
+                    local items = redis.call('zrangebyscore', KEYS[2], '-inf', ARGV[1], 'LIMIT', 0, 1)
+                    if not items or #items == 0 then return nil end
+                    local m = items[1]
+                    redis.call('zrem', KEYS[2], m)
+                    redis.call('srem', KEYS[1], m)
+                    return m
+                `;
+                const res = await adapterInst.client.eval(lua, 2, membersKey, queueKey, String(now));
+                return res || null;
+            } else {
+                // Fallback: use zrangebyscore then zrem + srem
+                if (typeof adapter.zrangebyscore !== 'function') return null;
+                const items = await adapter.zrangebyscore(queueKey, '-inf', String(now));
+                if (!items || items.length === 0) return null;
+                const member = items[0];
+                try { if (typeof adapter.zrem === 'function') await adapter.zrem(queueKey, member); } catch(_){}
+                try { if (typeof adapter.srem === 'function') await adapter.srem(membersKey, member); } catch(_){}
+                return member;
+            }
+        } catch (e) {
+            console.warn('[storage] atomicPopDueFertile failed:', e && e.message ? e.message : e);
+            return null;
+        }
     }
 };

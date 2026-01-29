@@ -49,12 +49,12 @@ async function updateTilePopulation(pool, calendarService, serviceInstance, tile
  */
 async function resetAllPopulation(pool, serviceInstance) {
     try {
-        console.log('[resetAllPopulation] Attempting to truncate people and families tables...');
+        if (serverConfig.verboseLogs) console.log('[resetAllPopulation] Attempting to truncate people and families tables...');
         // Clear storage population data first
         await clearStoragePopulation();
         // Truncate people and family tables to clear all data and reset sequences.
         await pool.query('TRUNCATE TABLE family, people RESTART IDENTITY CASCADE');
-        console.log('[resetAllPopulation] Truncate successful. Broadcasting update...');
+        if (serverConfig.verboseLogs) console.log('[resetAllPopulation] Truncate successful. Broadcasting update...');
         await serviceInstance.broadcastUpdate('populationReset');
         const { formatPopulationData } = require('./dataOperations.js');
         return formatPopulationData({});
@@ -123,10 +123,10 @@ async function initializeTilePopulations(pool, calendarService, serviceInstance,
         }
 
         // Clear storage population data and Postgres tables
-        console.log('⏱️ [initPop] Clearing data...');
+        if (serverConfig.verboseLogs) console.log('⏱️ [initPop] Clearing data...');
         await clearStoragePopulation();
         await pool.query('TRUNCATE TABLE family, people RESTART IDENTITY CASCADE');
-        console.log(`⏱️ [initPop] Clear done in ${Date.now() - startTime}ms`);
+        if (serverConfig.verboseLogs) console.log(`⏱️ [initPop] Clear done in ${Date.now() - startTime}ms`);
 
         // Get current date from calendar service
         let currentDate;

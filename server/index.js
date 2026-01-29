@@ -106,17 +106,54 @@ class GridWorldServer {
             console.log('🔄 Services already initialized, skipping initialization...');
         }
 
-        // Load state from PostgreSQL into storage
+        // Load state from PostgreSQL into storage — prefer waiting for Redis adapter
         console.log('🔧 Initializing State Manager (storage)...');
         try {
             StateManager.setIo(this.io);
             StateManager.setCalendarService(calendarServiceInstance);
+
+            const storage = require('./services/storage');
+            const adapter = storage.getAdapter ? storage.getAdapter() : null;
+            let adapterName = 'unknown';
+            try {
+                if (adapter && adapter.constructor && adapter.constructor.name) adapterName = adapter.constructor.name;
+                else if (adapter && adapter.client && adapter.client.constructor && adapter.client.constructor.name) adapterName = adapter.client.constructor.name;
+            } catch (_) { }
+
+            // If current adapter appears to be an in-memory fallback, wait briefly for Redis to become ready
+            const waitForRedisMs = 15000; // wait up to 15s for Redis on startup
+            if (adapterName && adapterName.toLowerCase().includes('memory') && typeof storage.on === 'function') {
+                console.log('⚠️ Detected MemoryAdapter at startup — waiting for Redis ready (up to', waitForRedisMs, 'ms) before loading state');
+                const ready = await new Promise(resolve => {
+                    let resolved = false;
+                    const timer = setTimeout(() => {
+                        if (!resolved) {
+                            resolved = true;
+                            resolve(false);
+                        }
+                    }, waitForRedisMs);
+                    storage.on('ready', () => {
+                        if (!resolved) {
+                            resolved = true;
+                            clearTimeout(timer);
+                            resolve(true);
+                        }
+                    });
+                });
+
+                if (ready) {
+                    console.log('🔁 Redis became ready — loading authoritative state from Postgres into Redis');
+                } else {
+                    console.warn('⚠️ Redis did not become ready within timeout — proceeding to load state into current adapter');
+                }
+            }
+
+            // Perform the load (either immediately or after Redis ready)
             await StateManager.loadFromDatabase();
             console.log('🔴 State Manager initialized (storage mode)');
 
             // If storage reconnects later, re-sync automatically
             try {
-                const storage = require('./services/storage');
                 // Attach to storage events emitted when adapter becomes ready
                 if (typeof storage.on === 'function') {
                     storage.on('ready', async () => {
@@ -130,6 +167,22 @@ class GridWorldServer {
                 }
             } catch (e) {
                 console.warn('⚠️ Could not attach storage reconnect handler:', e.message);
+            }
+
+            // Periodic integrity monitor to auto-repair duplicate memberships if introduced at runtime
+            try {
+                const PopulationState = require('./services/populationState');
+                // Run every 30s while server is running
+                setInterval(async () => {
+                    try {
+                        const r = await PopulationState.repairIfNeeded();
+                        if (r && r.repaired) {
+                            console.log('✅ PeopleState repaired duplicate memberships at runtime:', r);
+                        }
+                    } catch (e) { /* ignore */ }
+                }, 30000);
+            } catch (e) {
+                console.warn('⚠️ Failed to setup periodic population integrity monitor:', e && e.message ? e.message : e);
             }
         } catch (err) {
             console.error('❌ Failed to initialize Redis state, falling back to PostgreSQL:', err.message);
