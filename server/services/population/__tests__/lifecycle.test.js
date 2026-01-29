@@ -28,7 +28,7 @@ jest.mock('../../populationState', () => ({
     removeFertileFamily: jest.fn(),
     addEligiblePerson: jest.fn(),
     removeEligiblePerson: jest.fn(),
-    getNextTempId: jest.fn().mockResolvedValue(-123),
+    getNextId: jest.fn().mockResolvedValue(123),
     getNextFamilyTempId: jest.fn().mockResolvedValue(-50),
     isRestarting: false
 }));
@@ -58,7 +58,7 @@ describe('Population lifecycle', () => {
         PopulationState.removeFertileFamily.mockResolvedValue(true);
         PopulationState.addEligiblePerson.mockResolvedValue(true);
         PopulationState.removeEligiblePerson.mockResolvedValue(true);
-        PopulationState.getNextTempId.mockResolvedValue(-123);
+        PopulationState.getNextId.mockResolvedValue(123);
         PopulationState.getNextFamilyTempId.mockResolvedValue(-50);
     });
 
@@ -95,7 +95,7 @@ describe('Population lifecycle', () => {
         const family = { id: -10, husband_id: 1, wife_id: 2, tile_id: 7, children_ids: [] };
         PopulationState.getFamily.mockResolvedValue(family);
         PopulationState.getPerson.mockResolvedValue({ id: 1, residency: 3 });
-        PopulationState.getNextTempId.mockResolvedValue(-999);
+        PopulationState.getNextId.mockResolvedValue(999);
         PopulationState.addPerson.mockResolvedValue(true);
         PopulationState.updateFamily.mockResolvedValue(true);
 
@@ -125,7 +125,7 @@ describe('Population lifecycle', () => {
         PopulationState.getFamily.mockResolvedValue(family);
         // Make deliverBaby operate normally by ensuring PopulationState functions it needs are present
         PopulationState.getPerson.mockResolvedValue({ id: 1, residency: 3 });
-        PopulationState.getNextTempId.mockResolvedValue(-501);
+        PopulationState.getNextId.mockResolvedValue(501);
         PopulationState.addPerson.mockResolvedValue(true);
         PopulationState.updateFamily.mockResolvedValue(true);
 

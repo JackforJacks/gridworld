@@ -23,7 +23,7 @@ const VillagePopulationState = require('../VillagePopulationState');
 
 describe('VillagePopulationState (memory adapter)', () => {
     test('next temp id and pending inserts', async () => {
-        const temp = await VillagePopulationState.getNextTempId();
+        const temp = await VillagePopulationState.getNextId();
         expect(typeof temp).toBe('number');
 
         const ok = await VillagePopulationState.markVillageAsNew(-1);

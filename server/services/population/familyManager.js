@@ -56,8 +56,8 @@ async function createFamily(pool, husbandId, wifeId, tileId) {
             throw new Error('Husband must be male and wife must be female');
         }
 
-        // Get a temporary family ID (negative to distinguish from Postgres IDs)
-        const familyId = await PopulationState.getNextFamilyTempId();
+        // Get a real Postgres ID for the new family (pre-allocated from sequence)
+        const familyId = await PopulationState.getNextFamilyId();
 
         // Create family record in Redis (will be batched to Postgres on Save)
         const family = {
@@ -290,7 +290,7 @@ async function deliverBaby(pool, calendarService, populationServiceInstance, fam
         }
 
         // Get a temporary ID for storage-only mode
-        const babyId = await PopulationState.getNextTempId();
+        const babyId = await PopulationState.getNextId();
 
         const personObj = {
             id: babyId,

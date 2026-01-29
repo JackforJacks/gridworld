@@ -38,7 +38,7 @@ class PopulationState {
     }
 
     // =========== PERSON OPERATIONS (delegates to PeopleState) ===========
-    static async getNextTempId() { return PeopleState.getNextTempId(); }
+    static async getNextId() { return PeopleState.getNextId(); }
     static async addPerson(person, isNew) { return PeopleState.addPerson(person, isNew); }
     static async removePerson(personId, markDeleted) { return PeopleState.removePerson(personId, markDeleted); }
     static async getPerson(personId) { return PeopleState.getPerson(personId); }
@@ -62,7 +62,7 @@ class PopulationState {
     static async repairIfNeeded() { return PeopleState.repairIfNeeded(); }
 
     // =========== FAMILY OPERATIONS (delegates to FamilyState) ===========
-    static async getNextFamilyTempId() { return FamilyState.getNextTempId(); }
+    static async getNextFamilyId() { return FamilyState.getNextId(); }
     static async addFamily(family, isNew) { return FamilyState.addFamily(family, isNew); }
     static async getFamily(familyId) { return FamilyState.getFamily(familyId); }
     static async updateFamily(familyId, updates) { return FamilyState.updateFamily(familyId, updates); }

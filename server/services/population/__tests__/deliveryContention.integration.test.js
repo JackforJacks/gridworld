@@ -42,7 +42,7 @@ test('concurrent deliverBaby: only one succeeds and contention is logged', async
     await storage.hset('family', String(family.id), JSON.stringify(family));
 
     // Ensure deterministic baby ID allocation
-    jest.spyOn(PopulationState, 'getNextTempId').mockResolvedValue(-555);
+    jest.spyOn(PopulationState, 'getNextId').mockResolvedValue(555);
 
     const fakeCalendar = { getCurrentDate: () => ({ year: 2026, month: 1, day: 28 }) };
 
@@ -62,7 +62,7 @@ test('concurrent deliverBaby: only one succeeds and contention is logged', async
     // Verify baby added to storage
     const persons = await storage.hgetall('person');
     const people = Object.values(persons).map(j => JSON.parse(j));
-    expect(people.find(p => p.id === -555)).toBeTruthy();
+    expect(people.find(p => p.id === 555)).toBeTruthy();
 
     // Verify family updated with one child
     const famJson = await storage.hget('family', String(family.id));

@@ -20,7 +20,7 @@ class PeopleState {
      * Get the next real Postgres ID for a new person
      * IDs are pre-allocated from Postgres sequences, so they're valid for direct insert later
      */
-    static async getNextTempId() {
+    static async getNextId() {
         return idAllocator.getNextPersonId();
     }
 

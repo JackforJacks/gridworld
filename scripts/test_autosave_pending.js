@@ -8,8 +8,8 @@
         console.log('Starting autosave pending test...');
 
         // Allocate test IDs
-        const personId = await PeopleState.getNextTempId();
-        const familyId = await FamilyState.getNextTempId();
+        const personId = await PeopleState.getNextId();
+        const familyId = await FamilyState.getNextId();
 
         console.log('Allocated ids -> person:', personId, 'family:', familyId);
 

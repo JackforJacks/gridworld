@@ -524,8 +524,8 @@ async function insertPendingFamilies(PopulationState) {
         console.log(`👨‍👩‍👧 Inserting ${pendingFamilyInserts.length} new families into PostgreSQL...`);
 
         for (const f of pendingFamilyInserts) {
-            let husbandId = f.husband_id > 0 ? f.husband_id : null;
-            let wifeId = f.wife_id > 0 ? f.wife_id : null;
+            let husbandId = f.husband_id;
+            let wifeId = f.wife_id;
 
             // Validate that referenced people exist in PostgreSQL
             if (husbandId) {

@@ -202,7 +202,7 @@ async function createInitialPopulation(tileId) {
         const age = getRandomAge();
         const birthDate = getRandomBirthDate(1, 1, 1, age); // Year 1, month 1, day 1
 
-        const tempId = await PopulationState.getNextTempId();
+        const tempId = await PopulationState.getNextId();
 
         const personObj = {
             id: tempId,

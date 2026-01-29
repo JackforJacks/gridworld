@@ -28,7 +28,7 @@ async function addPeopleToTile(pool, tileId, count, currentYear, currentMonth, c
         const birthDate = getRandomBirthDate(currentYear, currentMonth, currentDay, age);
 
         // Get a temporary ID for storage-only mode
-        const tempId = await PopulationState.getNextTempId();
+        const tempId = await PopulationState.getNextId();
 
         const personObj = {
             id: tempId,

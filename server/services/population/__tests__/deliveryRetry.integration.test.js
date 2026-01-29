@@ -74,7 +74,7 @@ test('processDeliveries requeues on lock failure and succeeds on retry', async (
     lock.acquireLock.mockResolvedValue('token');
 
     // Ensure deterministic baby ID
-    jest.spyOn(PopulationState, 'getNextTempId').mockResolvedValue(-333);
+    jest.spyOn(PopulationState, 'getNextId').mockResolvedValue(333);
 
     const delivered2 = await familyManager.processDeliveries(null, fakeCalendar, null, 1);
     expect(delivered2).toBe(1);
@@ -86,5 +86,5 @@ test('processDeliveries requeues on lock failure and succeeds on retry', async (
     // verify child added
     const persons = await storage.hgetall('person');
     const people = Object.values(persons).map(j => JSON.parse(j));
-    expect(people.find(p => p.id === -333)).toBeTruthy();
+    expect(people.find(p => p.id === 333)).toBeTruthy();
 });

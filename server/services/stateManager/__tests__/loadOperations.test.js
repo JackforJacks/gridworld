@@ -36,13 +36,13 @@ jest.mock('../../storage', () => ({
 jest.mock('../../populationState', () => ({
     PeopleState: {
         addPerson: jest.fn(),
-        getNextTempId: jest.fn(),
+        getNextId: jest.fn(),
         reassignIds: jest.fn(),
         clearPendingOperations: jest.fn()
     },
     FamilyState: {
         addFamily: jest.fn(),
-        getNextTempId: jest.fn(),
+        getNextId: jest.fn(),
         reassignIds: jest.fn(),
         clearPendingFamilyOperations: jest.fn()
     },

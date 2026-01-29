@@ -152,19 +152,23 @@ describe('saveOperations helpers', () => {
             expect(result.familiesInserted).toBe(1);
         });
 
-        test('handles negative IDs correctly (new people)', async () => {
+        test('handles non-existent people correctly', async () => {
             const mockPopulationState = {
                 getPendingFamilyInserts: jest.fn().mockResolvedValue([
-                    { id: -1, husband_id: -5, wife_id: -10, tile_id: 10, pregnancy: false, delivery_date: null, children_ids: [] }
+                    { id: 1001, husband_id: 2001, wife_id: 2002, tile_id: 10, pregnancy: false, delivery_date: null, children_ids: [] }
                 ]),
                 reassignFamilyIds: jest.fn()
             };
 
-            pool.query.mockResolvedValueOnce({ rows: [{ id: 300 }] });
+            // Mock person existence checks - people don't exist
+            pool.query
+                .mockResolvedValueOnce({ rows: [] }) // husband check
+                .mockResolvedValueOnce({ rows: [] }) // wife check
+                .mockResolvedValueOnce({ rows: [{ id: 300 }] }); // family insert
 
             const result = await saveOps.insertPendingFamilies(mockPopulationState);
 
-            // Negative IDs should be set to null without existence checks
+            // Non-existent people should be set to null
             expect(pool.query).toHaveBeenCalledWith(
                 `
                 INSERT INTO family (husband_id, wife_id, tile_id, pregnancy, delivery_date, children_ids)

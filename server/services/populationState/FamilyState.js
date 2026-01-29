@@ -16,7 +16,7 @@ class FamilyState {
      * Get the next real Postgres ID for a new family
      * IDs are pre-allocated from Postgres sequences, so they're valid for direct insert later
      */
-    static async getNextTempId() {
+    static async getNextId() {
         return idAllocator.getNextFamilyId();
     }
 

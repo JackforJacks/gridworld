@@ -7,21 +7,17 @@
  */
 
 const storage = require('../storage');
+const idAllocator = require('../idAllocator');
 
 class VillagePopulationState {
     static nextVillageTempId = -1;
 
     /**
-     * Get a new temporary ID for a village created in storage-only mode
+     * Get the next real Postgres ID for a new village
+     * IDs are pre-allocated from Postgres sequences, so they're valid for direct insert later
      */
-    static async getNextTempId() {
-        if (!storage.isAvailable()) return this.nextVillageTempId--;
-        try {
-            const id = await storage.hincrby('counts:global', 'nextVillageTempId', -1);
-            return id;
-        } catch (err) {
-            return this.nextVillageTempId--;
-        }
+    static async getNextId() {
+        return idAllocator.getNextVillageId();
     }
 
     /**
