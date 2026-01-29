@@ -419,7 +419,28 @@ class TileSelector {
             // Fetch fresh village data for this tile
             const response = await fetch(`/api/villages/tile/${tile.id}`);
             const data = await response.json();
-            const villages = data.villages || [];
+            let villages = data.villages || [];
+
+            // Fallback: if API returns no villages but client-side tile lands contain village info
+            // (common when running redis-only without saving to Postgres), build village objects
+            // from the tile's lands so the info panel still shows villages.
+            if ((!villages || villages.length === 0) && Array.isArray(tile.lands)) {
+                const landsWithVillage = tile.lands.filter(l => l && (l.village_id || l.village_name));
+                if (landsWithVillage.length > 0) {
+                    villages = landsWithVillage.map(l => ({
+                        id: l.village_id || null,
+                        tile_id: tile.id,
+                        land_chunk_index: l.chunk_index,
+                        village_name: l.village_name || l.village_name || ('Village ' + (l.village_id || '')),
+                        food_stores: l.food_stores || 0,
+                        food_capacity: l.food_capacity || 1000,
+                        food_production_rate: l.food_production_rate || 0,
+                        housing_slots: l.housing_slots || [],
+                        housing_capacity: l.housing_capacity || 1000,
+                        occupied_slots: Array.isArray(l.housing_slots) ? l.housing_slots.length : (l.occupied_slots || 0)
+                    }));
+                }
+            }
 
             const villagesCount = villages.length;
             const clearedCount = Array.isArray(tile.lands) ? tile.lands.filter(l => l.cleared).length : 0;
@@ -433,14 +454,12 @@ class TileSelector {
             }, 0);
             const availableSlots = Math.max(0, capacityTotal - occupiedSlotsTotal);
             const totalFoodProduction = villages.reduce((sum, v) => sum + (v.food_production_rate || 0), 0).toFixed(1);
-            // Sum fractional food stores (don't floor) and show with two decimals
-            const totalFoodStockpile = villages.reduce((sum, v) => sum + Number(v.food_stores || 0), 0).toFixed(2);
+            const totalFoodStockpile = villages.reduce((sum, v) => sum + (v.food_stores || 0), 0).toFixed(0);
             const totalFoodCapacity = villages.reduce((sum, v) => sum + (v.food_capacity || 1000), 0);
             const villageListHtml = villagesCount > 0 ? (`<ul class="village-list">` + villages.map(v => {
                 const occ = Array.isArray(v.housing_slots) ? v.housing_slots.length : (v.occupied_slots || 0);
                 const cap = v.housing_capacity || 100;
-                // Show fractional food stores with two decimals
-                const foodStores = Number(v.food_stores || 0).toFixed(2);
+                const foodStores = (v.food_stores || 0).toFixed(0);
                 const foodCapacity = v.food_capacity || 1000;
                 const foodProduction = (v.food_production_rate || 0).toFixed(1);
                 return `\n                        <li>

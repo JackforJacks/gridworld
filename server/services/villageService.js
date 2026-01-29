@@ -30,16 +30,30 @@ class VillageService {
 
         calendarService.on('tick', async (tickData) => {
             try {
-                // Update food on each calendar tick
-                if (this.useRedis && storage.isAvailable() && StateManager.isInitialized()) {
+                // Update food on each calendar tick using Redis only.
+                // If Redis isn't available, skip updates rather than falling back to Postgres.
+                if (storage.isAvailable()) {
                     await this.updateAllVillageFoodStoresRedis();
                 } else {
-                    await this.updateAllVillageFoodStores();
+                    console.warn('[villageService] Redis not available - skipping food update (Redis-only mode)');
                 }
             } catch (error) {
                 console.error('Error in tick-based food update:', error);
             }
         });
+
+        // If the calendar is not running (e.g., autoStart disabled), start a fallback timer
+        // so food production still updates in environments where calendar ticks aren't active.
+        try {
+            if (!calendarService.state || !calendarService.state.isRunning) {
+                if (process.env.NODE_ENV !== 'test') {
+                    if (serverConfig.verboseLogs) console.log('🍖 Calendar not running — starting fallback food update timer');
+                    this.startFoodUpdateTimer(this.calendarService && this.calendarService.internalConfig ? this.calendarService.internalConfig.realTimeTickMs : 1000);
+                }
+            }
+        } catch (e) {
+            console.warn('[villageService] Failed to start fallback food timer:', e && e.message ? e.message : e);
+        }
     }
 
     /**
@@ -57,11 +71,11 @@ class VillageService {
 
         this.foodUpdateTimer = setInterval(async () => {
             try {
-                // Check storage availability each tick in case it reconnects
-                if (this.useRedis && storage.isAvailable() && StateManager.isInitialized()) {
+                // Redis-only mode: update via Redis if available, otherwise skip.
+                if (storage.isAvailable()) {
                     await this.updateAllVillageFoodStoresRedis();
                 } else {
-                    await this.updateAllVillageFoodStores();
+                    if (serverConfig.verboseLogs) console.warn('🍖 Redis unavailable - skipping food update (Redis-only mode)');
                 }
             } catch (error) {
                 console.error('Error in food update timer:', error);
@@ -87,7 +101,7 @@ class VillageService {
      */
     static calculateFoodCapacity(housingCapacity) {
         // Food capacity scales with housing capacity but is capped at 1000
-        return Math.min(1000, housingCapacity);
+        return Math.min(1000, housingCapacity * 100);
     }
 
     /**
@@ -95,13 +109,13 @@ class VillageService {
      * @param {number} fertility - Tile fertility (0-100)
      * @param {number} clearedChunks - Number of cleared land chunks
      * @param {number} population - Village population
-     * @returns {number} Food production rate in food per second
+     * @returns {number} Food production rate per second (float)
      */
     static calculateFoodProduction(fertility, clearedChunks, population) {
         // Base production: fertility factor * cleared land * population efficiency
-        // Scale down by factor of 100 for slower production rates
+        // Scaled down by factor of 100 for slower production rates
         const baseRate = (fertility / 100) * clearedChunks * Math.sqrt(population + 1);
-        return Math.max(0, baseRate * 0.1); // Ensure non-negative and scale down
+        return Math.max(0, baseRate * 0.1);
     }
 
     /**
@@ -224,10 +238,11 @@ class VillageService {
             const secondsElapsed = (now - lastUpdate) / 1000;
 
             // Calculate food produced since last update
-            const foodProduced = village.food_production_rate * secondsElapsed;
+            const timeDelta = now - lastUpdate; // milliseconds
+            const foodProduced = (village.food_production_rate * timeDelta) / 1000;
 
             // Update food stores and timestamp (capped at food capacity)
-            const foodCapacity = village.food_capacity || 1000;
+            const foodCapacity = village.food_capacity || 100000;
             const newFoodStores = Math.min(foodCapacity, Math.max(0, village.food_stores + foodProduced));
 
             if (serverConfig.verboseLogs) console.log(`Village ${villageId}: rate=${village.food_production_rate}, elapsed=${secondsElapsed}s, produced=${foodProduced}, old=${village.food_stores}, new=${newFoodStores}`);
@@ -298,19 +313,22 @@ class VillageService {
                          WHERE tl.tile_id = v.tile_id 
                          AND tl.chunk_index = v.land_chunk_index 
                          AND tl.cleared = true) as cleared_cnt,
+                        -- Fallback to counting people by tile_id so villages still
+                        -- produce food even if individual residency hasn't been
+                        -- assigned to the land_chunk_index yet (e.g., after a
+                        -- storage-first seed where residency may be pending).
                         (SELECT COUNT(*) FROM people p 
-                         WHERE p.tile_id = v.tile_id 
-                         AND p.residency = v.land_chunk_index) as pop_cnt
+                         WHERE p.tile_id = v.tile_id) as pop_cnt
                     FROM villages v
                     LEFT JOIN tiles t ON v.tile_id = t.id
                 )
                 UPDATE villages v
                 SET 
-                    food_production_rate = GREATEST(0, 
+                    food_production_rate = GREATEST(0, FLOOR(
                         (vs.fertility / 100.0) * 
                         vs.cleared_cnt * 
-                        SQRT(vs.pop_cnt + 1) * 0.1
-                    ),
+                        SQRT(vs.pop_cnt + 1) * 10
+                    )),
                     updated_at = CURRENT_TIMESTAMP
                 FROM village_stats vs
                 WHERE v.id = vs.village_id
@@ -334,7 +352,7 @@ class VillageService {
             const { rows: updatedVillages } = await pool.query(`
                 UPDATE villages
                 SET 
-                    food_capacity = LEAST(1000, COALESCE(housing_capacity, 1000)),
+                    food_capacity = LEAST(1000, COALESCE(housing_capacity, 1000) * 100),
                     updated_at = CURRENT_TIMESTAMP
                 RETURNING *
             `);
@@ -363,9 +381,9 @@ class VillageService {
                     food_stores = LEAST(
                         COALESCE(food_capacity, 1000),
                         GREATEST(0, 
-                            COALESCE(food_stores, 0) + 
+                            FLOOR(COALESCE(food_stores, 0) + 
                             COALESCE(food_production_rate, 0) * 
-                            EXTRACT(EPOCH FROM (NOW() - COALESCE(last_food_update, NOW())))
+                            EXTRACT(EPOCH FROM (NOW() - COALESCE(last_food_update, NOW()))))
                         )
                     ),
                     last_food_update = CURRENT_TIMESTAMP,
@@ -406,21 +424,37 @@ class VillageService {
 
             for (const village of villages) {
                 // Get fertility from Redis
-                const fertility = await StateManager.getTileFertility(village.tile_id);
+                let fertility = await StateManager.getTileFertility(village.tile_id);
+                fertility = parseInt(fertility) || 0;
 
                 // Get cleared land count from Redis
-                const clearedCnt = await StateManager.getVillageClearedLand(village.id);
+                let clearedCnt = await StateManager.getVillageClearedLand(village.id);
+                clearedCnt = parseInt(clearedCnt) || 0;
 
                 // Get population count from Redis index
-                const population = await StateManager.getVillagePopulation(village.tile_id, village.land_chunk_index);
+                let population = await StateManager.getVillagePopulation(village.tile_id, village.land_chunk_index);
+                population = parseInt(population) || 0;
+
+                // Fallback: if no indexed residency population exists, count people by tile
+                // (handles cases where `person.residency` wasn't set during storage-first seeding)
+                if (population === 0) {
+                    try {
+                        const people = await StateManager.getAllPeople();
+                        population = people.filter(p => parseInt(p.tile_id) === parseInt(village.tile_id)).length;
+                        if (serverConfig.verboseLogs) console.log(`[villageService] Fallback population count for village ${village.id} (tile ${village.tile_id}) => ${population}`);
+                    } catch (e) {
+                        if (serverConfig.verboseLogs) console.warn('[villageService] Failed to compute fallback population:', e && e.message ? e.message : e);
+                    }
+                }
 
                 // Calculate production rate
                 const productionRate = this.calculateFoodProduction(fertility, clearedCnt, population);
 
                 // Update food stores (add 1 second of production)
+                const currentStores = parseFloat(village.food_stores) || 0;
                 const newFoodStores = Math.min(
-                    village.food_capacity || 1000,
-                    Math.max(0, (village.food_stores || 0) + productionRate)
+                    village.food_capacity || 100000,
+                    Math.max(0, currentStores + productionRate)
                 );
 
                 // Update in Redis

@@ -28,14 +28,46 @@ async function seedVillagesStorageFirst() {
 
         // Get population counts per tile from Redis
         const tilePopulations = await PopulationState.getAllTilePopulations();
-        const populatedTileIds = Object.keys(tilePopulations).filter(id => tilePopulations[id] > 0);
+        let populatedTileIds = Object.keys(tilePopulations).filter(id => tilePopulations[id] > 0);
 
+        // If no per-village sets found, try a best-effort fallback: group people by tile_id
         if (populatedTileIds.length === 0) {
-            if (require('../../config/server').verboseLogs) console.log('[villageSeeder] No populated tiles in storage');
-            return { created: 0, villages: [] };
+            if (require('../../config/server').verboseLogs) console.log('[villageSeeder] No populated tiles found via sets; falling back to grouping people by tile_id');
+            let allPeople = await PopulationState.getAllPeople();
+            const byTile = {};
+            if (!allPeople || allPeople.length === 0) {
+                // Last-resort: read raw person hash directly from storage
+                try {
+                    const peopleRaw = await storage.hgetall('person') || {};
+                    allPeople = Object.values(peopleRaw).map(j => {
+                        try { return JSON.parse(j); } catch (_) { return null; }
+                    }).filter(Boolean);
+                } catch (e) {
+                    allPeople = [];
+                }
+            }
+            for (const p of allPeople) {
+                if (!p || p.tile_id === undefined || p.tile_id === null) continue;
+                const tid = String(p.tile_id);
+                byTile[tid] = (byTile[tid] || 0) + 1;
+            }
+            populatedTileIds = Object.keys(byTile).filter(id => byTile[id] > 0);
+            // Ensure tilePopulations reflects the fallback counts so downstream
+            // logic can compute desired villages per tile.
+            tilePopulations = byTile;
+            if (populatedTileIds.length === 0) {
+                if (require('../../config/server').verboseLogs) console.log('[villageSeeder] Fallback grouping found no populated tiles either');
+                return { created: 0, villages: [] };
+            }
         }
 
         if (require('../../config/server').verboseLogs) console.log(`[villageSeeder] Found ${populatedTileIds.length} populated tiles in storage`);
+
+        // Set tile fertility in storage
+        const { rows: tileRows } = await pool.query('SELECT id, fertility FROM tiles WHERE id = ANY($1)', [populatedTileIds.map(id => parseInt(id))]);
+        for (const row of tileRows) {
+            await storage.hset('tile:fertility', row.id.toString(), row.fertility.toString());
+        }
 
         // Clear existing villages in storage
         await storage.del('village');
@@ -87,7 +119,7 @@ async function seedVillagesStorageFirst() {
                     name: `Village ${tileId}-${chunkIndex}`,
                     housing_slots: [],
                     housing_capacity: housingCapacity,
-                    food_stores: 100,
+                    food_stores: 200,
                     food_capacity: 1000,
                     food_production_rate: 0.5
                 };
@@ -99,6 +131,8 @@ async function seedVillagesStorageFirst() {
         const pipeline = storage.pipeline();
         for (const village of allVillages) {
             pipeline.hset('village', village.id.toString(), JSON.stringify(village));
+            // Set initial cleared land for the village (1 chunk, since built on cleared land)
+            pipeline.hset('village:cleared', village.id.toString(), '1');
         }
         // Track for pending inserts to Postgres
         for (const village of allVillages) {

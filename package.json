@@ -29,8 +29,7 @@
     "test:coverage": "jest --coverage --runInBand --testPathIgnorePatterns=integration",
     "test:watch": "jest --watch",
     "test:unit:watch": "jest --watch --testPathIgnorePatterns=integration",
-    "test:file": "jest --runInBand",
-    "prefull-auto": "npm run test:unit"
+    "test:file": "jest --runInBand"
   },
   "jest": {
     "collectCoverage": false,

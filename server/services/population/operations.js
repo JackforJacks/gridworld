@@ -147,7 +147,7 @@ async function initializeTilePopulations(pool, calendarService, serviceInstance,
             ? tileIds.filter(id => habitableFromDb.includes(id))
             : habitableFromDb;
 
-        // Select only up to 5 random tiles for initialization (faster restart)
+        // Select up to 5 random tiles for initialization (faster restart, multi-tile seeding)
         const shuffled = candidateTiles.sort(() => 0.5 - Math.random());
         const selectedTiles = shuffled.slice(0, 5);
         if (serverConfig.verboseLogs) console.log(`[PopulationOperations] Selected ${selectedTiles.length} random tiles for initialization:`, selectedTiles);

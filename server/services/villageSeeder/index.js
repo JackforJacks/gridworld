@@ -80,8 +80,10 @@ async function createInitialWorld() {
         await createInitialTiles();
     }
 
-    // Fallback initial population generation is disabled.
-    // No people will be generated here. Only tiles are created if needed.
+    // Create initial population on each tile
+    for (const tile of initialTiles) {
+        await createInitialPopulation(tile.id);
+    }
 }
 
 /**
@@ -121,8 +123,33 @@ async function createInitialTiles() {
  * Create initial population on a tile
  */
 async function createInitialPopulation(tileId) {
-    // Fallback initial population generation is disabled.
-    // This function is now a no-op.
+    const PopulationState = require('../populationState');
+    const { getRandomSex, getRandomAge, getRandomBirthDate } = require('../population/calculator.js');
+    
+    // Add 100-200 people per tile
+    const peopleCount = 100 + Math.floor(Math.random() * 100);
+    
+    for (let i = 0; i < peopleCount; i++) {
+        const sex = getRandomSex();
+        const age = getRandomAge();
+        const birthDate = getRandomBirthDate(1, 1, 1, age); // Year 1, month 1, day 1
+        
+        const tempId = await PopulationState.getNextTempId();
+        
+        const personObj = {
+            id: tempId,
+            tile_id: tileId,
+            residency: null,
+            sex: sex,
+            date_of_birth: birthDate,
+            health: 100,
+            family_id: null
+        };
+        
+        await PopulationState.addPerson(personObj, true);
+    }
+    
+    console.log(`[villageSeeder] Created ${peopleCount} people on tile ${tileId}`);
 }
 
 module.exports = {

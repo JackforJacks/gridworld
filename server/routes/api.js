@@ -73,7 +73,7 @@ router.get('/state', async (req, res) => {
             initialized: StateManager.isInitialized(),
             villages: villages.length,
             people: people.length,
-            totalFoodStores: villages.reduce((sum, v) => sum + (v.food_stores || 0), 0).toFixed(2)
+            totalFoodStores: villages.reduce((sum, v) => sum + (v.food_stores || 0), 0).toFixed(0)
         });
     } catch (error) {
         console.error('Error getting state:', error);

@@ -163,7 +163,7 @@ async function insertPendingVillages(villageData, PopulationState) {
                     INSERT INTO villages (tile_id, land_chunk_index, name, housing_slots, housing_capacity, food_stores, food_capacity, food_production_rate)
                     VALUES ($1,$2,$3,$4,$5,$6,$7,$8)
                     RETURNING id
-                `, [v.tile_id, v.land_chunk_index, v.name, JSON.stringify(v.housing_slots || []), v.housing_capacity || 1000, v.food_stores || 0, v.food_capacity || 1000, v.food_production_rate || 0.5]);
+                `, [v.tile_id, v.land_chunk_index, v.name, JSON.stringify(v.housing_slots || []), v.housing_capacity || 1000, (v.food_stores || 0), v.food_capacity || 1000, (v.food_production_rate || 0)]);
 
                 const newId = insertResult.rows[0].id;
                 villageIdMappings.push({ tempId: parseInt(tempId, 10), newId });

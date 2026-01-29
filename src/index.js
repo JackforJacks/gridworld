@@ -222,11 +222,22 @@ class GridWorldApp {
                         const land = tile.lands.find(l => l.chunk_index === village.land_chunk_index);
                         if (land) {
                             land.village_id = village.id;
-                            land.village_name = village.name || land.village_name;
+                            land.village_name = village.name || village.village_name || land.village_name;
                             land.food_stores = village.food_stores;
                             land.food_capacity = village.food_capacity;
                             land.food_production_rate = village.food_production_rate;
                             land.housing_capacity = village.housing_capacity;
+
+                            // Propagate housing slot array and occupied count so client-side
+                            // fallback (tile.lands -> villages) shows correct occupancy
+                            if (Array.isArray(village.housing_slots)) {
+                                land.housing_slots = village.housing_slots;
+                                land.occupied_slots = village.housing_slots.length;
+                            } else if (typeof village.occupied_slots !== 'undefined') {
+                                land.occupied_slots = village.occupied_slots;
+                                // keep existing housing_slots if present, else empty array
+                                land.housing_slots = land.housing_slots || [];
+                            }
                         }
 
                         // If the info panel for this tile is open, refresh it immediately

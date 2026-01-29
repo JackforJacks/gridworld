@@ -133,9 +133,9 @@ async function loadVillages(pipeline) {
             tile_id: v.tile_id,
             land_chunk_index: v.land_chunk_index,
             name: v.name,
-            food_stores: parseFloat(v.food_stores) || 0,
+            food_stores: (parseFloat(v.food_stores) || 0),
             food_capacity: parseInt(v.food_capacity) || 1000,
-            food_production_rate: parseFloat(v.food_production_rate) || 0,
+            food_production_rate: (parseFloat(v.food_production_rate) || 0),
             housing_capacity: parseInt(v.housing_capacity) || 100,
         }));
     }
