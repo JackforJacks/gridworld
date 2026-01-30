@@ -3,6 +3,7 @@ const router = express.Router();
 const pool = require('../config/database');
 const villageSeeder = require('../services/villageSeeder');
 const StateManager = require('../services/stateManager');
+const { logError, ErrorSeverity } = require('../utils/errorHandler');
 const storage = require('../services/storage');
 
 async function getVillagesFromRedis(filterTileId = null) {
@@ -17,7 +18,8 @@ async function getVillagesFromRedis(filterTileId = null) {
     try {
         tileData = await storage.hgetall('tile') || {};
         landsData = await storage.hgetall('tile:lands') || {};
-    } catch (_) {
+    } catch (err) {
+        logError(err, 'VillagesRoute:FetchTileData', ErrorSeverity.MEDIUM);
         // best-effort; continue with raw villages
     }
 

@@ -46,7 +46,7 @@ Point.prototype.midpoint = function (point, location) {
 
 
 Point.prototype.project = function (radius, percent) {
-    if (percent == undefined) {
+    if (percent === undefined) {
         percent = 1.0;
     }
 

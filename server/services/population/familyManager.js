@@ -1,4 +1,5 @@
 // Family Management - Handles family creation, pregnancy, and child management
+const { logError, ErrorSeverity, safeExecute } = require('../../utils/errorHandler');
 const { calculateAge } = require('./calculator.js');
 const storage = require('../storage');
 const serverConfig = require('../../config/server.js');
@@ -30,7 +31,12 @@ async function createFamily(pool, husbandId, wifeId, tileId) {
         // Acquire a lock for this couple to avoid duplicate family creation
         lockToken = await acquireLock(lockKey, 3000, 1500, 40);
         if (!lockToken) {
-            try { await storage.incr('stats:matchmaking:contention'); } catch (_) { }
+            await safeExecute(
+                () => storage.incr('stats:matchmaking:contention'),
+                'FamilyManager:MatchmakingContention',
+                null,
+                ErrorSeverity.LOW
+            );
             console.warn(`[createFamily] Could not acquire couple lock for ${husbandId} & ${wifeId} - skipping`);
             return null;
         }
@@ -110,7 +116,12 @@ async function startPregnancy(pool, calendarService, familyId) {
 
     try {
         // Record an attempt
-        try { await storage.incr('stats:pregnancy:attempts'); } catch (_) { }
+        await safeExecute(
+            () => storage.incr('stats:pregnancy:attempts'),
+            'FamilyManager:PregnancyAttempts',
+            null,
+            ErrorSeverity.LOW
+        );
 
         // Skip if restart is in progress
         if (PopulationState.isRestarting) {
@@ -121,7 +132,12 @@ async function startPregnancy(pool, calendarService, familyId) {
         // Increased TTL/timeout/retry to reduce spurious contention under load
         lockToken = await acquireLock(lockKey, 10000, 5000, 100);
         if (!lockToken) {
-            try { await storage.incr('stats:pregnancy:contention'); } catch (_) { }
+            await safeExecute(
+                () => storage.incr('stats:pregnancy:contention'),
+                'FamilyManager:PregnancyContention',
+                null,
+                ErrorSeverity.LOW
+            );
             // Attempt to inspect current lock holder (if using Redis) to aid debugging
             try {
                 const adapter = storage.getAdapter ? storage.getAdapter() : storage;
@@ -205,7 +221,12 @@ async function startPregnancy(pool, calendarService, familyId) {
         });
 
         // Remove family from fertile set so it is not considered for concurrent pregnancies
-        try { await PopulationState.removeFertileFamily(familyId); } catch (_) { }
+        await safeExecute(
+            () => PopulationState.removeFertileFamily(familyId),
+            'FamilyManager:RemoveFertileFamily',
+            null,
+            ErrorSeverity.MEDIUM
+        );
 
         // Return updated family
         return { ...family, pregnancy: true, delivery_date: deliveryDate };
@@ -245,7 +266,12 @@ async function deliverBaby(pool, calendarService, populationServiceInstance, fam
         const lockRetryDelay = serverConfig.deliveryLockRetryDelayMs ?? 0;
         lockToken = await acquireLock(lockKey, lockTtl, lockTimeout, lockRetryDelay);
         if (!lockToken) {
-            try { await storage.incr('stats:deliveries:contention'); } catch (_) { }
+            await safeExecute(
+                () => storage.incr('stats:deliveries:contention'),
+                'FamilyManager:DeliveryContention',
+                null,
+                ErrorSeverity.LOW
+            );
             try {
                 const adapter = storage.getAdapter ? storage.getAdapter() : storage;
                 const holder = adapter && adapter.client && typeof adapter.client.get === 'function' ? await adapter.client.get(lockKey) : null;
@@ -316,7 +342,12 @@ async function deliverBaby(pool, calendarService, populationServiceInstance, fam
         }
 
         // Record delivery metric
-        try { await storage.incr('stats:deliveries:count'); } catch (_) { }
+        await safeExecute(
+            () => storage.incr('stats:deliveries:count'),
+            'FamilyManager:DeliveriesCount',
+            null,
+            ErrorSeverity.LOW
+        );
 
         return {
             baby: { id: babyId, sex: babySex, birthDate },

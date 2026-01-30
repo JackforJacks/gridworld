@@ -3,6 +3,7 @@ const { applySenescence } = require('./lifecycle.js');
 const { startRateTracking } = require('./PopStats.js');
 const config = require('../../config/server.js'); // Added for autoSaveInterval
 const deps = require('./dependencyContainer');
+const { logError, ErrorSeverity, safeExecuteSync } = require('../../utils/errorHandler');
 
 // Function to ensure the 'people' table and its indexes exist
 async function ensureTableExists(pool) {
@@ -149,7 +150,12 @@ function startAutoSave(serviceInstance) {
             // Try to resume calendar even on error
             const calendarService = serviceInstance.calendarService;
             if (calendarService?.state?.isRunning === false && calendarService) {
-                try { calendarService.start(); } catch (_) { }
+                await safeExecuteSync(
+                    () => calendarService.start(),
+                    'Initializer:ResumeCalendarAfterError',
+                    null,
+                    ErrorSeverity.MEDIUM
+                );
             }
         }
     }, config.autoSaveInterval); // Use config for interval
@@ -241,7 +247,12 @@ function startIntegrityAudit(serviceInstance) {
             const repair = config.integrityRepairOnSchedule || false;
             if (serviceInstance.io) serviceInstance.io.emit('integrityAuditStart', { repair });
             // Instrument audit metrics
-            let metrics; try { metrics = require('../metrics'); } catch (_) { metrics = null; }
+            let metrics = safeExecuteSync(
+                () => require('../metrics'),
+                'Initializer:LoadMetrics',
+                null,
+                ErrorSeverity.LOW
+            );
             const start = Date.now();
             if (metrics && metrics.auditRunCounter) metrics.auditRunCounter.inc({ source: 'scheduled', repair: repair ? 'true' : 'false' });
             const res = await verifyAndRepairIntegrity(pool, null, {}, { repair });

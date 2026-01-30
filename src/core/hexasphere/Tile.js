@@ -47,7 +47,7 @@ function normalizeVector(v) {
 
 const Tile = function (centerPoint, hexSize) {
 
-    if (hexSize == undefined) {
+    if (hexSize === undefined) {
         hexSize = 1;
     }
 

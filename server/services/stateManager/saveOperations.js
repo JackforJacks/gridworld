@@ -34,6 +34,7 @@ async function saveToDatabase(context) {
         const allFamilyData = await storage.hgetall('family') || {};
 
         // --- STEP: Remove empty villages (no residents) from allVillageData ---
+        const { logError, ErrorSeverity } = require('../../utils/errorHandler');
         const villageHasResidents = {};
         for (const [personId, personJson] of Object.entries(allPeopleData)) {
             try {
@@ -41,7 +42,9 @@ async function saveToDatabase(context) {
                 if (person.village_id) {
                     villageHasResidents[person.village_id] = true;
                 }
-            } catch (_) { }
+            } catch (err) {
+                logError(err, `SaveOperations:ParsePerson:${personId}`, ErrorSeverity.LOW);
+            }
         }
         // Filter out villages with no residents
         const filteredVillageData = {};
@@ -89,7 +92,9 @@ async function saveToDatabase(context) {
                     try {
                         const person = JSON.parse(personJson);
                         if (person.village_id) newVillageHasResidents[person.village_id] = true;
-                    } catch (_) { }
+                    } catch (err) {
+                        logError(err, `SaveOperations:RefilterPerson:${personId}`, ErrorSeverity.LOW);
+                    }
                 }
 
                 // Clear and refill filtered set
@@ -224,7 +229,9 @@ async function saveToDatabase(context) {
                 try {
                     const v = JSON.parse(json);
                     await client.query(`UPDATE tiles_lands SET village_id = $1 WHERE tile_id = $2 AND chunk_index = $3`, [v.id, v.tile_id, v.land_chunk_index]);
-                } catch (_) { /* non-fatal */ }
+                } catch (err) {
+                    logError(err, `SaveOperations:UpdateTileLandVillageRef:${id}`, ErrorSeverity.MEDIUM);
+                }
             }
         }
 
@@ -323,7 +330,11 @@ async function saveToDatabase(context) {
         // Clear all pending operation sets since we just saved everything
         await PopulationState.clearPendingOperations();
         await PopulationState.clearPendingFamilyOperations();
-        try { await storage.del('pending:village:inserts'); } catch (_) { }
+        try { 
+            await storage.del('pending:village:inserts'); 
+        } catch (err) { 
+            logError(err, 'SaveOperations:ClearPendingVillageInserts', ErrorSeverity.LOW);
+        }
 
         const elapsed = Date.now() - startTime;
 

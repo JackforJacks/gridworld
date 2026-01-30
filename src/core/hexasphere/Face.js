@@ -5,7 +5,7 @@ let _faceCount = 0;
 const Face = function (point1, point2, point3, register) {
     this.id = _faceCount++;
 
-    if (register == undefined) {
+    if (register === undefined) {
         register = true;
     }
 

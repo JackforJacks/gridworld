@@ -10,6 +10,8 @@
  * - Demographic statistics
  */
 
+const { logError, ErrorSeverity, safeExecute } = require('../../utils/errorHandler');
+
 const storage = require('../storage');
 const pool = require('../../config/database');
 const { acquireLock, releaseLock } = require('../../utils/lock');
@@ -1025,7 +1027,12 @@ class PeopleState {
         } finally {
             // release lock if held
             if (typeof token !== 'undefined' && token) {
-                try { await releaseLock(lockKey, token); } catch (_) { }
+                await safeExecute(
+                    () => releaseLock(lockKey, token),
+                    'PeopleState:ReleaseLock:RebuildVillageMemberships',
+                    null,
+                    ErrorSeverity.LOW
+                );
             }
         }
     }
@@ -1077,7 +1084,12 @@ class PeopleState {
             return { ok: false, error: e && e.message ? e.message : e };
         } finally {
             if (token) {
-                try { await releaseLock(lockKey, token); } catch (_) { }
+                await safeExecute(
+                    () => releaseLock(lockKey, token),
+                    'PeopleState:ReleaseLock:RepairIfNeeded',
+                    null,
+                    ErrorSeverity.LOW
+                );
             }
         }
     }
