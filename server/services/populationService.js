@@ -2,6 +2,15 @@
 const pool = require('../config/database.js');
 const config = require('../config/server.js');
 
+// Repository Pattern for data access
+const PopulationRepository = require('../repositories/PopulationRepository');
+
+// Event-driven architecture
+const populationEvents = require('../events/populationEvents');
+
+// Socket communication service
+const SocketService = require('./SocketService');
+
 // Core modules
 const { applySenescence } = require('./population/lifecycle.js');
 const {
@@ -57,10 +66,27 @@ const { validateTileIds } = require('./population/validation.js');
 const StatisticsService = require('./statisticsService');
 
 class PopulationService {
-    #pool; constructor(io, calendarService = null, statisticsService = null) {
+    #pool;
+    #repository;
+    #socketService;
+
+    constructor(io, calendarService = null, statisticsService = null) {
+        // Direct dependencies
         this.io = io;
         this.calendarService = calendarService;
         this.#pool = pool;
+        
+        // Repository for data access (implements Repository Pattern)
+        this.#repository = new PopulationRepository(pool);
+        
+        // Socket service for communication (decouples socket logic)
+        this.#socketService = new SocketService(io);
+        this.#socketService.initialize();
+        
+        // Event emitter for decoupled event handling
+        this.events = populationEvents;
+        
+        // Service state
         this.growthInterval = null;
         this.autoSaveInterval = null;
         this.rateInterval = null;
@@ -70,11 +96,68 @@ class PopulationService {
         this.birthCount = 0;
         this.deathCount = 0;
         this.lastRateReset = Date.now();
+        
         // In-memory event log for births and deaths
         this.eventLog = [];
+        
         // Statistics service for vital rates - use provided instance or create new one
         this.statisticsService = statisticsService || new StatisticsService();
-    } getPool() { return this.#pool; }
+        
+        // Setup event listeners
+        this._setupEventListeners();
+    }
+
+    /**
+     * Setup internal event listeners
+     * Decouples event handling from direct method calls
+     * @private
+     */
+    _setupEventListeners() {
+        // Listen to birth events and broadcast via socket
+        this.events.onBirth((data) => {
+            this.#socketService.emitBirth(data);
+            this.birthCount++;
+        });
+
+        // Listen to death events and broadcast via socket
+        this.events.onDeath((data) => {
+            this.#socketService.emitDeath(data);
+            this.deathCount++;
+        });
+
+        // Listen to family created events
+        this.events.onFamilyCreated((data) => {
+            this.#socketService.emitFamilyCreated(data);
+        });
+
+        // Listen to population updates
+        this.events.onPopulationUpdated((data) => {
+            this.#socketService.emitPopulationUpdate(data);
+        });
+
+        // Listen to save completed events
+        this.events.onSaveCompleted((data) => {
+            this.#socketService.emitGameSaved(data);
+        });
+    }
+
+    /**
+     * Get repository instance (for testing/advanced use)
+     * @returns {PopulationRepository}
+     */
+    getRepository() {
+        return this.#repository;
+    }
+
+    /**
+     * Get socket service instance
+     * @returns {SocketService}
+     */
+    getSocketService() {
+        return this.#socketService;
+    }
+
+    getPool() { return this.#pool; }
 
     getStatisticsService() {
         return this.statisticsService;
@@ -171,25 +254,29 @@ class PopulationService {
         try {
             const { createRandomFamilies } = require('./population/family.js');
 
-            // Get all tiles with population
-            const tilesResult = await this.#pool.query('SELECT DISTINCT tile_id FROM people');
-            const tileIds = tilesResult.rows.map(row => row.tile_id);
+            // Use repository to get tiles with population
+            const tilePopulations = await this.#repository.getTilePopulations();
+            const tileIds = tilePopulations.map(tp => tp.tile_id);
 
             let totalFamiliesCreated = 0;
             for (const tileId of tileIds) {
-                const beforeCount = await this.#pool.query('SELECT COUNT(*) FROM family WHERE tile_id = $1', [tileId]);
-                const beforeFamilies = parseInt(beforeCount.rows[0].count, 10);
+                const beforeFamilies = await this.#repository.getAllFamilies({ tileId });
+                const beforeCount = beforeFamilies.length;
 
                 await createRandomFamilies(this.#pool, tileId, this.calendarService);
 
-                const afterCount = await this.#pool.query('SELECT COUNT(*) FROM family WHERE tile_id = $1', [tileId]);
-                const afterFamilies = parseInt(afterCount.rows[0].count, 10);
+                const afterFamilies = await this.#repository.getAllFamilies({ tileId });
+                const afterCount = afterFamilies.length;
 
-                const newFamilies = afterFamilies - beforeFamilies;
+                const newFamilies = afterCount - beforeCount;
                 totalFamiliesCreated += newFamilies;
 
                 if (newFamilies > 0) {
                     if (config.verboseLogs) console.log(`🏠 Created ${newFamilies} new families on tile ${tileId}`);
+                    // Emit family created events
+                    for (let i = 0; i < newFamilies; i++) {
+                        this.events.emitFamilyCreated({ tileId });
+                    }
                 }
             }
 
@@ -220,13 +307,23 @@ class PopulationService {
         await printPeopleSample(this.#pool, limit);
     }
 
-    // Rate tracking methods    // Track births with in-game date
+    // Rate tracking methods
+    
+    /**
+     * Track births with in-game date
+     * Uses event emitter for decoupled notification
+     * @param {number} count - Number of births
+     */
     trackBirths(count) {
         if (!this.calendarService) return;
         const date = this.calendarService.getCurrentDate();
+        
         for (let i = 0; i < count; i++) {
             this.eventLog.push({ type: 'birth', date: { ...date } });
+            // Emit birth event instead of direct socket call
+            this.events.emitBirth({ date, count: 1 });
         }
+        
         // Record in statistics service asynchronously
         if (this.statisticsService) {
             this.getPopulationStats().then(stats => {
@@ -238,13 +335,21 @@ class PopulationService {
         }
     }
 
-    // Track deaths with in-game date
+    /**
+     * Track deaths with in-game date
+     * Uses event emitter for decoupled notification
+     * @param {number} count - Number of deaths
+     */
     trackDeaths(count) {
         if (!this.calendarService) return;
         const date = this.calendarService.getCurrentDate();
+        
         for (let i = 0; i < count; i++) {
             this.eventLog.push({ type: 'death', date: { ...date } });
+            // Emit death event instead of direct socket call
+            this.events.emitDeath({ date, count: 1 });
         }
+        
         // Record in statistics service asynchronously
         if (this.statisticsService) {
             this.getPopulationStats().then(stats => {
