@@ -7,6 +7,7 @@ const populationRoutes = require('./population');
 const tilesRoutes = require('./tiles');
 const calendarRoutes = require('./calendar');
 const dbRoutes = require('./db');
+const statisticsRoutes = require('./statistics');
 const DatabaseService = require('../services/databaseService');
 const dbService = new DatabaseService();
 const http = require('http');
@@ -21,6 +22,7 @@ router.use('/population', populationRoutes);
 router.use('/tiles', tilesRoutes);
 router.use('/calendar', calendarRoutes);
 router.use('/db', dbRoutes);
+router.use('/statistics', statisticsRoutes);
 
 // POST /api/save - Save game state from Redis to PostgreSQL
 router.post('/save', async (req, res) => {
@@ -360,24 +362,6 @@ router.post('/reset-all', async (req, res) => {
     }
 });
 
-// Vital rates endpoint (in-memory, no DB)
-router.get('/statistics/vital-rates/:years', (req, res) => {
-    try {
-        const years = parseInt(req.params.years) || 100;
-        // Get the population service (should be attached to app.locals)
-        const populationService = req.app.locals?.populationService;
-        if (!populationService || typeof populationService.getStatisticsService !== 'function') {
-            return res.status(503).json({ success: false, error: 'Statistics service not available' });
-        }
-        const statisticsService = populationService.getStatisticsService();
-        if (!statisticsService) {
-            return res.status(503).json({ success: false, error: 'Statistics service not available' });
-        }
-        const chartData = statisticsService.getVitalRatesForChart(years);
-        res.json({ success: true, data: chartData });
-    } catch (error) {
-        res.status(500).json({ success: false, error: error.message });
-    }
-});
+// NOTE: /statistics/* routes are now handled by the statistics router (see statisticsRoutes above)
 
 module.exports = router;
