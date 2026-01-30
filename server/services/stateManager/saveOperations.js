@@ -41,7 +41,7 @@ async function saveToDatabase(context) {
                 if (person.village_id) {
                     villageHasResidents[person.village_id] = true;
                 }
-            } catch (_) {}
+            } catch (_) { }
         }
         // Filter out villages with no residents
         const filteredVillageData = {};
@@ -64,41 +64,41 @@ async function saveToDatabase(context) {
             for (const issue of validation.issues.slice(0, 5)) {
                 console.warn(`[SaveOperations]   - ${issue.type}: tile ${issue.tileId}`);
             }
-            
+
             // Auto-repair missing villages or other inconsistencies
             console.log('[SaveOperations] Attempting auto-repair of consistency issues...');
             const repairResult = await villageManager.repairVillageConsistency();
             if (repairResult.result && repairResult.result.success) {
-                 console.log(`[SaveOperations] ✅ Repair successful: ${repairResult.result.created} villages created, ${repairResult.result.assigned} people assigned`);
-                 
-                 // Refresh data maps after repair to save the correct state
-                 // using const here would shadow the outer variables, so we need to update the object references if possible
-                 // OR simply re-fetch the specific data that changed.
-                 // Re-fetching full state is safer.
-                 Object.assign(allTileData, await storage.hgetall('tile') || {});
-                 Object.assign(allLandsData, await storage.hgetall('tile:lands') || {});
-                 Object.assign(allVillageData, await storage.hgetall('village') || {});
-                 // People might have been updated during assignment
-                 Object.assign(allPeopleData, await storage.hgetall('person') || {});
-                 
-                 // Re-filter villages based on new state
-                 const newVillageHasResidents = {};
-                 for (const [personId, personJson] of Object.entries(allPeopleData)) {
+                console.log(`[SaveOperations] ✅ Repair successful: ${repairResult.result.created} villages created, ${repairResult.result.assigned} people assigned`);
+
+                // Refresh data maps after repair to save the correct state
+                // using const here would shadow the outer variables, so we need to update the object references if possible
+                // OR simply re-fetch the specific data that changed.
+                // Re-fetching full state is safer.
+                Object.assign(allTileData, await storage.hgetall('tile') || {});
+                Object.assign(allLandsData, await storage.hgetall('tile:lands') || {});
+                Object.assign(allVillageData, await storage.hgetall('village') || {});
+                // People might have been updated during assignment
+                Object.assign(allPeopleData, await storage.hgetall('person') || {});
+
+                // Re-filter villages based on new state
+                const newVillageHasResidents = {};
+                for (const [personId, personJson] of Object.entries(allPeopleData)) {
                     try {
                         const person = JSON.parse(personJson);
                         if (person.village_id) newVillageHasResidents[person.village_id] = true;
-                    } catch (_) {}
-                 }
-                 
-                 // Clear and refill filtered set
-                 for (const key in filteredVillageData) delete filteredVillageData[key];
-                 for (const [villageId, villageJson] of Object.entries(allVillageData)) {
-                     if (newVillageHasResidents[villageId]) {
-                         filteredVillageData[villageId] = villageJson;
-                     }
-                 }
+                    } catch (_) { }
+                }
+
+                // Clear and refill filtered set
+                for (const key in filteredVillageData) delete filteredVillageData[key];
+                for (const [villageId, villageJson] of Object.entries(allVillageData)) {
+                    if (newVillageHasResidents[villageId]) {
+                        filteredVillageData[villageId] = villageJson;
+                    }
+                }
             } else {
-                 console.error('[SaveOperations] ❌ Repair failed, saving potentially inconsistent state');
+                console.error('[SaveOperations] ❌ Repair failed, saving potentially inconsistent state');
             }
         }
 

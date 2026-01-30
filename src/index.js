@@ -262,7 +262,7 @@ class GridWorldApp {
                 // Listen for auto-save completion and log timing
                 this.socket.on('autoSaveComplete', (data) => {
                     if (data.success) {
-// [log removed]
+                        // [log removed]
                     } else {
                         console.warn(`💾 Auto-save failed in ${data.elapsed}ms: ${data.error}`);
                     }
@@ -380,7 +380,7 @@ class GridWorldApp {
     }
 
     exportData() {
-// [log removed]
+        // [log removed]
         return Promise.resolve(false);
     }
 
