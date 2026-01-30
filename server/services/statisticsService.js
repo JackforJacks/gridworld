@@ -15,7 +15,6 @@ class StatisticsService {
             this.calendarService = calendarService;
         }
         this.isTracking = true;
-        console.log('📈 Statistics service initialized with calendar integration');
     }
 
     /**

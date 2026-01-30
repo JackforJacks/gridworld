@@ -13,41 +13,23 @@ const pool = require('../../config/database');
  * @returns {Promise<Object>} Save results
  */
 async function saveToDatabase(context) {
-    console.log(`💾 Calendar service available: ${!!context.calendarService}, isRunning: ${context.calendarService?.state?.isRunning}`);
     const wasRunning = context.calendarService?.state?.isRunning;
 
     // Pause calendar ticks during save
     if (wasRunning && context.calendarService) {
-        console.log('⏸️ Pausing calendar for save...');
         context.calendarService.stop();
     }
 
     try {
-        console.log('💾 Saving ALL game state from Redis to PostgreSQL...');
         const startTime = Date.now();
         const PopulationState = require('../populationState');
-
-        // DEBUG: Check storage adapter info
-        const adapter = storage.getAdapter ? storage.getAdapter() : null;
-        const adapterName = adapter?.constructor?.name || adapter?.client?.constructor?.name || 'unknown';
-        console.log(`💾 [DEBUG] Storage adapter: ${adapterName}, isAvailable: ${storage.isAvailable()}`);
-
-        // DEBUG: Check if we can reach Redis at all
-        try {
-            const allKeys = await storage.keys('*');
-            console.log(`💾 [DEBUG] All Redis keys at save time: ${allKeys.length} keys - ${allKeys.slice(0, 10).join(', ')}${allKeys.length > 10 ? '...' : ''}`);
-        } catch (e) {
-            console.log(`💾 [DEBUG] Could not list Redis keys: ${e.message}`);
-        }
 
         // Read all data from Redis
         const allTileData = await storage.hgetall('tile') || {};
         const allLandsData = await storage.hgetall('tile:lands') || {};
         const allVillageData = await storage.hgetall('village') || {};
 
-        console.log(`💾 [DEBUG] About to call hgetall('person')...`);
         const allPeopleData = await storage.hgetall('person') || {};
-        console.log(`💾 [DEBUG] hgetall('person') returned: ${allPeopleData ? Object.keys(allPeopleData).length : 'null'} entries`);
 
         const allFamilyData = await storage.hgetall('family') || {};
 
@@ -55,8 +37,6 @@ async function saveToDatabase(context) {
         const villageCount = Object.keys(allVillageData).length;
         const peopleCount = Object.keys(allPeopleData).length;
         const familyCount = Object.keys(allFamilyData).length;
-
-        console.log(`💾 Redis data: ${tileCount} tiles, ${villageCount} villages, ${peopleCount} people, ${familyCount} families`);
 
         let tilesSaved = 0;
         let landsSaved = 0;
@@ -67,18 +47,15 @@ async function saveToDatabase(context) {
         let peopleLinkedToFamilies = 0;
 
         // ========== STEP 0: Clear ALL Postgres tables before saving (full replace, not merge) ==========
-        console.log('💾 Step 0: Clearing Postgres tables before save (full replace mode)...');
         // Order matters due to foreign keys: people -> families -> villages -> tiles_lands -> tiles
         await pool.query('TRUNCATE TABLE people RESTART IDENTITY CASCADE');
         await pool.query('TRUNCATE TABLE family RESTART IDENTITY CASCADE');
         await pool.query('TRUNCATE TABLE villages RESTART IDENTITY CASCADE');
         await pool.query('TRUNCATE TABLE tiles_lands RESTART IDENTITY CASCADE');
         await pool.query('TRUNCATE TABLE tiles RESTART IDENTITY CASCADE');
-        console.log('💾 Step 0 complete: All tables cleared');
 
         // ========== STEP 1: Save tiles ==========
         if (tileCount > 0) {
-            console.log(`💾 Step 1: Saving ${tileCount} tiles to Postgres...`);
 
             // Prepare tile data for batch insert
             const tileValues = [];
@@ -159,12 +136,10 @@ async function saveToDatabase(context) {
 
             // Clear the regeneration flag since we just saved tiles
             await storage.del('pending:tiles:regenerate');
-            console.log(`💾 Step 1 complete: Saved ${tilesSaved} tiles and ${landsSaved} land chunks`);
         }
 
         // ========== STEP 2: Save ALL villages from Redis ==========
         if (villageCount > 0) {
-            console.log(`💾 Step 2: Saving ${villageCount} villages to Postgres...`);
             for (const [id, json] of Object.entries(allVillageData)) {
                 try {
                     const v = JSON.parse(json);
@@ -184,12 +159,10 @@ async function saveToDatabase(context) {
                     await pool.query(`UPDATE tiles_lands SET village_id = $1 WHERE tile_id = $2 AND chunk_index = $3`, [v.id, v.tile_id, v.land_chunk_index]);
                 } catch (_) { /* non-fatal */ }
             }
-            console.log(`💾 Step 2 complete: Saved ${villagesInserted} villages`);
         }
 
         // ========== STEP 3: Save ALL people from Redis ==========
         if (peopleCount > 0) {
-            console.log(`💾 Step 3: Saving ${peopleCount} people to Postgres...`);
             const peopleBatchSize = 500;
             const peopleEntries = Object.entries(allPeopleData);
 
@@ -230,12 +203,10 @@ async function saveToDatabase(context) {
                     }
                 }
             }
-            console.log(`💾 Step 3 complete: Saved ${insertedCount} people`);
         }
 
         // ========== STEP 4: Save ALL families from Redis ==========
         if (familyCount > 0) {
-            console.log(`💾 Step 4: Saving ${familyCount} families to Postgres...`);
             for (const [id, json] of Object.entries(allFamilyData)) {
                 try {
                     const f = JSON.parse(json);
@@ -248,12 +219,10 @@ async function saveToDatabase(context) {
                     console.warn(`Failed to save family ${id}:`, e.message);
                 }
             }
-            console.log(`💾 Step 4 complete: Saved ${familiesInserted} families`);
         }
 
         // ========== STEP 4b: Restore people -> family links now that families exist ==========
         if (peopleFamilyLinks.length > 0) {
-            console.log(`💾 Step 4b: Linking ${peopleFamilyLinks.length} people to their families...`);
             const LINK_BATCH_SIZE = 500;
             for (let i = 0; i < peopleFamilyLinks.length; i += LINK_BATCH_SIZE) {
                 const batch = peopleFamilyLinks.slice(i, i + LINK_BATCH_SIZE);
@@ -282,7 +251,6 @@ async function saveToDatabase(context) {
                     }
                 }
             }
-            console.log(`💾 Step 4b complete: Linked ${peopleLinkedToFamilies} people to families`);
         }
 
         // Clear all pending operation sets since we just saved everything
@@ -291,7 +259,6 @@ async function saveToDatabase(context) {
         try { await storage.del('pending:village:inserts'); } catch (_) { }
 
         const elapsed = Date.now() - startTime;
-        console.log(`✅ Save complete in ${elapsed}ms: ${tilesSaved} tiles, ${villagesInserted} villages, ${insertedCount} people, ${familiesInserted} families`);
 
         // Emit save event
         if (context.io) {
@@ -311,7 +278,6 @@ async function saveToDatabase(context) {
         if (context.calendarService && typeof context.calendarService.saveStateToDB === 'function') {
             try {
                 await context.calendarService.saveStateToDB();
-                console.log('📅 Calendar state saved to database');
             } catch (err) {
                 console.warn('⚠️ Failed to save calendar state:', err.message);
             }
@@ -329,7 +295,6 @@ async function saveToDatabase(context) {
     } finally {
         // Resume calendar ticks after save
         if (wasRunning && context.calendarService) {
-            console.log('▶️ Resuming calendar after save...');
             context.calendarService.start();
         }
     }

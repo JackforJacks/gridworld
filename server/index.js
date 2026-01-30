@@ -41,9 +41,7 @@ class GridWorldServer {
     async initialize() {
         // Wait for Redis to be ready before proceeding - Redis is required
         const storage = require('./services/storage');
-        console.log('⏳ Waiting for Redis connection...');
         await storage.waitForReady();
-        console.log('✅ Redis connected and ready');
 
         // Configure middleware
         this.app.use(cors({ origin: true, credentials: true })); // Allow cross-origin from dev server
@@ -79,37 +77,29 @@ class GridWorldServer {
     async initializeSingletonServices() {
         // Initialize services only once as singletons
         if (!calendarServiceInstance) {
-            console.log('🔧 Initializing Calendar Service singleton...');
             calendarServiceInstance = new CalendarService(this.io);
             await calendarServiceInstance.initialize(); // Wait for DB state to load
-            console.log('📅 Calendar Service singleton initialized');
         }
 
         if (!statisticsServiceInstance) {
-            console.log('🔧 Initializing Statistics Service singleton...');
             statisticsServiceInstance = new StatisticsService();
             statisticsServiceInstance.initialize(calendarServiceInstance);
-            console.log('📈 Statistics Service singleton initialized');
         }
 
         if (!populationServiceInstance) {
-            console.log('🔧 Initializing Population Service singleton...');
             populationServiceInstance = new PopulationService(this.io, calendarServiceInstance, statisticsServiceInstance);
             await populationServiceInstance.initialize(this.io, calendarServiceInstance);
-            console.log('👥 Population Service singleton initialized');
         } else {
-            console.log('🔄 Services already initialized, skipping initialization...');
+            // Services already initialized
         }
 
         // Load state from PostgreSQL into Redis
-        console.log('🔧 Initializing State Manager...');
         try {
             StateManager.setIo(this.io);
             StateManager.setCalendarService(calendarServiceInstance);
 
             // Perform the load - Redis is already guaranteed to be ready
             await StateManager.loadFromDatabase();
-            console.log('🔴 State Manager initialized');
 
             // If storage reconnects later, re-sync automatically
             try {
@@ -164,8 +154,6 @@ class GridWorldServer {
 
     setupSocketHandlers() {
         this.io.on('connection', (socket) => {
-            console.log(`👤 Client connected: ${socket.id}`);
-
             // Handle connection errors
             socket.on('connect_error', (error) => {
                 console.error(`❌ Connection error for ${socket.id}:`, error.message);
@@ -186,7 +174,6 @@ class GridWorldServer {
 
             // Calendar subscription handling
             socket.on('subscribeToCalendar', () => {
-                console.log(`📅 Client ${socket.id} subscribed to calendar updates`);
                 // Send current calendar state immediately
                 try {
                     const calendarState = calendarServiceInstance.getState();
@@ -198,7 +185,7 @@ class GridWorldServer {
             });
 
             socket.on('disconnect', (reason) => {
-                console.log(`👤 Client disconnected: ${socket.id}, reason: ${reason}`);
+                // Client disconnected
             });
 
             // Add ping/pong handlers for connection health
@@ -207,8 +194,10 @@ class GridWorldServer {
             });
         });
 
-        // Handle server-level socket errors
+        // Handle server-level socket errors (ignore common non-critical errors)
         this.io.engine.on('connection_error', (err) => {
+            // "Session ID unknown" happens when clients reconnect with stale sessions - ignore it
+            if (err.message && err.message.includes('Session ID unknown')) return;
             console.error('❌ Socket.io connection error:', err.message);
         });
     }
@@ -218,8 +207,6 @@ class GridWorldServer {
 
         this.server.listen(this.port, () => {
             console.log(`🚀 GridWorld server running at http://localhost:${this.port}`);
-            console.log(`📊 API available at http://localhost:${this.port}/api/`);
-            console.log(`🔌 WebSocket server ready for real-time updates`);
         });
 
         // Graceful shutdown

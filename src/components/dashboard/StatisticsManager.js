@@ -92,7 +92,7 @@ class StatisticsManager {
             const script = document.createElement('script');
             script.src = 'https://cdn.jsdelivr.net/npm/chart.js';
             script.onload = () => {
-                console.log('Chart.js loaded');
+// [log removed]
                 if (this.isVisible) {
                     this.updateChart();
                 }
@@ -197,7 +197,7 @@ class StatisticsManager {
 
     async updateChart() {
         if (typeof Chart === 'undefined') {
-            console.log('Chart.js not loaded yet');
+// [log removed]
             return;
         } try {
             const selectedYears = document.getElementById('years-select').value;

@@ -113,8 +113,6 @@ async function loadFromDatabase(context) {
                 console.error(`[StateManager] ❌ Village repair failed: ${repairResult.error}`);
             }
         } else {
-            console.log(`[StateManager] ✅ Villages consistent: ${validation.summary.totalVillages} villages, ${validation.summary.totalPeople} people`);
-
             // Still rebuild membership sets to ensure they're correct
             try {
                 const PeopleState = require('../populationState/PeopleState');
@@ -170,20 +168,10 @@ async function loadFromDatabase(context) {
 }
 
 async function clearExistingStorageState() {
-    console.log('🧹 Starting clearExistingStorageState...');
     try {
-        // Check what keys exist before flush (guard for tests/mocks that don't implement it)
-        let keysBefore = [];
-        if (typeof storage.keys === 'function') {
-            keysBefore = await storage.keys('*') || [];
-        }
-        console.log(`🧹 Keys before flush: ${keysBefore.length} keys`);
-
         // Flush the entire Redis database to ensure clean state (guard when not supported)
         if (typeof storage.flushdb === 'function') {
-            const flushResult = await storage.flushdb();
-            console.log(`🧹 flushdb() returned: ${flushResult}`);
-            console.log('🧹 Flushed entire Redis database for clean state load');
+            await storage.flushdb();
         } else {
             throw new Error('flushdb not supported');
         }
@@ -193,7 +181,6 @@ async function clearExistingStorageState() {
         if (typeof storage.keys === 'function') {
             keysAfter = await storage.keys('*') || [];
         }
-        console.log(`🧹 Keys after flush: ${keysAfter.length} keys`);
 
         if (keysAfter.length > 0) {
             console.warn(`⚠️ WARNING: ${keysAfter.length} keys still exist after flushdb! Keys: ${keysAfter.slice(0, 10).join(', ')}${keysAfter.length > 10 ? '...' : ''}`);
@@ -427,7 +414,6 @@ async function populateFertileFamilies(families, people, calendarService) {
                 await PopulationState.addFertileFamily(f.id, currentDate.year, currentDate.month, currentDate.day);
             } catch (_) { }
         }
-        console.log('✅ Populated fertile family candidates from loaded families');
     } catch (e) {
         console.warn('⚠️ Failed to populate fertile family sets on load:', e && e.message ? e.message : e);
     }
@@ -462,7 +448,6 @@ async function populateEligibleSets(people, calendarService) {
             const cs = calendarService.getState();
             if (cs && cs.currentDate) currentDate = cs.currentDate;
         }
-        console.log('📅 [StateManager] Using calendar date for eligible sets:', currentDate);
 
         for (const p of people) {
             try {
@@ -471,7 +456,6 @@ async function populateEligibleSets(people, calendarService) {
                 /* ignore individual failures */
             }
         }
-        console.log('✅ Populated eligible candidate sets from loaded people');
     } catch (e) {
         console.warn('⚠️ Failed to populate eligible sets on load:', e && e.message ? e.message : e);
     }

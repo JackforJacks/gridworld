@@ -25,7 +25,6 @@ router.use('/db', dbRoutes);
 // POST /api/save - Save game state from Redis to PostgreSQL
 router.post('/save', async (req, res) => {
     try {
-        console.log('💾 Save request received...');
         if (!StateManager.isRedisAvailable()) {
             console.warn('⚠️ Save attempted but Redis is not available');
             return res.status(503).json({ success: false, error: 'Redis not available - cannot save in-memory state' });
@@ -42,7 +41,6 @@ router.post('/save', async (req, res) => {
 // POST /api/sync - Force full Redis sync from PostgreSQL
 router.post('/sync', async (req, res) => {
     try {
-        console.log('🔄 Forced sync request received...');
         const result = await StateManager.loadFromDatabase();
         res.json({ success: true, ...result });
     } catch (error) {

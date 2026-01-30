@@ -987,7 +987,6 @@ class PeopleState {
         }
 
         try {
-            console.log('[PeopleState] Rebuilding village membership sets from person hash...');
             // Clear all village:*:*:people sets
             const stream = storage.scanStream({ match: 'village:*:*:people', count: 1000 });
             const keysToDelete = [];
@@ -1012,7 +1011,6 @@ class PeopleState {
                 }
             }
             await pipeline.exec();
-            console.log(`[PeopleState] Rebuilt village membership sets: added ${total} memberships`);
             return { success: true, total };
         } catch (e) {
             console.warn('[PeopleState] rebuildVillageMemberships failed:', e && e.message ? e.message : e);

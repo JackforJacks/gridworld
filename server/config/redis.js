@@ -28,11 +28,10 @@ const readyPromise = new Promise(resolve => { readyResolve = resolve; });
 
 if (redis) {
     redis.on('connect', () => {
-        console.log('🔴 Redis connected');
+        // Connection established
     });
 
     redis.on('ready', () => {
-        console.log('🔴 Redis ready');
         isReady = true;
         if (readyResolve) {
             readyResolve();

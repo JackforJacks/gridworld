@@ -104,7 +104,7 @@ class PopulationManager {
             });
 
             this.socket.on('populationUpdate', (data) => {
-                console.log('[PopulationManager] socket populationUpdate received:', Object.keys(data), 'tilePopulations keys:', Object.keys(data.tilePopulations || {}));
+// [log removed]
                 this.updatePopulationData(data);
                 this.notifyCallbacks('populationUpdate', data);
             });
@@ -157,9 +157,9 @@ class PopulationManager {
 
     // OPTIMIZED: Centralized data update logic
     updatePopulationData(data) {
-        console.log('[PopulationManager] updatePopulationData received:', Object.keys(data), 'tilePopulations:', data.tilePopulations);
+// [log removed]
         this.populationData = { ...this.populationData, ...data };
-        console.log('[PopulationManager] after merge, tilePopulations:', this.populationData.tilePopulations);
+// [log removed]
     }    // Disconnect from the server
     disconnect() {
         if (this.pingInterval) {
@@ -270,21 +270,21 @@ class PopulationManager {
     }    // OPTIMIZED: Update population growth rate (admin function)
     async updateGrowthRate(rate) {
         const data = await this.makeApiRequest('', 'POST', { rate });
-        console.log('✅ Growth rate updated successfully:', data);
+// [log removed]
         return data;
     }
 
     // OPTIMIZED: Update specific tile populations (admin function)
     async updateTilePopulations(tilePopulations) {
         const data = await this.makeApiRequest('', 'POST', { tilePopulations });
-        console.log('✅ Tile populations updated successfully');
+// [log removed]
         return data;
     }
 
     // OPTIMIZED: Reset all tile populations to zero
     async resetPopulation() {
         const data = await this.makeApiRequest('/reset', 'POST');
-        console.log('✅ All tile populations reset successfully:', data);
+// [log removed]
         // Clear local data immediately
         this.populationData = {
             globalData: {

@@ -40,8 +40,6 @@ async function ensureVillagesForPopulatedTiles(options = {}) {
             return { success: true, created: 0, assigned: 0, tiles: 0 };
         }
 
-        console.log(`[VillageManager] Found ${populatedTileIds.length} populated tiles with people`);
-
         // Step 2: Get existing villages grouped by tile
         const villagesByTile = await getVillagesGroupedByTile();
 
@@ -107,7 +105,6 @@ async function ensureVillagesForPopulatedTiles(options = {}) {
                 }
 
                 await pipeline.exec();
-                console.log(`[VillageManager] Created ${newVillageCount} villages for tile ${tileId}`);
             }
 
             // Keep existing villages if not forcing
@@ -119,7 +116,6 @@ async function ensureVillagesForPopulatedTiles(options = {}) {
         // Step 4: Assign residency to all people
         const assigned = await assignResidencyToAllPeople(populatedTileIds, allVillages, peopleByTile);
 
-        console.log(`[VillageManager] ✅ Complete: ${totalCreated} villages created, ${assigned} people assigned`);
 
         return {
             success: true,

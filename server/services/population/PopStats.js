@@ -32,7 +32,6 @@ function getCalendarCutoffs(calendarService) {
         year = fallbackDate.getFullYear();
         month = fallbackDate.getMonth() + 1;
         day = fallbackDate.getDate();
-        console.warn('[getCalendarCutoffs] Using system date as fallback.');
     }
 
     const minorsYear = year - 16;

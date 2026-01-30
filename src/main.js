@@ -227,7 +227,7 @@ class GridWorldApp {
     }
 
     exportData() {
-        console.log("Data export functionality removed");
+// [log removed]
         return Promise.resolve(false);
     }
 
