@@ -11,7 +11,7 @@ module.exports = (env, argv) => {
   const isWatching = argv.watch || process.env.WEBPACK_WATCH;
 
   return {
-    entry: './src/index.js',
+    entry: './src/index.ts',
 
     output: {
       path: path.resolve(__dirname, 'dist'),
@@ -34,6 +34,17 @@ module.exports = (env, argv) => {
 
     module: {
       rules: [
+        {
+          test: /\.tsx?$/,
+          exclude: /node_modules/,
+          use: {
+            loader: 'ts-loader',
+            options: {
+              configFile: 'tsconfig.client.json',
+              transpileOnly: !isProduction // Faster builds in dev
+            }
+          }
+        },
         {
           test: /\.js$/,
           exclude: /node_modules/,
@@ -169,6 +180,7 @@ module.exports = (env, argv) => {
     },
 
     resolve: {
+      extensions: ['.ts', '.tsx', '.js', '.jsx'],
       alias: {
         '@': path.resolve(__dirname, 'src'),
         '@components': path.resolve(__dirname, 'src/components'),

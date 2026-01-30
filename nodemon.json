@@ -1,14 +1,15 @@
 {
     "watch": [
-        "server/**/*.js",
+        "server/**/*.ts",
         "package.json"
     ],
-    "ext": "js,json",
+    "ext": "ts,json",
     "ignore": [
         "dist/",
         "node_modules/",
-        "*.test.js"
+        "*.test.ts"
     ],
+    "exec": "tsx server/index.ts",
     "env": {
         "NODE_ENV": "development"
     },
