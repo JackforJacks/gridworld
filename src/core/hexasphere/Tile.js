@@ -101,10 +101,9 @@ Tile.prototype.getLatLon = function (radius, boundaryNum) {
     if (typeof boundaryNum == "number" && boundaryNum < this.boundary.length) {
         point = this.boundary[boundaryNum];
     }
-    const phi = Math.acos(point.y / radius); //lat 
-    const theta = (Math.atan2(point.x, point.z) + Math.PI + Math.PI / 2) % (Math.PI * 2) - Math.PI; // lon
-
-    // theta is a hack, since I want to rotate by Math.PI/2 to start.  sorryyyyyyyyyyy
+    const phi = Math.acos(point.y / radius); // Latitude calculation
+    // Longitude calculation with PI/2 offset to align coordinate system
+    const theta = (Math.atan2(point.x, point.z) + Math.PI + Math.PI / 2) % (Math.PI * 2) - Math.PI;
     return {
         lat: 180 * phi / Math.PI - 90,
         lon: 180 * theta / Math.PI
@@ -153,7 +152,11 @@ Tile.prototype.setProperties = function (id, latitude, longitude, isLand, terrai
     this.terrain = terrainType;
 };
 
-// Helper method to get all properties as an object (useful for debugging/exporting)
+/**
+ * Get all tile properties as an object
+ * Useful for serialization, debugging, and data export
+ * @returns {Object} Tile properties
+ */
 Tile.prototype.getProperties = function () {
     return {
         id: this.id,

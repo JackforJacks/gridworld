@@ -29,12 +29,10 @@ function createScene(
         return;
     }
 
-    let generatedTileDataForReturn = []; // To store data for the return value
+    // Note: Tile geometry is built by the Hexasphere module and rendered separately.
+    // This function's primary role is scene initialization and lighting setup.
 
-    // TODO: Build geometry from tileData (similar to previous logic)
-    // ...
-
-    // 4. Ensure basic lighting is present in the scene for MeshPhongMaterial to look good
+    // 3. Ensure basic lighting is present in the scene for MeshPhongMaterial to look good
     if (!scene.getObjectByName("ambientLight")) {
         const ambientLight = new THREE.AmbientLight(0xffffff, 0.7); // Ambient light to illuminate all objects
         ambientLight.name = "ambientLight";
@@ -61,10 +59,11 @@ function tick(lastTime, autoRotate, targetRotation, rotation, camera, scene, ren
     rotation.x += (targetRotation.x - rotation.x) * 0.1;
     rotation.y += (targetRotation.y - rotation.y) * 0.1;
 
-    // Debug log rotation every 2 seconds    // For proper vertical axis rotation like Earth:
-    // - Y rotation (horizontal mouse movement) should rotate around the vertical Y-axis
-    // - X rotation (vertical mouse movement) should change the camera's elevation angle
-    // - The sphere itself should only rotate around its Y-axis for auto-rotation
+    // Camera and sphere rotation system:
+    // - Y rotation (horizontal mouse movement) rotates around the vertical Y-axis
+    // - X rotation (vertical mouse movement) changes the camera's elevation angle
+    // - The sphere rotates around its Y-axis for auto-rotation (like Earth)
+    
     // Apply sphere auto-rotation only around Y-axis (vertical axis)
     if (window.hexasphere && window.hexasphere.mesh) {
         if (autoRotate) {
@@ -91,12 +90,6 @@ function tick(lastTime, autoRotate, targetRotation, rotation, camera, scene, ren
     if (typeof updateCallback === 'function') {
         updateCallback(time, rotation, targetRotation);
     }
-
-    // ECSY world execution is typically handled by its own loop, often via world.execute().
-    // It's separated from the render loop in this project's structure (see startGame in startstop.js).
-    // if (world) {
-    //     world.execute(delta / 1000, time / 1000);
-    // }
 }
 
 function onWindowResize(camera, renderer) {
