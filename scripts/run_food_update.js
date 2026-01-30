@@ -1,16 +1,16 @@
 const VillageService = require('../server/services/villageService');
 
-VillageService.updateAllVillageFoodStoresRedis()
-    .then(result => {
+(async () => {
+    try {
+        const result = await VillageService.updateAllVillageFoodStoresRedis();
         console.log(`updated villages: ${result.length}`);
         if (result.length > 0) {
             console.log(result.slice(0, 3));
         }
-    })
-    .catch(err => {
+    } catch (err) {
         console.error('Update failed:', err.message);
         process.exitCode = 1;
-    })
-    .finally(() => {
+    } finally {
         process.exit();
-    });
+    }
+})();

@@ -24,4 +24,12 @@ async function main() {
     console.log('Inspect result:', inspectRes);
 }
 
-main().then(() => process.exit(0)).catch(e => { console.error(e); process.exit(1); });
+(async () => {
+    try {
+        await main();
+        process.exit(0);
+    } catch (e) {
+        console.error(e);
+        process.exit(1);
+    }
+})();

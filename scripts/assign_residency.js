@@ -64,4 +64,12 @@ async function assignResidency(tileId = null) {
     }
 }
 
-assignResidency(process.argv[2] ? parseInt(process.argv[2]) : null).then(() => process.exit(0)).catch(console.error);
+(async () => {
+    try {
+        await assignResidency(process.argv[2] ? parseInt(process.argv[2]) : null);
+        process.exit(0);
+    } catch (err) {
+        console.error(err);
+        process.exit(1);
+    }
+})();

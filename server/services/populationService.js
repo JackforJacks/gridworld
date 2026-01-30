@@ -326,12 +326,17 @@ class PopulationService {
 
         // Record in statistics service asynchronously
         if (this.statisticsService) {
-            this.getPopulationStats().then(stats => {
-                const totalPop = stats?.totalPopulation || 0;
-                for (let i = 0; i < count; i++) {
-                    this.statisticsService.recordBirth(totalPop);
+            (async () => {
+                try {
+                    const stats = await this.getPopulationStats();
+                    const totalPop = stats?.totalPopulation || 0;
+                    for (let i = 0; i < count; i++) {
+                        this.statisticsService.recordBirth(totalPop);
+                    }
+                } catch (err) {
+                    console.error('Error recording births in statistics:', err);
                 }
-            }).catch(err => console.error('Error recording births in statistics:', err));
+            })();
         }
     }
 
@@ -352,12 +357,17 @@ class PopulationService {
 
         // Record in statistics service asynchronously
         if (this.statisticsService) {
-            this.getPopulationStats().then(stats => {
-                const totalPop = stats?.totalPopulation || 0;
-                for (let i = 0; i < count; i++) {
-                    this.statisticsService.recordDeath(totalPop);
+            (async () => {
+                try {
+                    const stats = await this.getPopulationStats();
+                    const totalPop = stats?.totalPopulation || 0;
+                    for (let i = 0; i < count; i++) {
+                        this.statisticsService.recordDeath(totalPop);
+                    }
+                } catch (err) {
+                    console.error('Error recording deaths in statistics:', err);
                 }
-            }).catch(err => console.error('Error recording deaths in statistics:', err));
+            })();
         }
     }
 

@@ -71,7 +71,13 @@ async function inspect() {
     }
 }
 
-inspect().then(res => {
-    console.log('\nDone.');
-    process.exit(0);
-});
+(async () => {
+    try {
+        await inspect();
+        console.log('\nDone.');
+        process.exit(0);
+    } catch (err) {
+        console.error('Error:', err);
+        process.exit(1);
+    }
+})();

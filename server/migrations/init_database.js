@@ -41,15 +41,16 @@ async function initializeDatabase() {
 
 // Run if called directly
 if (require.main === module) {
-    initializeDatabase()
-        .then(() => {
+    (async () => {
+        try {
+            await initializeDatabase();
             console.log('🎉 Database initialization complete');
             process.exit(0);
-        })
-        .catch((error) => {
+        } catch (error) {
             console.error('💥 Initialization failed:', error);
             process.exit(1);
-        });
+        }
+    })();
 }
 
 module.exports = { initializeDatabase };

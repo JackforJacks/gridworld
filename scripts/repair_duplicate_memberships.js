@@ -10,4 +10,12 @@ async function runRepair() {
     }
 }
 
-runRepair().then(() => process.exit(0));
+(async () => {
+    try {
+        await runRepair();
+        process.exit(0);
+    } catch (err) {
+        console.error('Fatal error:', err);
+        process.exit(1);
+    }
+})();
