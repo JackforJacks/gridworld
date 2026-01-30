@@ -317,7 +317,9 @@ router.get('/', async (req, res) => {
                                 } catch (_) { }
                             }
                         }
-                        return land;
+                        // No matching village found - clear any stale village_id
+                        const { village_id, village_name, housing_slots, housing_capacity, food_stores, food_capacity, food_production_rate, last_food_update, ...cleanLand } = land;
+                        return cleanLand;
                     });
                     props.lands = landsWithVillages;
                 } else {

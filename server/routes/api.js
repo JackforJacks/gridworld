@@ -249,13 +249,14 @@ router.post('/worldrestart', async (req, res) => {
         }
         if (serverConfig.verboseLogs) console.log(`⏱️ [worldrestart] Population initialization: ${Date.now() - stepStart}ms`);
 
-        // Seed villages using storage-first approach (non-fatal)
+        // Seed villages using robust VillageManager (non-fatal)
         let seedResult = null;
         stepStart = Date.now();
         try {
-            // Use storage-first seeding - reads from storage, writes to storage
-            seedResult = await villageSeeder.seedVillagesStorageFirst();
-            if (serverConfig.verboseLogs) console.log(`⏱️ [worldrestart] Village seeding (storage-first): ${Date.now() - stepStart}ms`);
+            // Use VillageManager for robust village creation and residency assignment
+            const VillageManager = require('../services/villageSeeder/villageManager');
+            seedResult = await VillageManager.ensureVillagesForPopulatedTiles({ force: true });
+            if (serverConfig.verboseLogs) console.log(`⏱️ [worldrestart] Village seeding (VillageManager): ${Date.now() - stepStart}ms`);
         } catch (seedErr) {
             console.warn('[API /api/worldrestart] Village seeding failed:', seedErr.message || seedErr);
         }

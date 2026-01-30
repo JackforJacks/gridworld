@@ -311,18 +311,16 @@ async function seedWorldIfEmpty() {
 
     console.log(`[villageSeeder] Created ${totalPeople} people on ${tilesToPopulate.length} tiles`);
 
-    // Now seed villages for these populated tiles
-    const villageResult = await seedVillagesStorageFirst();
+    // Use the robust VillageManager to create villages and assign residency
+    const VillageManager = require('./villageManager');
+    const villageResult = await VillageManager.ensureVillagesForPopulatedTiles({ force: true });
 
-    // Assign residency to people
-    await assignResidencyStorage();
-
-    console.log(`[villageSeeder] 🌍 World seeding complete: ${totalPeople} people, ${villageResult.created} villages`);
+    console.log(`[villageSeeder] 🌍 World seeding complete: ${totalPeople} people, ${villageResult.totalVillages || 0} villages`);
 
     return {
         seeded: true,
         people: totalPeople,
-        villages: villageResult.created,
+        villages: villageResult.totalVillages || 0,
         tiles: tilesToPopulate.length
     };
 }

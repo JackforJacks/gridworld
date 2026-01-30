@@ -72,6 +72,8 @@ async function loadFromDatabase(context) {
     // Load families
     const families = await loadFamilies(pipeline);
 
+    console.log(`📦 Loaded from Postgres: ${people.length} people, ${villages.length} villages, ${families.length} families`);
+
     // Populate fertile family candidates
     await populateFertileFamilies(families, people, context.calendarService);
 
@@ -89,45 +91,36 @@ async function loadFromDatabase(context) {
 
     // Populate eligible matchmaking sets
     await populateEligibleSets(people, context.calendarService);
-    // Defensive repair: rebuild village membership sets to match authoritative 'person' hash
-    try {
-        const PeopleState = require('../populationState/PeopleState');
-        const repairRes = await PeopleState.rebuildVillageMemberships();
-        if (repairRes && repairRes.success) {
-            // Village membership sets rebuilt successfully
-        } else {
-            console.warn('[StateManager] Rebuild village membership sets reported:', repairRes);
-        }
-    } catch (e) {
-        console.warn('[StateManager] Failed to run rebuildVillageMemberships:', e && e.message ? e.message : e);
-    }
 
-    // Verify villages match people's tiles - if not, regenerate villages
-    if (people.length > 0 && villages.length > 0) {
-        const peopleTileIds = new Set(people.map(p => p.tile_id).filter(Boolean));
-        const villageTileIds = new Set(villages.map(v => v.tile_id).filter(Boolean));
-
-        // Check if there's any overlap
-        let hasOverlap = false;
-        for (const tileId of peopleTileIds) {
-            if (villageTileIds.has(tileId)) {
-                hasOverlap = true;
-                break;
+    // Use robust VillageManager to ensure villages exist and are consistent
+    const VillageManager = require('../villageSeeder/villageManager');
+    
+    if (people.length > 0) {
+        // Validate village consistency
+        const validation = await VillageManager.validateVillageConsistency();
+        
+        if (!validation.valid) {
+            console.warn(`[StateManager] ⚠️ Village consistency issues detected: ${validation.issues.length} issues`);
+            for (const issue of validation.issues.slice(0, 5)) {
+                console.warn(`[StateManager]   - ${issue.type}: tile ${issue.tileId}`);
             }
-        }
-
-        if (!hasOverlap) {
-            console.warn(`[StateManager] ⚠️ Villages don't match people's tiles! Regenerating villages...`);
-            console.warn(`[StateManager] People tiles: ${[...peopleTileIds].slice(0, 5).join(', ')}...`);
-            console.warn(`[StateManager] Village tiles: ${[...villageTileIds].slice(0, 5).join(', ')}...`);
-
-            // Clear old villages and regenerate
-            await storage.del('village');
-            const { seedVillagesStorageFirst } = require('../villageSeeder/redisSeeding');
-            const reseeded = await seedVillagesStorageFirst();
-            // Note: seedVillagesStorageFirst already calls assignResidencyStorage internally
-            if (reseeded.created > 0) {
-                console.log(`[StateManager] ✅ Regenerated ${reseeded.created} villages for loaded people`);
+            
+            // Auto-repair: ensure villages for all populated tiles
+            const repairResult = await VillageManager.ensureVillagesForPopulatedTiles({ force: true });
+            if (repairResult.success) {
+                console.log(`[StateManager] ✅ Village repair complete: ${repairResult.created} created, ${repairResult.assigned} assigned`);
+            } else {
+                console.error(`[StateManager] ❌ Village repair failed: ${repairResult.error}`);
+            }
+        } else {
+            console.log(`[StateManager] ✅ Villages consistent: ${validation.summary.totalVillages} villages, ${validation.summary.totalPeople} people`);
+            
+            // Still rebuild membership sets to ensure they're correct
+            try {
+                const PeopleState = require('../populationState/PeopleState');
+                await PeopleState.rebuildVillageMemberships();
+            } catch (e) {
+                console.warn('[StateManager] Failed to rebuild village memberships:', e.message);
             }
         }
     }
@@ -138,6 +131,11 @@ async function loadFromDatabase(context) {
         console.log('[StateManager] No people loaded from Postgres, seeding new world...');
         const { seedWorldIfEmpty } = require('../villageSeeder/redisSeeding');
         seedResult = await seedWorldIfEmpty();
+        
+        // If seeding happened, also run village manager to ensure everything is consistent
+        if (seedResult && seedResult.seeded) {
+            await VillageManager.ensureVillagesForPopulatedTiles({ force: false });
+        }
     }
 
     // Restart calendar if it was running before loading
@@ -342,6 +340,13 @@ async function loadVillages(pipeline) {
  * Load people from PostgreSQL into storage pipeline
  */
 async function loadPeople(pipeline) {
+    // First, load villages to build a lookup map: (tile_id, land_chunk_index) -> village_id
+    const { rows: villageRows } = await pool.query('SELECT id, tile_id, land_chunk_index FROM villages');
+    const villageIdLookup = {};
+    for (const v of villageRows) {
+        villageIdLookup[`${v.tile_id}:${v.land_chunk_index}`] = v.id;
+    }
+    
     const { rows: people } = await pool.query('SELECT * FROM people');
     let maleCount = 0, femaleCount = 0;
 
@@ -349,10 +354,17 @@ async function loadPeople(pipeline) {
         // Normalize sex to boolean
         const sex = p.sex === true || p.sex === 'true' || p.sex === 1 ? true : false;
 
+        // Compute village_id from tile_id and residency (land_chunk_index)
+        let villageId = null;
+        if (p.tile_id !== null && p.residency !== null) {
+            villageId = villageIdLookup[`${p.tile_id}:${p.residency}`] || null;
+        }
+
         pipeline.hset('person', p.id.toString(), JSON.stringify({
             id: p.id,
             tile_id: p.tile_id,
             residency: p.residency,
+            village_id: villageId,  // Computed from tile_id + residency
             sex: sex,
             health: p.health ?? 100,
             family_id: p.family_id,
