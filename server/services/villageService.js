@@ -273,7 +273,12 @@ class VillageService {
     static async updateAllVillageFoodStoresRedis() {
         try {
             const villages = await StateManager.getAllVillages();
-            if (villages.length === 0) return [];
+            if (!villages || villages.length === 0) {
+                if (serverConfig.verboseLogs) {
+                    console.warn('[VillageService] No villages in storage when running food update');
+                }
+                return [];
+            }
 
             const pipeline = storage.pipeline();
             const updatedVillages = [];

@@ -63,6 +63,8 @@ async function saveToDatabase(context) {
         let villagesInserted = 0;
         let insertedCount = 0;
         let familiesInserted = 0;
+        const peopleFamilyLinks = [];
+        let peopleLinkedToFamilies = 0;
 
         // ========== STEP 1: Save tiles (with TRUNCATE CASCADE to clear dependent tables) ==========
         if (tileCount > 0) {
@@ -79,6 +81,12 @@ async function saveToDatabase(context) {
 
             for (const [tileId, tileJson] of Object.entries(allTileData)) {
                 const tile = JSON.parse(tileJson);
+                const boundaryPoints = tile.boundary_points !== undefined && tile.boundary_points !== null
+                    ? JSON.stringify(tile.boundary_points)
+                    : '[]';
+                const neighborIds = tile.neighbor_ids !== undefined && tile.neighbor_ids !== null
+                    ? JSON.stringify(tile.neighbor_ids)
+                    : '[]';
                 tileValues.push(`($${paramIndex}, $${paramIndex + 1}, $${paramIndex + 2}, $${paramIndex + 3}, $${paramIndex + 4}, $${paramIndex + 5}, $${paramIndex + 6}, $${paramIndex + 7}, $${paramIndex + 8}, $${paramIndex + 9}, $${paramIndex + 10}, $${paramIndex + 11}, $${paramIndex + 12})`);
                 tileParams.push(
                     tile.id,
@@ -90,8 +98,8 @@ async function saveToDatabase(context) {
                     tile.terrain_type,
                     tile.is_land,
                     tile.is_habitable,
-                    tile.boundary_points,
-                    tile.neighbor_ids,
+                    boundaryPoints,
+                    neighborIds,
                     tile.biome,
                     tile.fertility
                 );
@@ -192,8 +200,18 @@ async function saveToDatabase(context) {
                 for (const [id, json] of batch) {
                     try {
                         const p = JSON.parse(json);
+                        const personId = Number(p.id);
+                        if (Number.isNaN(personId)) {
+                            continue;
+                        }
+                        const tileId = p.tile_id !== undefined && p.tile_id !== null ? Number(p.tile_id) : null;
+                        const residency = p.residency !== undefined && p.residency !== null ? Number(p.residency) : null;
+                        const numericFamilyId = p.family_id !== undefined && p.family_id !== null ? Number(p.family_id) : null;
+                        if (numericFamilyId !== null && !Number.isNaN(numericFamilyId) && allFamilyData[String(numericFamilyId)]) {
+                            peopleFamilyLinks.push({ personId, familyId: numericFamilyId });
+                        }
                         values.push(`($${paramIdx}, $${paramIdx + 1}, $${paramIdx + 2}, $${paramIdx + 3}, $${paramIdx + 4}, $${paramIdx + 5})`);
-                        params.push(p.id, p.tile_id, p.sex, p.date_of_birth, p.residency, p.family_id || null);
+                        params.push(personId, tileId, p.sex, p.date_of_birth, residency, null);
                         paramIdx += 6;
                     } catch (e) { /* skip invalid */ }
                 }
@@ -241,6 +259,40 @@ async function saveToDatabase(context) {
             console.log(`💾 Step 4 complete: Saved ${familiesInserted} families`);
         }
 
+        // ========== STEP 4b: Restore people -> family links now that families exist ==========
+        if (peopleFamilyLinks.length > 0) {
+            console.log(`💾 Step 4b: Linking ${peopleFamilyLinks.length} people to their families...`);
+            const LINK_BATCH_SIZE = 500;
+            for (let i = 0; i < peopleFamilyLinks.length; i += LINK_BATCH_SIZE) {
+                const batch = peopleFamilyLinks.slice(i, i + LINK_BATCH_SIZE);
+                const values = [];
+                const params = [];
+                let paramIdx = 1;
+
+                for (const link of batch) {
+                    values.push(`($${paramIdx}::int, $${paramIdx + 1}::int)`);
+                    params.push(link.personId, link.familyId);
+                    paramIdx += 2;
+                }
+
+                if (values.length > 0) {
+                    try {
+                        await pool.query(`
+                            UPDATE people
+                            SET family_id = data.family_id,
+                                updated_at = CURRENT_TIMESTAMP
+                            FROM (VALUES ${values.join(', ')}) AS data(id, family_id)
+                            WHERE people.id = data.id
+                        `, params);
+                        peopleLinkedToFamilies += batch.length;
+                    } catch (e) {
+                        console.warn(`⚠️ Failed to link ${batch.length} people to families: ${e.message}`);
+                    }
+                }
+            }
+            console.log(`💾 Step 4b complete: Linked ${peopleLinkedToFamilies} people to families`);
+        }
+
         // Clear all pending operation sets since we just saved everything
         await PopulationState.clearPendingOperations();
         await PopulationState.clearPendingFamilyOperations();
@@ -279,7 +331,8 @@ async function saveToDatabase(context) {
             villages: villagesInserted,
             people: insertedCount,
             families: familiesInserted,
-            elapsed
+            elapsed,
+            familyLinks: peopleLinkedToFamilies
         };
     } finally {
         // Resume calendar ticks after save

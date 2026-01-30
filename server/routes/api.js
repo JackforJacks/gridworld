@@ -214,8 +214,8 @@ router.post('/worldrestart', async (req, res) => {
         // Skip the old tile regeneration logic since we always regenerate now
         // Reset population and reinitialize on habitable tiles
         stepStart = Date.now();
-        await populationService.resetPopulation();
-        if (serverConfig.verboseLogs) console.log(`⏱️ [worldrestart] Population reset: ${Date.now() - stepStart}ms`);
+        await populationService.resetPopulation({ preserveDatabase: false });
+        if (serverConfig.verboseLogs) console.log(`⏱️ [worldrestart] Population reset (full wipe): ${Date.now() - stepStart}ms`);
 
         stepStart = Date.now();
         // Select habitable tiles that also have cleared lands from Redis
@@ -245,7 +245,7 @@ router.post('/worldrestart', async (req, res) => {
         }
 
         if (habitableIds.length > 0) {
-            await populationService.initializeTilePopulations(habitableIds);
+            await populationService.initializeTilePopulations(habitableIds, { preserveDatabase: false, forceAll: true });
         }
         if (serverConfig.verboseLogs) console.log(`⏱️ [worldrestart] Population initialization: ${Date.now() - stepStart}ms`);
 

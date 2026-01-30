@@ -2,10 +2,58 @@ const express = require('express');
 const router = express.Router();
 const pool = require('../config/database');
 const villageSeeder = require('../services/villageSeeder');
+const StateManager = require('../services/stateManager');
+const storage = require('../services/storage');
+
+async function getVillagesFromRedis(filterTileId = null) {
+    if (!storage.isAvailable()) return null;
+
+    const villages = await StateManager.getAllVillages();
+    if (!villages || villages.length === 0) return [];
+
+    // Enrich with tile and land info from Redis
+    let tileData = {};
+    let landsData = {};
+    try {
+        tileData = await storage.hgetall('tile') || {};
+        landsData = await storage.hgetall('tile:lands') || {};
+    } catch (_) {
+        // best-effort; continue with raw villages
+    }
+
+    return villages
+        .filter(v => filterTileId === null || Number(v.tile_id) === Number(filterTileId))
+        .map(v => {
+            const tileJson = tileData[v.tile_id];
+            const tile = tileJson ? JSON.parse(tileJson) : null;
+            const landsJson = landsData[v.tile_id];
+            const lands = landsJson ? JSON.parse(landsJson) : null;
+            const land = Array.isArray(lands)
+                ? lands.find(l => Number(l.chunk_index) === Number(v.land_chunk_index))
+                : null;
+
+            return {
+                ...v,
+                center_x: tile ? tile.center_x : undefined,
+                center_y: tile ? tile.center_y : undefined,
+                terrain_type: tile ? tile.terrain_type : undefined,
+                biome: tile ? tile.biome : undefined,
+                land_type: land ? land.land_type : undefined,
+                cleared: land ? land.cleared : undefined,
+                occupied_slots: Array.isArray(v.housing_slots) ? v.housing_slots.length : undefined
+            };
+        });
+}
 
 // GET /api/villages - Get all villages
 router.get('/', async (req, res) => {
     try {
+        const redisVillages = await getVillagesFromRedis();
+        if (redisVillages) {
+            return res.json({ villages: redisVillages });
+        }
+
+        // Fallback to Postgres if Redis unavailable
         const { rows } = await pool.query(`
             SELECT v.*, t.center_x, t.center_y, t.terrain_type, t.biome,
                    tl.land_type, tl.cleared,
@@ -26,6 +74,12 @@ router.get('/', async (req, res) => {
 router.get('/tile/:tileId', async (req, res) => {
     const { tileId } = req.params;
     try {
+        const redisVillages = await getVillagesFromRedis(tileId);
+        if (redisVillages) {
+            return res.json({ villages: redisVillages });
+        }
+
+        // Fallback to Postgres if Redis unavailable
         const { rows } = await pool.query(`
             SELECT v.*, tl.land_type, tl.cleared,
                    jsonb_array_length(v.housing_slots) as occupied_slots

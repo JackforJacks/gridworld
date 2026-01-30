@@ -17,6 +17,26 @@ async function loadFromDatabase(context) {
         return { villages: 0, people: 0, families: 0, skipped: true };
     }
 
+    // Redis-first mode: do not touch Postgres or flush Redis. If Redis already has data, keep it.
+    if (process.env.REDIS_FIRST === 'true') {
+        console.log('[StateManager] REDIS_FIRST=true, skipping Postgres load and Redis flush');
+
+        // Resume calendar if we paused it earlier
+        let calendarWasRunning = false;
+        if (context.calendarService && context.calendarService.state) {
+            calendarWasRunning = context.calendarService.state.isRunning;
+        }
+        if (calendarWasRunning && context.calendarService && typeof context.calendarService.start === 'function') {
+            context.calendarService.start();
+        }
+
+        // Return current Redis counts for visibility
+        const villageCount = typeof storage.hlen === 'function' ? await storage.hlen('village') : 0;
+        const personCount = typeof storage.hlen === 'function' ? await storage.hlen('person') : 0;
+        const familyCount = typeof storage.hlen === 'function' ? await storage.hlen('family') : 0;
+        return { villages: villageCount, people: personCount, families: familyCount, skipped: true };
+    }
+
     // Stop calendar during loading to prevent time progression
     let calendarWasRunning = false;
     if (context.calendarService && typeof context.calendarService.stop === 'function') {
@@ -211,6 +231,18 @@ async function loadTilesLands(pipeline) {
 async function loadVillages(pipeline) {
     const { rows: villages } = await pool.query('SELECT * FROM villages');
     for (const v of villages) {
+        let housingSlots = [];
+        try {
+            if (Array.isArray(v.housing_slots)) {
+                housingSlots = v.housing_slots;
+            } else if (v.housing_slots) {
+                housingSlots = JSON.parse(v.housing_slots);
+                if (!Array.isArray(housingSlots)) housingSlots = [];
+            }
+        } catch (_) {
+            housingSlots = [];
+        }
+
         pipeline.hset('village', v.id.toString(), JSON.stringify({
             id: v.id,
             tile_id: v.tile_id,
@@ -220,6 +252,7 @@ async function loadVillages(pipeline) {
             food_capacity: parseInt(v.food_capacity) || 1000,
             food_production_rate: (parseFloat(v.food_production_rate) || 0),
             housing_capacity: parseInt(v.housing_capacity) || 100,
+            housing_slots: housingSlots,
         }));
     }
     return villages;

@@ -60,7 +60,7 @@ router.post('/', async (req, res, next) => {
 router.post('/initialize', async (req, res, next) => {
     try {
         const populationService = req.app.locals.populationService;
-        const { habitableTiles } = req.body;
+        const { habitableTiles, preserveDatabase = false } = req.body || {};
 
         if (!habitableTiles || !Array.isArray(habitableTiles)) {
             return res.status(400).json({
@@ -70,7 +70,7 @@ router.post('/initialize', async (req, res, next) => {
             });
         }
 
-        const responseData = await populationService.initializeTilePopulations(habitableTiles);
+        const responseData = await populationService.initializeTilePopulations(habitableTiles, { preserveDatabase });
 
         // Emit update to all clients
         res.json(responseData);

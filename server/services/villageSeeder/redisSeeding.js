@@ -14,7 +14,6 @@ const idAllocator = require('../idAllocator');
  * @returns {Promise<Object>} Result with created count and villages
  */
 async function seedVillagesStorageFirst() {
-    console.log('[villageSeeder] seedVillagesStorageFirst called');
     if (!storage.isAvailable()) {
         console.error('[villageSeeder] storage not available - cannot seed villages');
         return { created: 0, villages: [] };
@@ -27,7 +26,6 @@ async function seedVillagesStorageFirst() {
     // Check if villages already exist in Redis
     const existingVillages = await storage.hgetall('village');
     const villagesCount = existingVillages ? Object.keys(existingVillages).length : 0;
-    console.log('[villageSeeder] Existing villages in Redis:', villagesCount);
     if (villagesCount > 0) {
         console.log(`[villageSeeder] Redis already has ${villagesCount} villages, skipping storage-first seeding`);
         return { created: 0, villages: [] };
@@ -38,9 +36,7 @@ async function seedVillagesStorageFirst() {
 
         // Get population counts per tile from Redis
         let tilePopulations = await PopulationState.getAllTilePopulations();
-        console.log('[villageSeeder] getAllTilePopulations returned:', Object.keys(tilePopulations).length, 'tiles');
         let populatedTileIds = Object.keys(tilePopulations).filter(id => tilePopulations[id] > 0);
-        console.log('[villageSeeder] populatedTileIds:', populatedTileIds);
 
         // If no per-village sets found, try a best-effort fallback: group people by tile_id
         if (populatedTileIds.length === 0) {

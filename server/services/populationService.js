@@ -109,9 +109,11 @@ class PopulationService {
     async updatePopulation(tileId, population) {
         await updateTilePopulation(this.#pool, this.calendarService, this, tileId, population);
     }
-    async resetPopulation() { return await resetAllPopulation(this.#pool, this); }
-    async initializeTilePopulations(tileIds) {
-        return await initializeTilePopulations(this.#pool, this.calendarService, this, tileIds);
+    async resetPopulation(options = {}) {
+        return await resetAllPopulation(this.#pool, this, options);
+    }
+    async initializeTilePopulations(tileIds, options = {}) {
+        return await initializeTilePopulations(this.#pool, this.calendarService, this, tileIds, options);
     }
     async updateTilePopulations(tilePopulations) {
         return await updateMultipleTilePopulations(this.#pool, this.calendarService, this, tilePopulations);
