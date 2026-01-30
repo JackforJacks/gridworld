@@ -3,6 +3,9 @@
   "version": "1.0.0",
   "description": "GridWorld - Interactive 3D Hexasphere",
   "main": "src/main.js",
+  "engines": {
+    "node": ">=18.0.0"
+  },
   "sideEffects": [
     "**/*.css"
   ],
@@ -69,9 +72,9 @@
     "webpack-dev-server": "^4.15.1"
   },
   "dependencies": {
+    "compression": "^1.8.1",
     "cors": "^2.8.5",
     "dotenv": "^16.4.5",
-    "ecsy": "^0.4.3",
     "express": "^5.1.0",
     "fs-extra": "^11.3.0",
     "ioredis": "^5.9.2",

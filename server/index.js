@@ -6,6 +6,7 @@ const http = require('http');
 const path = require('path');
 const socketIo = require('socket.io');
 const cors = require('cors');
+const compression = require('compression');
 
 // Import configurations
 const serverConfig = require('./config/server');
@@ -44,6 +45,7 @@ class GridWorldServer {
         await storage.waitForReady();
 
         // Configure middleware
+        this.app.use(compression()); // Compress all HTTP responses
         this.app.use(cors({ origin: true, credentials: true })); // Allow cross-origin from dev server
         this.app.use(express.json());
         // Metrics integration removed — no /metrics Prometheus endpoint is registered
