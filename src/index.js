@@ -45,7 +45,7 @@ class GridWorldApp {
 
     async initialize() {
         if (typeof THREE === 'undefined') {
-            console.error("THREE.js not detected. Ensure that three.min.js is loaded before main.js.");
+            console.error("THREE.js not detected. Ensure THREE.js is loaded before the application.");
             return false;
         }
 

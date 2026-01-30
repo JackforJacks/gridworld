@@ -7,7 +7,7 @@ async function initializeAndStartGame() {
     return;
   }
   // Remove the redundant createScene call - SceneManager already handles this
-  // The SceneManager in main.js already created the hexasphere
+  // The SceneManager already created the hexasphere during initialization
   // Just update the dashboard with the existing data
   if (window.sceneManager && window.sceneManager.hexasphere) {
     // No separate tileData structure needed - properties are on tiles directly

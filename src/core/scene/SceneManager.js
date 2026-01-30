@@ -83,7 +83,6 @@ class SceneManager {
         }
         // Set up a pseudo-hexasphere object to keep compatibility with rest of code
         this.hexasphere = { tiles: tileData.tiles };
-        window.hexasphere = this.hexasphere;
         this.habitableTileIds = [];
         this.tileColorIndices.clear();
         const hexasphereGeometry = new THREE.BufferGeometry();
@@ -149,13 +148,13 @@ class SceneManager {
 
     async initializeTilePopulations(habitableTileIds) {
         try {
-// [log removed]
+            // [log removed]
             const result = await populationManager.initializeTilePopulations(habitableTileIds);
             this.updateTilePopulations();
             if (result && result.isExisting) {
-// [log removed]
+                // [log removed]
             } else {
-// [log removed]
+                // [log removed]
             }
         } catch (error) {
             console.error('❌ Failed to initialize tile populations:', error);
@@ -169,13 +168,13 @@ class SceneManager {
         }
         const tilePopulations = populationManager.getAllTilePopulations();
         const popKeys = Object.keys(tilePopulations);
-// [log removed]
+        // [log removed]
         let updated = 0;
         // Debug: Check a specific tile that should have population
         if (popKeys.length > 0) {
             const testTileId = popKeys[0];
             const foundTile = this.hexasphere.tiles.find(t => String(t.id) === String(testTileId));
-// [log removed]
+            // [log removed]
         }
         this.hexasphere.tiles.forEach(tile => {
             const oldPop = tile.population;
@@ -184,7 +183,7 @@ class SceneManager {
             tile.population = (tile.Habitable === 'yes' || tile.is_habitable === true) ? pop : 0;
             if (tile.population > 0) updated++;
         });
-// [log removed]
+        // [log removed]
     } checkPopulationThresholds() {
         if (!this.hexasphere || !this.hexasphere.tiles || !this.hexasphereMesh) return;
         const POPULATION_THRESHOLD = 0; // Changed to 0 - any tile with population > 0 will be red
@@ -265,7 +264,7 @@ class SceneManager {
 
     resetTileColors() {
         if (!this.hexasphere || !this.hexasphere.tiles || !this.hexasphereMesh) return;
-// [log removed]
+        // [log removed]
         let removedCount = 0;
         this.hexasphere.tiles.forEach(tile => {
             const colorInfo = this.tileColorIndices.get(tile.id);
@@ -278,7 +277,7 @@ class SceneManager {
             // Clear population data as well
             tile.population = 0;
         });
-// [log removed]
+        // [log removed]
     } async reinitializePopulation() {
         // Ensure habitableTileIds is populated before re-initializing
         if (!this.habitableTileIds || this.habitableTileIds.length === 0) {
@@ -295,12 +294,12 @@ class SceneManager {
         }
 
         try {
-// [log removed]
+            // [log removed]
             await populationManager.initializeTilePopulations(this.habitableTileIds);
-// [log removed]
+            // [log removed]
             this.updateTilePopulations(); // Refresh local tile data
             this.checkPopulationThresholds(); // This should add red overlays
-// [log removed]
+            // [log removed]
         } catch (error) {
             console.error('❌ Failed to reinitialize population:', error);
         }
@@ -316,12 +315,12 @@ class SceneManager {
         );
 
         if (!confirmed) {
-// [log removed]
+            // [log removed]
             return;
         }
 
         try {
-// [log removed]
+            // [log removed]
 
             // First, restart the world to get a new seed
             const restartResponse = await fetch('/api/worldrestart', {
@@ -334,7 +333,7 @@ class SceneManager {
                 throw new Error(`Failed to restart world: ${restartResponse.status} - ${errorData.message || 'Unknown error'}`);
             }
             const restartData = await restartResponse.json();
-// [log removed]
+            // [log removed]
 
             // Attempt to apply server calendar state to client. If restart response lacks it, fetch /api/calendar/state
             try {
@@ -352,12 +351,12 @@ class SceneManager {
                 }
 
                 if (calendarState) {
-// [log removed]
+                    // [log removed]
                     // Force-update year label directly
                     const yearEl = document.getElementById('calendar-year-inline');
                     if (yearEl && calendarState.currentDate) {
                         yearEl.textContent = `Year: ${calendarState.currentDate.year}`;
-// [log removed]
+                        // [log removed]
                     }
                     if (window.GridWorldApp && window.GridWorldApp.calendarManager) {
                         try {
@@ -365,7 +364,7 @@ class SceneManager {
                             if (window.GridWorldApp.calendarDisplay && typeof window.GridWorldApp.calendarDisplay.updateDateDisplay === 'function') {
                                 window.GridWorldApp.calendarDisplay.updateDateDisplay(calendarState);
                             }
-// [log removed]
+                            // [log removed]
                         } catch (e) {
                             console.warn('Failed to apply calendarState on client:', e);
                         }
@@ -389,7 +388,7 @@ class SceneManager {
                     radius = config.hexasphere.radius;
                     subdivisions = config.hexasphere.subdivisions;
                     tileWidthRatio = config.hexasphere.tileWidthRatio;
-// [log removed]
+                    // [log removed]
                 }
             } catch (error) {
                 console.warn('Failed to fetch config, using fallback values:', error);
@@ -414,7 +413,7 @@ class SceneManager {
             // Rebuild the geometry with new data
             this.buildTilesFromData(tileData);
 
-// [log removed]
+            // [log removed]
         } catch (error) {
             console.error('❌ Failed to regenerate tiles:', error);
             throw error;
@@ -557,11 +556,34 @@ class SceneManager {
 
     clearTiles() {
         if (this.currentTiles && this.currentTiles.length > 0) {
-            this.currentTiles.forEach(tileMesh => this.scene.remove(tileMesh));
+            this.currentTiles.forEach(tileMesh => {
+                this.scene.remove(tileMesh);
+                // Dispose geometry and material to prevent memory leaks
+                if (tileMesh.geometry) tileMesh.geometry.dispose();
+                if (tileMesh.material) {
+                    if (Array.isArray(tileMesh.material)) {
+                        tileMesh.material.forEach(material => material.dispose());
+                    } else {
+                        tileMesh.material.dispose();
+                    }
+                }
+            });
             this.currentTiles.length = 0;
         }
+        // Also dispose the hexasphereMesh if it exists
+        if (this.hexasphereMesh) {
+            this.scene.remove(this.hexasphereMesh);
+            if (this.hexasphereMesh.geometry) this.hexasphereMesh.geometry.dispose();
+            if (this.hexasphereMesh.material) {
+                if (Array.isArray(this.hexasphereMesh.material)) {
+                    this.hexasphereMesh.material.forEach(material => material.dispose());
+                } else {
+                    this.hexasphereMesh.material.dispose();
+                }
+            }
+            this.hexasphereMesh = null;
+        }
         this.tileColorIndices.clear();
-        this.hexasphereMesh = null;
     }
 
     addLighting(camera, sphereRadius = 30) {

@@ -2,7 +2,7 @@
   "name": "gridworld",
   "version": "1.0.0",
   "description": "GridWorld - Interactive 3D Hexasphere",
-  "main": "src/main.js",
+  "main": "src/index.js",
   "engines": {
     "node": ">=18.0.0"
   },

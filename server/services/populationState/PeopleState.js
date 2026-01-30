@@ -726,7 +726,12 @@ class PeopleState {
             // summing SCARD across residency sets will double-count the same person. Build a Set per tile.
             const tileSets = new Map(); // tileId -> Set of person IDs
             const stream = storage.scanStream({ match: 'village:*:*:people', count: 100 });
+
+            // Handle the async iterator correctly
             for await (const keys of stream) {
+                // keys should be an array, ensure it is
+                if (!Array.isArray(keys)) continue;
+
                 // Batch smembers for this chunk to reduce round trips
                 const pipeline = storage.pipeline();
                 for (const key of keys) pipeline.smembers(key);
@@ -757,9 +762,10 @@ class PeopleState {
                 let totalScards = 0;
                 let totalUnique = 0;
                 const warnStream = storage.scanStream({ match: 'village:*:*:people', count: 100 });
-                for await (const keys of warnStream) {
+                for await (const warnKeys of warnStream) {
+                    if (!Array.isArray(warnKeys)) continue;
                     const pipeline = storage.pipeline();
-                    for (const key of keys) pipeline.scard(key);
+                    for (const key of warnKeys) pipeline.scard(key);
                     const results = await pipeline.exec();
                     for (const [err, sc] of results) {
                         if (!err && typeof sc === 'number') totalScards += sc;
@@ -774,6 +780,7 @@ class PeopleState {
                         const personMap = new Map(); // id -> Set of keys
                         const warnStream2 = storage.scanStream({ match: 'village:*:*:people', count: 100 });
                         for await (const keys2 of warnStream2) {
+                            if (!Array.isArray(keys2)) continue;
                             for (const key of keys2) {
                                 const members = await storage.smembers(key);
                                 for (const m of members) {
@@ -812,7 +819,7 @@ class PeopleState {
 
             return result;
         } catch (err) {
-            console.warn('[PeopleState] getAllTilePopulations failed:', err.message);
+            console.warn('[PeopleState] getAllTilePopulations failed:', err.message || err);
             return {};
         }
     }

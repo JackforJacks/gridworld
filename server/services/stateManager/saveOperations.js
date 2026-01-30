@@ -20,7 +20,9 @@ async function saveToDatabase(context) {
         context.calendarService.stop();
     }
 
+    const client = await pool.connect();
     try {
+        await client.query('BEGIN');
         const startTime = Date.now();
         const PopulationState = require('../populationState');
 
@@ -28,15 +30,77 @@ async function saveToDatabase(context) {
         const allTileData = await storage.hgetall('tile') || {};
         const allLandsData = await storage.hgetall('tile:lands') || {};
         const allVillageData = await storage.hgetall('village') || {};
-
         const allPeopleData = await storage.hgetall('person') || {};
-
         const allFamilyData = await storage.hgetall('family') || {};
 
+        // --- STEP: Remove empty villages (no residents) from allVillageData ---
+        const villageHasResidents = {};
+        for (const [personId, personJson] of Object.entries(allPeopleData)) {
+            try {
+                const person = JSON.parse(personJson);
+                if (person.village_id) {
+                    villageHasResidents[person.village_id] = true;
+                }
+            } catch (_) {}
+        }
+        // Filter out villages with no residents
+        const filteredVillageData = {};
+        for (const [villageId, villageJson] of Object.entries(allVillageData)) {
+            if (villageHasResidents[villageId]) {
+                filteredVillageData[villageId] = villageJson;
+            }
+        }
+
         const tileCount = Object.keys(allTileData).length;
-        const villageCount = Object.keys(allVillageData).length;
+        const villageCount = Object.keys(filteredVillageData).length;
         const peopleCount = Object.keys(allPeopleData).length;
         const familyCount = Object.keys(allFamilyData).length;
+
+        // --- STEP: Pre-save validation for villages ---
+        const villageManager = await import('../villageSeeder/villageManager.cjs');
+        const validation = await villageManager.validateVillageConsistency();
+        if (!validation.valid) {
+            console.warn(`[SaveOperations] Village consistency issues detected before save: ${validation.issues.length} issues`);
+            for (const issue of validation.issues.slice(0, 5)) {
+                console.warn(`[SaveOperations]   - ${issue.type}: tile ${issue.tileId}`);
+            }
+            
+            // Auto-repair missing villages or other inconsistencies
+            console.log('[SaveOperations] Attempting auto-repair of consistency issues...');
+            const repairResult = await villageManager.repairVillageConsistency();
+            if (repairResult.result && repairResult.result.success) {
+                 console.log(`[SaveOperations] ✅ Repair successful: ${repairResult.result.created} villages created, ${repairResult.result.assigned} people assigned`);
+                 
+                 // Refresh data maps after repair to save the correct state
+                 // using const here would shadow the outer variables, so we need to update the object references if possible
+                 // OR simply re-fetch the specific data that changed.
+                 // Re-fetching full state is safer.
+                 Object.assign(allTileData, await storage.hgetall('tile') || {});
+                 Object.assign(allLandsData, await storage.hgetall('tile:lands') || {});
+                 Object.assign(allVillageData, await storage.hgetall('village') || {});
+                 // People might have been updated during assignment
+                 Object.assign(allPeopleData, await storage.hgetall('person') || {});
+                 
+                 // Re-filter villages based on new state
+                 const newVillageHasResidents = {};
+                 for (const [personId, personJson] of Object.entries(allPeopleData)) {
+                    try {
+                        const person = JSON.parse(personJson);
+                        if (person.village_id) newVillageHasResidents[person.village_id] = true;
+                    } catch (_) {}
+                 }
+                 
+                 // Clear and refill filtered set
+                 for (const key in filteredVillageData) delete filteredVillageData[key];
+                 for (const [villageId, villageJson] of Object.entries(allVillageData)) {
+                     if (newVillageHasResidents[villageId]) {
+                         filteredVillageData[villageId] = villageJson;
+                     }
+                 }
+            } else {
+                 console.error('[SaveOperations] ❌ Repair failed, saving potentially inconsistent state');
+            }
+        }
 
         let tilesSaved = 0;
         let landsSaved = 0;
@@ -48,11 +112,11 @@ async function saveToDatabase(context) {
 
         // ========== STEP 0: Clear ALL Postgres tables before saving (full replace, not merge) ==========
         // Order matters due to foreign keys: people -> families -> villages -> tiles_lands -> tiles
-        await pool.query('TRUNCATE TABLE people RESTART IDENTITY CASCADE');
-        await pool.query('TRUNCATE TABLE family RESTART IDENTITY CASCADE');
-        await pool.query('TRUNCATE TABLE villages RESTART IDENTITY CASCADE');
-        await pool.query('TRUNCATE TABLE tiles_lands RESTART IDENTITY CASCADE');
-        await pool.query('TRUNCATE TABLE tiles RESTART IDENTITY CASCADE');
+        await client.query('TRUNCATE TABLE people RESTART IDENTITY CASCADE');
+        await client.query('TRUNCATE TABLE family RESTART IDENTITY CASCADE');
+        await client.query('TRUNCATE TABLE villages RESTART IDENTITY CASCADE');
+        await client.query('TRUNCATE TABLE tiles_lands RESTART IDENTITY CASCADE');
+        await client.query('TRUNCATE TABLE tiles RESTART IDENTITY CASCADE');
 
         // ========== STEP 1: Save tiles ==========
         if (tileCount > 0) {
@@ -91,7 +155,7 @@ async function saveToDatabase(context) {
 
             // Batch insert tiles
             if (tileValues.length > 0) {
-                await pool.query(`
+                await client.query(`
                     INSERT INTO tiles (id, center_x, center_y, center_z, latitude, longitude, terrain_type, is_land, is_habitable, boundary_points, neighbor_ids, biome, fertility)
                     VALUES ${tileValues.join(', ')}
                 `, tileParams);
@@ -113,7 +177,7 @@ async function saveToDatabase(context) {
 
                     // Insert in batches
                     if (landValues.length >= BATCH_SIZE) {
-                        await pool.query(
+                        await client.query(
                             `INSERT INTO tiles_lands (tile_id, chunk_index, land_type, cleared) VALUES ${landValues.join(', ')}`,
                             landParams
                         );
@@ -127,7 +191,7 @@ async function saveToDatabase(context) {
 
             // Insert remaining lands
             if (landValues.length > 0) {
-                await pool.query(
+                await client.query(
                     `INSERT INTO tiles_lands (tile_id, chunk_index, land_type, cleared) VALUES ${landValues.join(', ')}`,
                     landParams
                 );
@@ -138,12 +202,12 @@ async function saveToDatabase(context) {
             await storage.del('pending:tiles:regenerate');
         }
 
-        // ========== STEP 2: Save ALL villages from Redis ==========
+        // ========== STEP 2: Save ALL villages from Redis (filtered: only villages with residents) ========== 
         if (villageCount > 0) {
-            for (const [id, json] of Object.entries(allVillageData)) {
+            for (const [id, json] of Object.entries(filteredVillageData)) {
                 try {
                     const v = JSON.parse(json);
-                    await pool.query(`
+                    await client.query(`
                         INSERT INTO villages (id, tile_id, land_chunk_index, name, housing_slots, housing_capacity, food_stores, food_capacity, food_production_rate)
                         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
                     `, [v.id, v.tile_id, v.land_chunk_index, v.name || 'Village', JSON.stringify(v.housing_slots || []), v.housing_capacity || 1000, v.food_stores || 0, v.food_capacity || 100000, v.food_production_rate || 50]);
@@ -153,10 +217,10 @@ async function saveToDatabase(context) {
                 }
             }
             // Update tiles_lands village references
-            for (const [id, json] of Object.entries(allVillageData)) {
+            for (const [id, json] of Object.entries(filteredVillageData)) {
                 try {
                     const v = JSON.parse(json);
-                    await pool.query(`UPDATE tiles_lands SET village_id = $1 WHERE tile_id = $2 AND chunk_index = $3`, [v.id, v.tile_id, v.land_chunk_index]);
+                    await client.query(`UPDATE tiles_lands SET village_id = $1 WHERE tile_id = $2 AND chunk_index = $3`, [v.id, v.tile_id, v.land_chunk_index]);
                 } catch (_) { /* non-fatal */ }
             }
         }
@@ -193,7 +257,7 @@ async function saveToDatabase(context) {
 
                 if (values.length > 0) {
                     try {
-                        await pool.query(`
+                        await client.query(`
                             INSERT INTO people (id, tile_id, sex, date_of_birth, residency, family_id)
                             VALUES ${values.join(',')}
                         `, params);
@@ -210,7 +274,7 @@ async function saveToDatabase(context) {
             for (const [id, json] of Object.entries(allFamilyData)) {
                 try {
                     const f = JSON.parse(json);
-                    await pool.query(`
+                    await client.query(`
                         INSERT INTO family (id, husband_id, wife_id, tile_id, pregnancy, delivery_date, children_ids)
                         VALUES ($1, $2, $3, $4, $5, $6, $7)
                     `, [f.id, f.husband_id || null, f.wife_id || null, f.tile_id, f.pregnancy || false, f.delivery_date || null, f.children_ids || []]);
@@ -238,7 +302,7 @@ async function saveToDatabase(context) {
 
                 if (values.length > 0) {
                     try {
-                        await pool.query(`
+                        await client.query(`
                             UPDATE people
                             SET family_id = data.family_id,
                                 updated_at = CURRENT_TIMESTAMP
@@ -259,6 +323,8 @@ async function saveToDatabase(context) {
         try { await storage.del('pending:village:inserts'); } catch (_) { }
 
         const elapsed = Date.now() - startTime;
+
+        await client.query('COMMIT');
 
         console.log(`💾 [PostgreSQL] Saved in ${elapsed}ms — Tiles: ${tilesSaved}, Lands: ${landsSaved}, Villages: ${villagesInserted}, People: ${insertedCount}, Families: ${familiesInserted}`);
 
@@ -294,7 +360,11 @@ async function saveToDatabase(context) {
             elapsed,
             familyLinks: peopleLinkedToFamilies
         };
+    } catch (err) {
+        await client.query('ROLLBACK');
+        throw err;
     } finally {
+        client.release();
         // Resume calendar ticks after save
         if (wasRunning && context.calendarService) {
             context.calendarService.start();

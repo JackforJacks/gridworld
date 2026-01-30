@@ -55,6 +55,7 @@ async function loadFromDatabase(context) {
     // Clear existing storage state keys to avoid stale data
     await clearExistingStorageState();
 
+    const startTime = Date.now();
     const pipeline = storage.pipeline();
 
     // Load tiles from Postgres into Redis
@@ -72,7 +73,9 @@ async function loadFromDatabase(context) {
     // Load families
     const families = await loadFamilies(pipeline);
 
-    console.log(`📦 Loaded from Postgres: ${people.length} people, ${villages.length} villages, ${families.length} families`);
+    const loadEndTime = Date.now();
+    const loadDuration = ((loadEndTime - startTime) / 1000).toFixed(2);
+    console.log(`📦 Loaded from Postgres: ${people.length} people, ${villages.length} villages, ${families.length} families (${loadDuration}s)`);
 
     // Populate fertile family candidates
     await populateFertileFamilies(families, people, context.calendarService);
@@ -93,7 +96,7 @@ async function loadFromDatabase(context) {
     await populateEligibleSets(people, context.calendarService);
 
     // Use robust VillageManager to ensure villages exist and are consistent
-    const VillageManager = require('../villageSeeder/villageManager');
+    const VillageManager = require('../villageSeeder/villageManager.cjs');
 
     if (people.length > 0) {
         // Validate village consistency
