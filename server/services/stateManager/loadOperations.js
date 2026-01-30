@@ -102,10 +102,62 @@ async function loadFromDatabase(context) {
         console.warn('[StateManager] Failed to run rebuildVillageMemberships:', e && e.message ? e.message : e);
     }
 
+    // Verify villages match people's tiles - if not, regenerate villages
+    if (people.length > 0 && villages.length > 0) {
+        const peopleTileIds = new Set(people.map(p => p.tile_id).filter(Boolean));
+        const villageTileIds = new Set(villages.map(v => v.tile_id).filter(Boolean));
+        
+        // Check if there's any overlap
+        let hasOverlap = false;
+        for (const tileId of peopleTileIds) {
+            if (villageTileIds.has(tileId)) {
+                hasOverlap = true;
+                break;
+            }
+        }
+        
+        if (!hasOverlap) {
+            console.warn(`[StateManager] ⚠️ Villages don't match people's tiles! Regenerating villages...`);
+            console.warn(`[StateManager] People tiles: ${[...peopleTileIds].slice(0, 5).join(', ')}...`);
+            console.warn(`[StateManager] Village tiles: ${[...villageTileIds].slice(0, 5).join(', ')}...`);
+            
+            // Clear old villages and regenerate
+            await storage.del('village');
+            const { seedVillagesStorageFirst } = require('../villageSeeder/redisSeeding');
+            const reseeded = await seedVillagesStorageFirst();
+            // Note: seedVillagesStorageFirst already calls assignResidencyStorage internally
+            if (reseeded.created > 0) {
+                console.log(`[StateManager] ✅ Regenerated ${reseeded.created} villages for loaded people`);
+            }
+        }
+    }
+
+    // If Redis is empty after loading from Postgres, seed a new world
+    let seedResult = null;
+    if (people.length === 0) {
+        console.log('[StateManager] No people loaded from Postgres, seeding new world...');
+        const { seedWorldIfEmpty } = require('../villageSeeder/redisSeeding');
+        seedResult = await seedWorldIfEmpty();
+    }
+
     // Restart calendar if it was running before loading
     if (calendarWasRunning && context.calendarService && typeof context.calendarService.start === 'function') {
         context.calendarService.start();
         console.log('▶️ Calendar resumed after world loading');
+    }
+
+    // Return loaded counts, or seeded counts if we seeded
+    if (seedResult && seedResult.seeded) {
+        return {
+            villages: seedResult.villages,
+            people: seedResult.people,
+            families: 0,
+            male: 0,
+            female: 0,
+            tiles: seedResult.tiles,
+            tilesLands: 0,
+            seeded: true
+        };
     }
 
     return {
@@ -120,6 +172,7 @@ async function loadFromDatabase(context) {
 }
 
 async function clearExistingStorageState() {
+    console.log('🧹 Starting clearExistingStorageState...');
     try {
         // Check what keys exist before flush (guard for tests/mocks that don't implement it)
         let keysBefore = [];
@@ -130,7 +183,8 @@ async function clearExistingStorageState() {
 
         // Flush the entire Redis database to ensure clean state (guard when not supported)
         if (typeof storage.flushdb === 'function') {
-            await storage.flushdb();
+            const flushResult = await storage.flushdb();
+            console.log(`🧹 flushdb() returned: ${flushResult}`);
             console.log('🧹 Flushed entire Redis database for clean state load');
         } else {
             throw new Error('flushdb not supported');
@@ -142,25 +196,51 @@ async function clearExistingStorageState() {
             keysAfter = await storage.keys('*') || [];
         }
         console.log(`🧹 Keys after flush: ${keysAfter.length} keys`);
+        
+        if (keysAfter.length > 0) {
+            console.warn(`⚠️ WARNING: ${keysAfter.length} keys still exist after flushdb! Keys: ${keysAfter.slice(0, 10).join(', ')}${keysAfter.length > 10 ? '...' : ''}`);
+        }
     } catch (e) {
         console.warn('⚠️ Failed to flush Redis database:', e && e.message ? e.message : e);
-        // Fallback to selective clearing
+        // Fallback to comprehensive selective clearing
         try {
+            // Clear all known hash keys
             await storage.del(
-                'village', 'person', 'family', 'tile:fertility',
-                'village:cleared', 'counts:global', 'pending:inserts',
-                'pending:deletes', 'pending:family:inserts', 'pending:family:updates'
+                'village', 'person', 'family', 
+                'tile', 'tile:lands', 'tile:fertility',
+                'village:cleared', 'counts:global'
             );
 
-            // Clear all village:*:*:people sets
-            const stream = storage.scanStream({ match: 'village:*:*:people', count: 1000 });
-            const keysToDelete = [];
-            for await (const resultKeys of stream) {
-                for (const key of resultKeys) keysToDelete.push(key);
+            // Clear all pattern-based keys using scanStream
+            const patterns = [
+                'village:*:*:people',   // Village population sets
+                'eligible:*:*',         // Eligible matchmaking sets
+                'pending:*',            // All pending operations
+                'fertile:*',            // Fertile family sets
+                'lock:*',               // Any stale locks
+                'stats:*'               // Statistics counters
+            ];
+
+            for (const pattern of patterns) {
+                try {
+                    const stream = storage.scanStream({ match: pattern, count: 1000 });
+                    const keysToDelete = [];
+                    for await (const resultKeys of stream) {
+                        for (const key of resultKeys) keysToDelete.push(key);
+                    }
+                    if (keysToDelete.length > 0) {
+                        // Delete in batches of 100 to avoid overwhelming Redis
+                        for (let i = 0; i < keysToDelete.length; i += 100) {
+                            const batch = keysToDelete.slice(i, i + 100);
+                            await storage.del(...batch);
+                        }
+                        console.log(`🧹 Cleared ${keysToDelete.length} keys matching '${pattern}'`);
+                    }
+                } catch (scanErr) {
+                    console.warn(`⚠️ Failed to clear keys matching '${pattern}':`, scanErr.message);
+                }
             }
-            if (keysToDelete.length > 0) {
-                await storage.del(...keysToDelete);
-            }
+
             console.log('🧹 Cleared existing storage state keys (fallback method)');
         } catch (e2) {
             console.warn('⚠️ Failed to clear storage keys even with fallback:', e2 && e2.message ? e2.message : e2);

@@ -66,13 +66,19 @@ async function saveToDatabase(context) {
         const peopleFamilyLinks = [];
         let peopleLinkedToFamilies = 0;
 
-        // ========== STEP 1: Save tiles (with TRUNCATE CASCADE to clear dependent tables) ==========
-        if (tileCount > 0) {
-            console.log('💾 Step 1: Saving tiles to Postgres (TRUNCATE CASCADE will clear dependent tables)...');
+        // ========== STEP 0: Clear ALL Postgres tables before saving (full replace, not merge) ==========
+        console.log('💾 Step 0: Clearing Postgres tables before save (full replace mode)...');
+        // Order matters due to foreign keys: people -> families -> villages -> tiles_lands -> tiles
+        await pool.query('TRUNCATE TABLE people RESTART IDENTITY CASCADE');
+        await pool.query('TRUNCATE TABLE family RESTART IDENTITY CASCADE');
+        await pool.query('TRUNCATE TABLE villages RESTART IDENTITY CASCADE');
+        await pool.query('TRUNCATE TABLE tiles_lands RESTART IDENTITY CASCADE');
+        await pool.query('TRUNCATE TABLE tiles RESTART IDENTITY CASCADE');
+        console.log('💾 Step 0 complete: All tables cleared');
 
-            // Clear existing tiles and lands - CASCADE will also clear villages/people/families
-            await pool.query('TRUNCATE TABLE tiles RESTART IDENTITY CASCADE');
-            await pool.query('TRUNCATE TABLE tiles_lands RESTART IDENTITY CASCADE');
+        // ========== STEP 1: Save tiles ==========
+        if (tileCount > 0) {
+            console.log(`💾 Step 1: Saving ${tileCount} tiles to Postgres...`);
 
             // Prepare tile data for batch insert
             const tileValues = [];
@@ -165,10 +171,6 @@ async function saveToDatabase(context) {
                     await pool.query(`
                         INSERT INTO villages (id, tile_id, land_chunk_index, name, housing_slots, housing_capacity, food_stores, food_capacity, food_production_rate)
                         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
-                        ON CONFLICT (id) DO UPDATE SET
-                            food_stores = EXCLUDED.food_stores,
-                            food_production_rate = EXCLUDED.food_production_rate,
-                            updated_at = CURRENT_TIMESTAMP
                     `, [v.id, v.tile_id, v.land_chunk_index, v.name || 'Village', JSON.stringify(v.housing_slots || []), v.housing_capacity || 1000, v.food_stores || 0, v.food_capacity || 100000, v.food_production_rate || 50]);
                     villagesInserted++;
                 } catch (e) {
@@ -221,11 +223,6 @@ async function saveToDatabase(context) {
                         await pool.query(`
                             INSERT INTO people (id, tile_id, sex, date_of_birth, residency, family_id)
                             VALUES ${values.join(',')}
-                            ON CONFLICT (id) DO UPDATE SET
-                                tile_id = EXCLUDED.tile_id,
-                                residency = EXCLUDED.residency,
-                                family_id = EXCLUDED.family_id,
-                                updated_at = CURRENT_TIMESTAMP
                         `, params);
                         insertedCount += values.length;
                     } catch (e) {
@@ -245,11 +242,6 @@ async function saveToDatabase(context) {
                     await pool.query(`
                         INSERT INTO family (id, husband_id, wife_id, tile_id, pregnancy, delivery_date, children_ids)
                         VALUES ($1, $2, $3, $4, $5, $6, $7)
-                        ON CONFLICT (id) DO UPDATE SET
-                            pregnancy = EXCLUDED.pregnancy,
-                            delivery_date = EXCLUDED.delivery_date,
-                            children_ids = EXCLUDED.children_ids,
-                            updated_at = CURRENT_TIMESTAMP
                     `, [f.id, f.husband_id || null, f.wife_id || null, f.tile_id, f.pregnancy || false, f.delivery_date || null, f.children_ids || []]);
                     familiesInserted++;
                 } catch (e) {

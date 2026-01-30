@@ -255,17 +255,22 @@ class PeopleState {
 
     /**
      * Remove person from all eligible sets
+     * Optimized: Uses pipeline to batch srem operations
      */
     static async removeEligiblePerson(personId) {
         if (!storage.isAvailable()) return false;
         try {
-            // We need to find and remove from eligible sets
-            // Scan for keys matching eligible:*:*
+            const personIdStr = personId.toString();
+            // Collect all keys first, then batch remove
             const stream = storage.scanStream({ match: 'eligible:*:*', count: 100 });
             for await (const keys of stream) {
+                if (keys.length === 0) continue;
+                // Use pipeline to batch all srem operations for this chunk
+                const pipeline = storage.pipeline();
                 for (const key of keys) {
-                    await storage.srem(key, personId.toString());
+                    pipeline.srem(key, personIdStr);
                 }
+                await pipeline.exec();
             }
             return true;
         } catch (err) {
@@ -372,6 +377,281 @@ class PeopleState {
             await storage.del('pending:person:deletes');
         } catch (err) {
             console.warn('[PeopleState] clearPendingOperations failed:', err.message);
+        }
+    }
+
+    // =========== BATCH OPERATIONS (OPTIMIZED) ===========
+
+    /**
+     * Batch clear family_id for multiple persons
+     * Optimized: Uses pipeline to batch all updates
+     * @param {Array<number>} personIds - Array of person IDs to update
+     * @returns {Promise<number>} Number of successfully updated persons
+     */
+    static async batchClearFamilyIds(personIds) {
+        if (!storage.isAvailable() || !personIds || personIds.length === 0) return 0;
+        try {
+            // First, batch-read all persons using pipeline
+            const readPipeline = storage.pipeline();
+            for (const personId of personIds) {
+                readPipeline.hget('person', personId.toString());
+            }
+            const readResults = await readPipeline.exec();
+
+            // Prepare write operations
+            const writePipeline = storage.pipeline();
+            let updateCount = 0;
+
+            for (let i = 0; i < personIds.length; i++) {
+                const personId = personIds[i];
+                const [err, json] = readResults[i];
+                if (err || !json) continue;
+
+                let person;
+                try { person = JSON.parse(json); } catch { continue; }
+
+                // Update person with cleared family_id
+                person.family_id = null;
+                writePipeline.hset('person', personId.toString(), JSON.stringify(person));
+
+                // Track modified people for batch update (only for existing Postgres records)
+                if (personId > 0 && !person._isNew) {
+                    writePipeline.sadd('pending:person:updates', personId.toString());
+                }
+                updateCount++;
+            }
+
+            if (updateCount > 0) {
+                await writePipeline.exec();
+            }
+            return updateCount;
+        } catch (err) {
+            console.warn('[PeopleState] batchClearFamilyIds failed:', err.message);
+            return 0;
+        }
+    }
+
+    /**
+     * Batch remove persons from Redis
+     * Optimized: Uses pipeline to batch all remove operations
+     * @param {Array<number>} personIds - Array of person IDs to remove
+     * @param {boolean} markDeleted - If true, track for Postgres deletion
+     * @returns {Promise<number>} Number of successfully removed persons
+     */
+    static async batchRemovePersons(personIds, markDeleted = false) {
+        if (!storage.isAvailable() || !personIds || personIds.length === 0) return 0;
+        try {
+            // First, batch-read all persons using pipeline to get their data
+            const readPipeline = storage.pipeline();
+            for (const personId of personIds) {
+                readPipeline.hget('person', personId.toString());
+            }
+            const readResults = await readPipeline.exec();
+
+            // Collect all eligible keys to remove from (we'll batch this separately)
+            const eligibleKeysToCheck = new Set();
+            const personsData = [];
+
+            for (let i = 0; i < personIds.length; i++) {
+                const personId = personIds[i];
+                const [err, json] = readResults[i];
+                if (err || !json) continue;
+
+                let person;
+                try { person = JSON.parse(json); } catch { continue; }
+                personsData.push({ personId, person });
+            }
+
+            // Prepare main removal pipeline
+            const removePipeline = storage.pipeline();
+
+            for (const { personId, person } of personsData) {
+                const personIdStr = personId.toString();
+
+                // Remove from tile's village population set
+                if (person.tile_id && person.residency !== null && person.residency !== undefined) {
+                    removePipeline.srem(`village:${person.tile_id}:${person.residency}:people`, personIdStr);
+                }
+
+                // Decrement global counts
+                removePipeline.hincrby('counts:global', 'total', -1);
+                if (person.sex === true) removePipeline.hincrby('counts:global', 'male', -1);
+                else if (person.sex === false) removePipeline.hincrby('counts:global', 'female', -1);
+
+                // Remove from eligible sets (we know the person's tile and sex)
+                if (person.tile_id) {
+                    const sex = person.sex === true ? 'male' : 'female';
+                    removePipeline.srem(`eligible:${sex}:${person.tile_id}`, personIdStr);
+                }
+
+                // Delete the person record
+                removePipeline.hdel('person', personIdStr);
+
+                // Track for Postgres deletion or remove from pending inserts
+                if (markDeleted && personId > 0) {
+                    removePipeline.sadd('pending:person:deletes', personIdStr);
+                }
+                if (personId < 0) {
+                    removePipeline.srem('pending:person:inserts', personIdStr);
+                }
+            }
+
+            if (personsData.length > 0) {
+                await removePipeline.exec();
+            }
+
+            return personsData.length;
+        } catch (err) {
+            console.warn('[PeopleState] batchRemovePersons failed:', err.message);
+            return 0;
+        }
+    }
+
+    /**
+     * Batch delete families from Redis
+     * Optimized: Uses pipeline to batch all delete operations
+     * @param {Array<number>} familyIds - Array of family IDs to delete
+     * @param {boolean} markDeleted - If true, track positive IDs for Postgres deletion
+     * @returns {Promise<number>} Number of families deleted
+     */
+    static async batchDeleteFamilies(familyIds, markDeleted = false) {
+        if (!storage.isAvailable() || !familyIds || familyIds.length === 0) return 0;
+        try {
+            const pipeline = storage.pipeline();
+
+            for (const familyId of familyIds) {
+                const familyIdStr = familyId.toString();
+                pipeline.hdel('family', familyIdStr);
+                if (markDeleted && familyId > 0) {
+                    pipeline.sadd('pending:family:deletes', familyIdStr);
+                }
+            }
+
+            await pipeline.exec();
+            return familyIds.length;
+        } catch (err) {
+            console.warn('[PeopleState] batchDeleteFamilies failed:', err.message);
+            return 0;
+        }
+    }
+
+    /**
+     * Batch add persons to Redis
+     * Optimized: Uses pipeline to batch all add operations
+     * @param {Array<Object>} persons - Array of person objects
+     * @param {boolean} isNew - If true, track as pending inserts
+     * @returns {Promise<number>} Number of persons added
+     */
+    static async batchAddPersons(persons, isNew = false) {
+        if (!storage.isAvailable() || !persons || persons.length === 0) return 0;
+        try {
+            const pipeline = storage.pipeline();
+            let maleCount = 0;
+            let femaleCount = 0;
+
+            for (const person of persons) {
+                if (!person || person.id === undefined || person.id === null) continue;
+
+                const id = person.id.toString();
+                const p = {
+                    id: person.id,
+                    tile_id: person.tile_id,
+                    residency: person.residency,
+                    sex: person.sex,
+                    health: person.health || 100,
+                    date_of_birth: person.date_of_birth,
+                    family_id: person.family_id || null,
+                    _isNew: isNew
+                };
+
+                pipeline.hset('person', id, JSON.stringify(p));
+
+                // Add to tile's village population set
+                if (p.tile_id && p.residency !== null && p.residency !== undefined) {
+                    pipeline.sadd(`village:${p.tile_id}:${p.residency}:people`, id);
+                }
+
+                // Track counts
+                if (p.sex === true) maleCount++;
+                else if (p.sex === false) femaleCount++;
+
+                if (isNew) {
+                    pipeline.sadd('pending:person:inserts', id);
+                }
+            }
+
+            // Batch update global counts
+            pipeline.hincrby('counts:global', 'total', persons.length);
+            if (maleCount > 0) pipeline.hincrby('counts:global', 'male', maleCount);
+            if (femaleCount > 0) pipeline.hincrby('counts:global', 'female', femaleCount);
+
+            await pipeline.exec();
+            return persons.length;
+        } catch (err) {
+            console.warn('[PeopleState] batchAddPersons failed:', err.message);
+            return 0;
+        }
+    }
+
+    /**
+     * Batch update residency for multiple persons
+     * Optimized: Uses pipeline for all updates
+     * @param {Array<{personId: number, newResidency: number}>} updates - Array of updates
+     * @returns {Promise<number>} Number of persons updated
+     */
+    static async batchUpdateResidency(updates) {
+        if (!storage.isAvailable() || !updates || updates.length === 0) return 0;
+        try {
+            // First, batch-read all persons
+            const readPipeline = storage.pipeline();
+            for (const { personId } of updates) {
+                readPipeline.hget('person', personId.toString());
+            }
+            const readResults = await readPipeline.exec();
+
+            // Prepare write operations
+            const writePipeline = storage.pipeline();
+            let updateCount = 0;
+
+            for (let i = 0; i < updates.length; i++) {
+                const { personId, newResidency } = updates[i];
+                const [err, json] = readResults[i];
+                if (err || !json) continue;
+
+                let person;
+                try { person = JSON.parse(json); } catch { continue; }
+
+                const oldTileId = person.tile_id;
+                const oldResidency = person.residency;
+
+                // Update person
+                person.residency = newResidency;
+                writePipeline.hset('person', personId.toString(), JSON.stringify(person));
+
+                // Update village sets if residency changed
+                if (oldResidency !== newResidency) {
+                    if (oldTileId && oldResidency !== null && oldResidency !== undefined) {
+                        writePipeline.srem(`village:${oldTileId}:${oldResidency}:people`, personId.toString());
+                    }
+                    if (oldTileId && newResidency !== null && newResidency !== undefined) {
+                        writePipeline.sadd(`village:${oldTileId}:${newResidency}:people`, personId.toString());
+                    }
+                }
+
+                // Track for pending updates
+                if (personId > 0 && !person._isNew) {
+                    writePipeline.sadd('pending:person:updates', personId.toString());
+                }
+                updateCount++;
+            }
+
+            if (updateCount > 0) {
+                await writePipeline.exec();
+            }
+            return updateCount;
+        } catch (err) {
+            console.warn('[PeopleState] batchUpdateResidency failed:', err.message);
+            return 0;
         }
     }
 

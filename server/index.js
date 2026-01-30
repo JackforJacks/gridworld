@@ -15,7 +15,6 @@ const socketConfig = require('./config/socket');
 const apiRoutes = require('./routes/api');
 const villagesRouter = require('./routes/villages');
 const pool = require('./config/database');
-const villageSeeder = require('./services/villageSeeder');
 
 // Import services
 const PopulationService = require('./services/populationService');
@@ -71,23 +70,6 @@ class GridWorldServer {
         this.app.locals.populationService = populationServiceInstance;
         this.app.locals.statisticsService = statisticsServiceInstance;
 
-        // Attempt to seed villages if none exist yet
-        try {
-            const seeded = await villageSeeder.seedIfNoVillages();
-            if (seeded && seeded.created && seeded.created > 0) {
-                console.log(`🌱 Seeded ${seeded.created} villages at startup`);
-                // Mark that we just seeded, so storage reconnect handler won't wipe the fresh data
-                if (this._setJustSeeded) this._setJustSeeded(true);
-
-                // DEBUG: Verify person hash is still populated
-                const _storage = require('./services/storage');
-                const personCheck = await _storage.hgetall('person');
-                console.log(`[DEBUG] After seeding in init(): person hash has ${personCheck ? Object.keys(personCheck).length : 0} entries`);
-            }
-        } catch (err) {
-            console.error('Error seeding villages at startup:', err);
-        }
-
         // Setup socket connections
         this.setupSocketHandlers();
 
@@ -129,24 +111,14 @@ class GridWorldServer {
             await StateManager.loadFromDatabase();
             console.log('🔴 State Manager initialized');
 
-            // Track if we've already loaded - only reload on actual reconnects, not initial ready events
-            let hasLoadedOnce = true; // We just loaded above
-            let justSeeded = false; // Will be set true after seedIfNoVillages
-            console.log('[DEBUG] hasLoadedOnce=true, justSeeded=false at init');
-
             // If storage reconnects later, re-sync automatically
             try {
+                const storage = require('./services/storage');
                 // Attach to storage events emitted when adapter becomes ready
                 if (typeof storage.on === 'function') {
                     storage.on('ready', async () => {
-                        console.log(`[DEBUG] storage 'ready' event fired. justSeeded=${justSeeded}, isRestarting=${require('./services/populationState').isRestarting}`);
+                        console.log(`[DEBUG] storage 'ready' event fired. isRestarting=${require('./services/populationState').isRestarting}`);
                         try {
-                            // Skip reload if we just seeded population at startup
-                            if (justSeeded) {
-                                console.log('🔁 Storage adapter ready, but skipping reload (just seeded at startup)');
-                                justSeeded = false; // Reset flag after first skip
-                                return;
-                            }
                             // Skip reload if we're in the middle of a world restart
                             // (worldrestart creates fresh data in Redis that shouldn't be overwritten)
                             const PopulationState = require('./services/populationState');
@@ -154,15 +126,12 @@ class GridWorldServer {
                                 console.log('🔁 Storage adapter ready, but skipping reload (worldrestart in progress)');
                                 return;
                             }
-                            console.log('🔁 Storage adapter ready, reloading state from Postgres... (WARNING: THIS WILL FLUSH REDIS!)');
+                            console.log('🔁 Storage adapter ready, reloading state from Postgres...');
                             await StateManager.loadFromDatabase();
                         } catch (e) {
                             console.warn('⚠️ Failed to reload state after storage reconnect:', e.message);
                         }
                     });
-
-                    // Expose setter for justSeeded flag so seedIfNoVillages can signal it
-                    this._setJustSeeded = (val) => { justSeeded = val; };
                 }
             } catch (e) {
                 console.warn('⚠️ Could not attach storage reconnect handler:', e.message);

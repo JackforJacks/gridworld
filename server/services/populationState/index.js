@@ -61,6 +61,14 @@ class PopulationState {
     static async rebuildVillageMemberships() { return PeopleState.rebuildVillageMemberships(); }
     static async repairIfNeeded() { return PeopleState.repairIfNeeded(); }
 
+    // =========== BATCH OPERATIONS (delegates to PeopleState) ===========
+    static async batchClearFamilyIds(personIds) { return PeopleState.batchClearFamilyIds(personIds); }
+    static async batchRemovePersons(personIds, markDeleted) { return PeopleState.batchRemovePersons(personIds, markDeleted); }
+    static async batchDeleteFamilies(familyIds, markDeleted) { return PeopleState.batchDeleteFamilies(familyIds, markDeleted); }
+    static async batchAddPersons(persons, isNew) { return PeopleState.batchAddPersons(persons, isNew); }
+    static async batchUpdateResidency(updates) { return PeopleState.batchUpdateResidency(updates); }
+    static async getIdBatch(count) { return PeopleState.getIdBatch(count); }
+
     // =========== FAMILY OPERATIONS (delegates to FamilyState) ===========
     static async getNextFamilyId() { return FamilyState.getNextId(); }
     static async addFamily(family, isNew) { return FamilyState.addFamily(family, isNew); }

@@ -14,12 +14,15 @@ const { seedRandomVillages, seedVillagesForTile } = require('./postgresSeeding')
 const { seedVillagesStorageFirst } = require('./redisSeeding');
 const { assignResidencyForTile } = require('./residency');
 const storage = require('../storage');
+const { seedWorldIfEmpty } = require('./redisSeeding');
 
 /**
+ * @deprecated Use seedWorldIfEmpty() instead - called automatically by StateManager.loadFromDatabase()
  * Seed villages if none exist in the database
  * @returns {Promise<Object>} Result with created count and villages
  */
 async function seedIfNoVillages() {
+    console.warn('[villageSeeder] seedIfNoVillages() is deprecated - seeding is now handled by StateManager.loadFromDatabase()');
     try {
         // Check if any villages exist
         const { rows: existingVillages } = await pool.query('SELECT COUNT(*) as count FROM villages');
@@ -251,7 +254,8 @@ async function createInitialPopulation(tileId) {
 
 module.exports = {
     seedRandomVillages,
-    seedIfNoVillages,
+    seedIfNoVillages, // @deprecated - kept for test compatibility
+    seedWorldIfEmpty, // Redis-first world seeding - used by StateManager
     assignResidencyForTile,
     seedVillagesStorageFirst,
     seedVillagesForTile

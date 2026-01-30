@@ -152,9 +152,13 @@ async function applySenescence(pool, calendarService, populationServiceInstance,
         }
 
         if (deaths.length > 0) {
-            // Handle family cleanup (now using Redis for families)
+            // Handle family cleanup using optimized batch operations
             const deathIds = new Set(deaths);
             const allFamilies = await PopulationState.getAllFamilies();
+
+            // Collect all person IDs that need family_id cleared and families to delete
+            const personIdsToClear = [];
+            const familyIdsToDelete = [];
 
             for (const family of allFamilies) {
                 // Check if husband or wife died
@@ -162,25 +166,27 @@ async function applySenescence(pool, calendarService, populationServiceInstance,
                 const wifeDied = deathIds.has(family.wife_id);
 
                 if (husbandDied || wifeDied) {
-                    // Clear family_id from all family members in Redis
-                    await PopulationState.updatePerson(family.husband_id, { family_id: null });
-                    await PopulationState.updatePerson(family.wife_id, { family_id: null });
+                    // Collect all family members for batch update
+                    personIdsToClear.push(family.husband_id, family.wife_id);
                     for (const childId of (family.children_ids || [])) {
-                        await PopulationState.updatePerson(childId, { family_id: null });
+                        personIdsToClear.push(childId);
                     }
-                    // Delete the family from storage
-                    await storage.hdel('family', family.id.toString());
-                    // Track for Postgres delete only if it's a positive ID (exists in Postgres)
-                    if (family.id > 0) {
-                        await storage.sadd('pending:family:deletes', family.id.toString());
-                    }
+                    familyIdsToDelete.push(family.id);
                 }
             }
 
-            // Remove from Redis (this tracks for batch Postgres delete)
-            for (const personId of deaths) {
-                await PopulationState.removePerson(personId, true);
+            // Batch clear family_id for all affected persons
+            if (personIdsToClear.length > 0) {
+                await PopulationState.batchClearFamilyIds(personIdsToClear);
             }
+
+            // Batch delete families (tracks positive IDs for Postgres deletion)
+            if (familyIdsToDelete.length > 0) {
+                await PopulationState.batchDeleteFamilies(familyIdsToDelete, true);
+            }
+
+            // Batch remove deceased persons from Redis
+            await PopulationState.batchRemovePersons(deaths, true);
 
             if (populationServiceInstance && typeof populationServiceInstance.trackDeaths === 'function') {
                 populationServiceInstance.trackDeaths(deaths.length);
@@ -319,6 +325,7 @@ module.exports = {
 
 /**
  * Assigns residency to adults (age 18+) who don't have housing
+ * Optimized: Uses batch operations for better Redis performance
  * @param {Pool} pool - Database pool instance
  * @param {string|number} tileId - The tile ID
  * @param {Object} calendarService - Calendar service instance
@@ -349,6 +356,10 @@ async function assignResidencyForAdults(pool, tileId, calendarService) {
         const allPeople = await PopulationState.getAllPeople();
         const tilePeople = allPeople.filter(p => p.tile_id == tileId);
 
+        // Collect all residency updates for batch processing
+        const residencyUpdates = [];
+        const villageSlotUpdates = new Map(); // villageId -> { add: [], remove: [] }
+
         // First, move people from over-capacity villages
         for (const village of villages) {
             const occupied = Array.isArray(village.housing_slots) ? village.housing_slots.length : 0;
@@ -375,20 +386,23 @@ async function assignResidencyForAdults(pool, tileId, calendarService) {
                 });
                 if (!availableVillage) break; // No available
 
-                // Move person
-                await PopulationState.updatePerson(person.id, { residency: availableVillage.id });
+                // Queue residency update
+                residencyUpdates.push({ personId: person.id, newResidency: availableVillage.id });
 
-                // Update slots
-                const currentSlots = village.housing_slots || [];
-                const newSlots = currentSlots.filter(id => id != person.id);
-                await StateManager.updateVillage(village.id, { housing_slots: newSlots });
+                // Track slot changes
+                if (!villageSlotUpdates.has(village.id)) {
+                    villageSlotUpdates.set(village.id, { add: [], remove: [], currentSlots: village.housing_slots || [] });
+                }
+                villageSlotUpdates.get(village.id).remove.push(person.id);
 
-                const availSlots = [...(availableVillage.housing_slots || []), person.id];
-                await StateManager.updateVillage(availableVillage.id, { housing_slots: availSlots });
+                if (!villageSlotUpdates.has(availableVillage.id)) {
+                    villageSlotUpdates.set(availableVillage.id, { add: [], remove: [], currentSlots: availableVillage.housing_slots || [] });
+                }
+                villageSlotUpdates.get(availableVillage.id).add.push(person.id);
 
-                // Update local copies for subsequent operations
-                village.housing_slots = newSlots;
-                availableVillage.housing_slots = availSlots;
+                // Update local copies for subsequent calculations in this loop
+                village.housing_slots = (village.housing_slots || []).filter(id => id != person.id);
+                availableVillage.housing_slots = [...(availableVillage.housing_slots || []), person.id];
             }
         }
 
@@ -400,32 +414,46 @@ async function assignResidencyForAdults(pool, tileId, calendarService) {
             return age >= 18;
         });
 
-        if (unassignedAdults.length === 0) return;
+        if (unassignedAdults.length > 0) {
+            let peopleIndex = 0;
 
-        let peopleIndex = 0;
+            for (const village of villages) {
+                const currentOccupied = Array.isArray(village.housing_slots) ? village.housing_slots.length : 0;
+                const available = village.housing_capacity - currentOccupied;
 
-        for (const village of villages) {
-            const currentOccupied = Array.isArray(village.housing_slots) ? village.housing_slots.length : 0;
-            const available = village.housing_capacity - currentOccupied;
+                if (available <= 0 || peopleIndex >= unassignedAdults.length) continue;
 
-            if (available <= 0 || peopleIndex >= unassignedAdults.length) continue;
+                const toAssign = Math.min(available, unassignedAdults.length - peopleIndex);
+                const assignedPeople = unassignedAdults.slice(peopleIndex, peopleIndex + toAssign);
 
-            const toAssign = Math.min(available, unassignedAdults.length - peopleIndex);
-            const assignedPeople = unassignedAdults.slice(peopleIndex, peopleIndex + toAssign);
+                // Queue residency updates
+                for (const person of assignedPeople) {
+                    residencyUpdates.push({ personId: person.id, newResidency: village.id });
+                }
 
-            // Update people residency
-            for (const person of assignedPeople) {
-                await PopulationState.updatePerson(person.id, { residency: village.id });
+                // Track slot additions
+                if (!villageSlotUpdates.has(village.id)) {
+                    villageSlotUpdates.set(village.id, { add: [], remove: [], currentSlots: village.housing_slots || [] });
+                }
+                villageSlotUpdates.get(village.id).add.push(...assignedPeople.map(p => p.id));
+
+                // Update local
+                village.housing_slots = [...(village.housing_slots || []), ...assignedPeople.map(p => p.id)];
+
+                peopleIndex += toAssign;
             }
+        }
 
-            // Update village housing_slots
-            const updatedSlots = [...(village.housing_slots || []), ...assignedPeople.map(p => p.id)];
-            await StateManager.updateVillage(village.id, { housing_slots: updatedSlots });
+        // Execute batch residency update
+        if (residencyUpdates.length > 0) {
+            await PopulationState.batchUpdateResidency(residencyUpdates);
+        }
 
-            // Update local
-            village.housing_slots = updatedSlots;
-
-            peopleIndex += toAssign;
+        // Update village slots (still needs individual updates due to complex slot logic)
+        for (const [villageId, changes] of villageSlotUpdates) {
+            let finalSlots = changes.currentSlots.filter(id => !changes.remove.includes(id));
+            finalSlots = [...finalSlots, ...changes.add];
+            await StateManager.updateVillage(villageId, { housing_slots: finalSlots });
         }
     } catch (error) {
         console.error('Error assigning residency to adults:', error);

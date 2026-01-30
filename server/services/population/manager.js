@@ -6,6 +6,7 @@ const storage = require('../storage');
 
 /**
  * Add people to a tile - storage-only (Postgres writes happen on Save)
+ * Optimized: Uses batch operations for better Redis performance
  * @param {Pool} pool - Database pool (used for fallback/queries only)
  * @param {number} tileId - Tile ID
  * @param {number} count - Number of people to add
@@ -22,28 +23,32 @@ async function addPeopleToTile(pool, tileId, count, currentYear, currentMonth, c
         return;
     }
 
+    // Pre-allocate IDs in batch
+    const ids = await PopulationState.getIdBatch(count);
+
+    // Build all person objects
+    const persons = [];
     for (let i = 0; i < count; i++) {
         const sex = getRandomSex();
         const age = getRandomAge();
         const birthDate = getRandomBirthDate(currentYear, currentMonth, currentDay, age);
 
-        // Get a temporary ID for storage-only mode
-        const tempId = await PopulationState.getNextId();
-
-        const personObj = {
-            id: tempId,
+        persons.push({
+            id: ids[i],
             tile_id: tileId,
             residency: null, // Will be assigned later
             sex: sex,
             date_of_birth: birthDate,
             health: 100,
             family_id: null
-        };
+        });
+    }
 
-        // Add to Redis with isNew=true to track for batch Postgres insert
-        await PopulationState.addPerson(personObj, true);
+    // Batch add all persons
+    await PopulationState.batchAddPersons(persons, true);
 
-        // If the person is already adult and single, add to eligible matchmaking sets
+    // Add eligible persons to matchmaking sets (still need to check age individually)
+    for (const personObj of persons) {
         try {
             await PopulationState.addEligiblePerson(personObj, currentYear, currentMonth, currentDay);
         } catch (e) {
@@ -58,6 +63,7 @@ async function addPeopleToTile(pool, tileId, count, currentYear, currentMonth, c
 
 /**
  * Remove people from a tile - storage-only (Postgres deletes happen on Save)
+ * Optimized: Uses batch operations for better Redis performance
  * @param {Pool} pool - Database pool (used for queries only)
  * @param {number} tileId - Tile ID
  * @param {number} count - Number of people to remove
@@ -81,10 +87,9 @@ async function removePeopleFromTile(pool, tileId, count, populationServiceInstan
     const shuffled = tilePopulation.sort(() => Math.random() - 0.5);
     const toRemove = shuffled.slice(0, Math.min(count, shuffled.length));
 
-    for (const person of toRemove) {
-        // Remove from Redis and track for batch Postgres delete
-        await PopulationState.removePerson(person.id, true);
-    }
+    // Batch remove all persons
+    const personIds = toRemove.map(p => p.id);
+    await PopulationState.batchRemovePersons(personIds, true);
 
     if (doTrackDeaths && populationServiceInstance && typeof trackDeaths === 'function') {
         trackDeaths(populationServiceInstance, toRemove.length);

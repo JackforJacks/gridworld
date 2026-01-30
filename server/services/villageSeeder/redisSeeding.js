@@ -277,7 +277,160 @@ async function assignResidencyStorage(populatedTileIds, allVillages) {
     }
 }
 
+/**
+ * Seed a new world if Redis is empty (Redis-first approach)
+ * Called after loading from Postgres - if nothing was loaded, create fresh world
+ * @returns {Promise<Object>} Result with seeded counts
+ */
+async function seedWorldIfEmpty() {
+    if (!storage.isAvailable()) {
+        console.warn('[villageSeeder] Storage not available, cannot seed world');
+        return { seeded: false, people: 0, villages: 0 };
+    }
+
+    const PopulationState = require('../populationState');
+    
+    // Check if Redis already has people
+    const existingPeople = await PopulationState.getTotalPopulation();
+    if (existingPeople > 0) {
+        console.log(`[villageSeeder] Redis already has ${existingPeople} people, skipping world seeding`);
+        return { seeded: false, people: existingPeople, villages: 0 };
+    }
+
+    console.log('[villageSeeder] 🌍 Redis is empty, seeding new world...');
+
+    // Create initial tiles in Redis (and Postgres for persistence)
+    const tilesToPopulate = await createInitialTilesRedisFirst();
+
+    // Create initial population on each tile
+    let totalPeople = 0;
+    for (const tile of tilesToPopulate) {
+        const peopleCreated = await createInitialPopulationRedisFirst(tile.id);
+        totalPeople += peopleCreated;
+    }
+
+    console.log(`[villageSeeder] Created ${totalPeople} people on ${tilesToPopulate.length} tiles`);
+
+    // Now seed villages for these populated tiles
+    const villageResult = await seedVillagesStorageFirst();
+    
+    // Assign residency to people
+    await assignResidencyStorage();
+
+    console.log(`[villageSeeder] 🌍 World seeding complete: ${totalPeople} people, ${villageResult.created} villages`);
+    
+    return { 
+        seeded: true, 
+        people: totalPeople, 
+        villages: villageResult.created,
+        tiles: tilesToPopulate.length
+    };
+}
+
+/**
+ * Create initial tiles in Redis (and sync to Postgres)
+ * @returns {Promise<Array>} Array of created tile objects
+ */
+async function createInitialTilesRedisFirst() {
+    const initialTiles = [
+        { id: 1, center_x: 0, center_y: 0, center_z: 1, latitude: 90, longitude: 0, terrain_type: 'plains', is_land: true, is_habitable: true, fertility: 75 },
+        { id: 2, center_x: 1, center_y: 0, center_z: 0, latitude: 0, longitude: 90, terrain_type: 'plains', is_land: true, is_habitable: true, fertility: 70 },
+        { id: 3, center_x: 0, center_y: 1, center_z: 0, latitude: 0, longitude: 0, terrain_type: 'plains', is_land: true, is_habitable: true, fertility: 80 },
+        { id: 4, center_x: -1, center_y: 0, center_z: 0, latitude: 0, longitude: 180, terrain_type: 'plains', is_land: true, is_habitable: true, fertility: 65 },
+        { id: 5, center_x: 0, center_y: -1, center_z: 0, latitude: 0, longitude: 270, terrain_type: 'plains', is_land: true, is_habitable: true, fertility: 72 }
+    ];
+
+    const pipeline = storage.pipeline();
+
+    for (const tile of initialTiles) {
+        const tileData = {
+            ...tile,
+            biome: 'temperate_grassland',
+            boundary_points: [],
+            neighbor_ids: []
+        };
+
+        // Store tile in Redis
+        pipeline.hset('tile', tile.id.toString(), JSON.stringify(tileData));
+
+        // Create tile lands (100 chunks per tile, first 5 cleared for villages)
+        const landsForTile = [];
+        for (let chunkIndex = 0; chunkIndex < 100; chunkIndex++) {
+            const landType = chunkIndex < 5 ? 'cleared' : (Math.random() > 0.3 ? 'forest' : 'wasteland');
+            landsForTile.push({
+                tile_id: tile.id,
+                chunk_index: chunkIndex,
+                land_type: landType,
+                cleared: landType === 'cleared'
+            });
+        }
+        pipeline.hset('tile:lands', tile.id.toString(), JSON.stringify(landsForTile));
+
+        // Also persist to Postgres for durability
+        try {
+            await pool.query(`
+                INSERT INTO tiles (id, center_x, center_y, center_z, latitude, longitude, terrain_type, is_land, is_habitable, fertility, biome, boundary_points, neighbor_ids)
+                VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)
+                ON CONFLICT (id) DO NOTHING
+            `, [tile.id, tile.center_x, tile.center_y, tile.center_z, tile.latitude, tile.longitude, tile.terrain_type, tile.is_land, tile.is_habitable, tile.fertility, 'temperate_grassland', '[]', '[]']);
+
+            for (let chunkIndex = 0; chunkIndex < 100; chunkIndex++) {
+                const landType = chunkIndex < 5 ? 'cleared' : (Math.random() > 0.3 ? 'forest' : 'wasteland');
+                await pool.query(`
+                    INSERT INTO tiles_lands (tile_id, chunk_index, land_type, cleared)
+                    VALUES ($1, $2, $3, $4)
+                    ON CONFLICT (tile_id, chunk_index) DO NOTHING
+                `, [tile.id, chunkIndex, landType, landType === 'cleared']);
+            }
+        } catch (err) {
+            console.warn(`[villageSeeder] Could not persist tile ${tile.id} to Postgres:`, err.message);
+        }
+    }
+
+    await pipeline.exec();
+    console.log(`[villageSeeder] Created ${initialTiles.length} initial tiles in Redis`);
+    
+    return initialTiles;
+}
+
+/**
+ * Create initial population on a tile (Redis-first)
+ * @param {number} tileId - The tile ID to populate
+ * @returns {Promise<number>} Number of people created
+ */
+async function createInitialPopulationRedisFirst(tileId) {
+    const PopulationState = require('../populationState');
+    const { getRandomSex, getRandomAge, getRandomBirthDate } = require('../population/calculator.js');
+
+    // Add 100-200 people per tile
+    const peopleCount = 100 + Math.floor(Math.random() * 100);
+    const people = [];
+
+    for (let i = 0; i < peopleCount; i++) {
+        const sex = getRandomSex();
+        const age = getRandomAge();
+        const birthDate = getRandomBirthDate(1, 1, 1, age);
+        const tempId = await PopulationState.getNextId();
+
+        people.push({
+            id: tempId,
+            tile_id: tileId,
+            residency: 0,
+            sex: sex,
+            date_of_birth: birthDate,
+            health: 100,
+            family_id: null
+        });
+    }
+
+    // Batch add all people
+    await PopulationState.batchAddPersons(people, true);
+
+    return peopleCount;
+}
+
 module.exports = {
     seedVillagesStorageFirst,
-    assignResidencyStorage
+    assignResidencyStorage,
+    seedWorldIfEmpty
 };
