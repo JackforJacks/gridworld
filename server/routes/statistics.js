@@ -46,27 +46,27 @@ router.get('/current', async (req, res) => {
         const serviceStats = statisticsService.getSummaryStats ? statisticsService.getSummaryStats() : {};
 
         // Get current year's events from vitalEvents
-        const currentYearEvents = statisticsService.vitalEvents 
+        const currentYearEvents = statisticsService.vitalEvents
             ? statisticsService.vitalEvents.filter(e => e.year === currentYear)
             : [];
-        
+
         const currentYearBirths = currentYearEvents.reduce((sum, e) => sum + (e.births || 0), 0);
         const currentYearDeaths = currentYearEvents.reduce((sum, e) => sum + (e.deaths || 0), 0);
 
         // Calculate historical averages
-        const allYears = statisticsService.vitalEvents 
+        const allYears = statisticsService.vitalEvents
             ? [...new Set(statisticsService.vitalEvents.map(e => e.year))]
             : [];
         const totalYears = allYears.length;
-        
+
         let avgBirthRate = 0;
         let avgDeathRate = 0;
-        
+
         if (totalYears > 0 && statisticsService.vitalEvents) {
             const totalBirths = statisticsService.vitalEvents.reduce((sum, e) => sum + (e.births || 0), 0);
             const totalDeaths = statisticsService.vitalEvents.reduce((sum, e) => sum + (e.deaths || 0), 0);
             const avgPopulation = statisticsService.vitalEvents.reduce((sum, e) => sum + (e.population || 0), 0) / statisticsService.vitalEvents.length;
-            
+
             if (avgPopulation > 0) {
                 avgBirthRate = ((totalBirths / totalYears) / avgPopulation * 1000).toFixed(2);
                 avgDeathRate = ((totalDeaths / totalYears) / avgPopulation * 1000).toFixed(2);
@@ -288,27 +288,27 @@ router.get('/dashboard', async (req, res) => {
         }
 
         // Get current year's events from vitalEvents
-        const currentYearEvents = statisticsService.vitalEvents 
+        const currentYearEvents = statisticsService.vitalEvents
             ? statisticsService.vitalEvents.filter(e => e.year === currentYear)
             : [];
-        
+
         const currentYearBirths = currentYearEvents.reduce((sum, e) => sum + (e.births || 0), 0);
         const currentYearDeaths = currentYearEvents.reduce((sum, e) => sum + (e.deaths || 0), 0);
 
         // Calculate historical averages
-        const allYears = statisticsService.vitalEvents 
+        const allYears = statisticsService.vitalEvents
             ? [...new Set(statisticsService.vitalEvents.map(e => e.year))]
             : [];
         const totalYears = allYears.length;
-        
+
         let avgBirthRate = 0;
         let avgDeathRate = 0;
-        
+
         if (totalYears > 0 && statisticsService.vitalEvents) {
             const totalBirths = statisticsService.vitalEvents.reduce((sum, e) => sum + (e.births || 0), 0);
             const totalDeaths = statisticsService.vitalEvents.reduce((sum, e) => sum + (e.deaths || 0), 0);
             const avgPopulation = statisticsService.vitalEvents.reduce((sum, e) => sum + (e.population || 0), 0) / statisticsService.vitalEvents.length;
-            
+
             if (avgPopulation > 0) {
                 avgBirthRate = ((totalBirths / totalYears) / avgPopulation * 1000).toFixed(2);
                 avgDeathRate = ((totalDeaths / totalYears) / avgPopulation * 1000).toFixed(2);
