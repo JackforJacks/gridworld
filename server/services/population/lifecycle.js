@@ -2,6 +2,12 @@
 const config = require('../../config/server.js');
 const storage = require('../storage');
 const deps = require('./dependencyContainer');
+const {
+    DAYS_PER_YEAR,
+    SENESCENCE_START_AGE,
+    BASE_ANNUAL_DEATH_CHANCE,
+    DEATH_CHANCE_INCREASE_PER_YEAR
+} = require('../../config/gameBalance');
 
 /**
  * Starts population growth simulation
@@ -133,15 +139,14 @@ async function applySenescence(pool, calendarService, populationServiceInstance,
         const { calculateAge } = deps.getCalculator();
 
         const deaths = [];
-        const DAYS_PER_YEAR = 96; // 8 days/month * 12 months
 
         for (const person of allPeople) {
             if (!person.date_of_birth) continue;
 
             const age = calculateAge(person.date_of_birth, currentYear, currentMonth, currentDay);
-            if (age >= 60) {
-                // Annual death probability: starts at 1% at age 60, increases by 2% per year
-                const annualDeathChance = 0.01 + (age - 60) * 0.02;
+            if (age >= SENESCENCE_START_AGE) {
+                // Annual death probability: starts at base rate, increases per year after senescence
+                const annualDeathChance = BASE_ANNUAL_DEATH_CHANCE + (age - SENESCENCE_START_AGE) * DEATH_CHANCE_INCREASE_PER_YEAR;
                 // Daily probability
                 const dailyDeathChance = annualDeathChance / DAYS_PER_YEAR;
                 // Probability of dying at least once in N days: 1 - (1 - p)^N

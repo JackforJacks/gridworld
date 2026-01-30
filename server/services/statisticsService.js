@@ -1,4 +1,6 @@
 // Statistics Service - In-memory vital statistics tracking
+const { VITAL_EVENTS_MAX_RECORDS } = require('../config/gameBalance');
+
 class StatisticsService {
     constructor(calendarService = null) {
         // In-memory storage for vital events
@@ -72,8 +74,8 @@ class StatisticsService {
         }
 
         // Keep only recent data (limit to prevent memory issues)
-        if (this.vitalEvents.length > 1200) { // 100 years * 12 months
-            this.vitalEvents = this.vitalEvents.slice(-1200);
+        if (this.vitalEvents.length > VITAL_EVENTS_MAX_RECORDS) {
+            this.vitalEvents = this.vitalEvents.slice(-VITAL_EVENTS_MAX_RECORDS);
         }
     }    /**
      * Record a birth event
