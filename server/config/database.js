@@ -7,18 +7,18 @@ const pool = new Pool({
     database: process.env.DB_NAME || 'gridworld',
     password: process.env.DB_PASSWORD || 'password',
     port: process.env.DB_PORT || 5432,
-    
+
     // Pool size configuration
     max: parseInt(process.env.DB_POOL_MAX, 10) || 20,              // Maximum connections in pool
     min: parseInt(process.env.DB_POOL_MIN, 10) || 2,               // Minimum connections to keep warm
-    
+
     // Connection lifecycle
     idleTimeoutMillis: parseInt(process.env.DB_IDLE_TIMEOUT, 10) || 30000,     // Close idle connections after 30s
     connectionTimeoutMillis: parseInt(process.env.DB_CONN_TIMEOUT, 10) || 5000, // Fail if can't connect in 5s
-    
+
     // Statement timeout to prevent long-running queries
     statement_timeout: parseInt(process.env.DB_STATEMENT_TIMEOUT, 10) || 30000, // 30s max query time
-    
+
     // Keep connections alive
     keepAlive: true,
     keepAliveInitialDelayMillis: 10000,

@@ -94,17 +94,17 @@ async function loadFromDatabase(context) {
 
     // Use robust VillageManager to ensure villages exist and are consistent
     const VillageManager = require('../villageSeeder/villageManager');
-    
+
     if (people.length > 0) {
         // Validate village consistency
         const validation = await VillageManager.validateVillageConsistency();
-        
+
         if (!validation.valid) {
             console.warn(`[StateManager] ⚠️ Village consistency issues detected: ${validation.issues.length} issues`);
             for (const issue of validation.issues.slice(0, 5)) {
                 console.warn(`[StateManager]   - ${issue.type}: tile ${issue.tileId}`);
             }
-            
+
             // Auto-repair: ensure villages for all populated tiles
             const repairResult = await VillageManager.ensureVillagesForPopulatedTiles({ force: true });
             if (repairResult.success) {
@@ -114,7 +114,7 @@ async function loadFromDatabase(context) {
             }
         } else {
             console.log(`[StateManager] ✅ Villages consistent: ${validation.summary.totalVillages} villages, ${validation.summary.totalPeople} people`);
-            
+
             // Still rebuild membership sets to ensure they're correct
             try {
                 const PeopleState = require('../populationState/PeopleState');
@@ -131,7 +131,7 @@ async function loadFromDatabase(context) {
         console.log('[StateManager] No people loaded from Postgres, seeding new world...');
         const { seedWorldIfEmpty } = require('../villageSeeder/redisSeeding');
         seedResult = await seedWorldIfEmpty();
-        
+
         // If seeding happened, also run village manager to ensure everything is consistent
         if (seedResult && seedResult.seeded) {
             await VillageManager.ensureVillagesForPopulatedTiles({ force: false });
@@ -346,7 +346,7 @@ async function loadPeople(pipeline) {
     for (const v of villageRows) {
         villageIdLookup[`${v.tile_id}:${v.land_chunk_index}`] = v.id;
     }
-    
+
     const { rows: people } = await pool.query('SELECT * FROM people');
     let maleCount = 0, femaleCount = 0;
 
