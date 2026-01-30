@@ -13,7 +13,7 @@ class Face {
     constructor(point1: Point, point2: Point, point3: Point, register: boolean = true) {
         this.id = _faceCount++;
         this.points = [point1, point2, point3];
-        
+
         if (register) {
             point1.registerFace(this);
             point2.registerFace(this);
@@ -33,7 +33,7 @@ class Face {
 
     findThirdPoint(point1: Point, point2: Point): Point | undefined {
         for (let i = 0; i < this.points.length; i++) {
-            if (this.points[i]!.toString() !== point1.toString() && 
+            if (this.points[i]!.toString() !== point1.toString() &&
                 this.points[i]!.toString() !== point2.toString()) {
                 return this.points[i];
             }

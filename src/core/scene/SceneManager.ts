@@ -73,12 +73,12 @@ class SceneManager {
     private cameraLight: THREE.PointLight | null;
     private ambientLight: THREE.AmbientLight | null;
     private directionalLight: THREE.DirectionalLight | null;
-    
+
     // Hexasphere data (public for external access)
     public hexasphere: HexasphereData | null;
     private habitableTileIds: (number | string)[];
     private sphereRadius: number;
-    
+
     // State tracking
     private tileColorIndices: Map<string, TileColorInfo>;
     private tileOverlays: Map<string, THREE.Mesh>;

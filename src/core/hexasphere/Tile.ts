@@ -81,7 +81,7 @@ class Tile {
         this.neighbors = [];
 
         const neighborHash: { [key: string]: number } = {};
-        
+
         for (let f = 0; f < this.faces.length; f++) {
             const face = this.faces[f]!;
             // build boundary

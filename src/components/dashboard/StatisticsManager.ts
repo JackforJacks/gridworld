@@ -4,7 +4,7 @@
 declare const Chart: ChartConstructor;
 
 interface ChartConstructor {
-    new (ctx: CanvasRenderingContext2D, config: ChartConfiguration): ChartInstance;
+    new(ctx: CanvasRenderingContext2D, config: ChartConfiguration): ChartInstance;
 }
 
 interface ChartInstance {
@@ -180,7 +180,7 @@ class StatisticsManager {
         const closeBtn = document.getElementById('close-stats');
         const refreshBtn = document.getElementById('refresh-chart');
         const yearsSelect = document.getElementById('years-select');
-        
+
         if (closeBtn) closeBtn.onclick = () => this.hideStatistics();
         if (refreshBtn) refreshBtn.onclick = () => this.updateDashboard();
         if (yearsSelect) yearsSelect.onchange = () => this.updateDashboard();

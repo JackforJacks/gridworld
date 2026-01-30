@@ -16,7 +16,7 @@ class MockRedis {
     sets: Map<string, Set<string>>;
     hashes: Map<string, Record<string, string>>;
     sortedSets: Map<string, Map<string, number>>;
-    
+
     constructor() {
         this.isReadyFlag = true;
         this.data = new Map();

@@ -173,7 +173,7 @@ class PopulationManager {
             });
 
             this.socket.on('populationUpdate', (data: PopulationData) => {
-// [log removed]
+                // [log removed]
                 this.updatePopulationData(data);
                 this.notifyCallbacks('populationUpdate', data);
             });
@@ -226,9 +226,9 @@ class PopulationManager {
 
     // OPTIMIZED: Centralized data update logic
     updatePopulationData(data: Partial<PopulationData>): void {
-// [log removed]
+        // [log removed]
         this.populationData = { ...this.populationData, ...data };
-// [log removed]
+        // [log removed]
     }
 
     // Disconnect from the server
@@ -331,21 +331,21 @@ class PopulationManager {
     // OPTIMIZED: Update population growth rate (admin function)
     async updateGrowthRate(rate: number): Promise<unknown> {
         const data = await this.makeApiRequest('', 'POST', { rate });
-// [log removed]
+        // [log removed]
         return data;
     }
 
     // OPTIMIZED: Update specific tile populations (admin function)
     async updateTilePopulations(tilePopulations: TilePopulations): Promise<unknown> {
         const data = await this.makeApiRequest('', 'POST', { tilePopulations });
-// [log removed]
+        // [log removed]
         return data;
     }
 
     // OPTIMIZED: Reset all tile populations to zero
     async resetPopulation(): Promise<unknown> {
         const data = await this.makeApiRequest('/reset', 'POST');
-// [log removed]
+        // [log removed]
         // Clear local data immediately
         this.populationData = {
             globalData: {

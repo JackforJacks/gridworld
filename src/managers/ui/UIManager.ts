@@ -79,7 +79,7 @@ interface ChartInstance {
 interface ExtendedWindow {
     sceneManager?: SceneManagerLike;
     Chart?: {
-        new (ctx: CanvasRenderingContext2D, config: Record<string, unknown>): ChartInstance;
+        new(ctx: CanvasRenderingContext2D, config: Record<string, unknown>): ChartInstance;
     };
     vitalRatesChartInstance?: ChartInstance;
 }
@@ -284,7 +284,7 @@ class UIManager {
             const l = loadBtn.getBoundingClientRect();
 
             const heights = { reset: Math.round(r.height), stats: Math.round(s.height), save: Math.round(v.height), load: Math.round(l.height) };
-// [log removed]
+            // [log removed]
 
             const maxHeight = Math.max(heights.reset, heights.stats, heights.save, heights.load);
             // Apply min-height to all dashboard buttons to ensure uniform vertical size
@@ -362,7 +362,7 @@ class UIManager {
 
                 // Reload the page to refresh all client state with the loaded data
                 setTimeout(() => {
-// [log removed]
+                    // [log removed]
                     window.location.reload();
                 }, 500);
             } else {
@@ -394,12 +394,12 @@ class UIManager {
         );
 
         if (!confirmed) {
-// [log removed]
+            // [log removed]
             return;
         }
 
         try {
-// [log removed]
+            // [log removed]
             // Single fast-reset endpoint handles: regenerate tiles/lands, reset & reinit population, seed villages
             // Must send confirmation token to prove intentional restart
             const fastResult = await this.fetchWithFallback([
@@ -410,13 +410,13 @@ class UIManager {
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ confirm: 'DELETE_ALL_DATA' })
             });
-// [log removed]
+            // [log removed]
         } catch (error: unknown) {
             console.error("❌ Error during data reset:", error);
             // Still reload even on error so state is consistent
         }
         // Always reload page after reset attempt to guarantee fresh client state
-// [log removed]
+        // [log removed]
         window.location.reload();
     }
 
@@ -476,7 +476,7 @@ class UIManager {
             const growthStats = populationManager.getGrowthStats();
             this.hideLoadingIndicator();
             this.showStatsModal(stats, growthStats);
-// [log removed]
+            // [log removed]
         } catch (error: unknown) {
             this.hideLoadingIndicator();
             console.error('Failed to get statistics:', error);
