@@ -75,17 +75,17 @@ class PopulationService {
         this.io = io;
         this.calendarService = calendarService;
         this.#pool = pool;
-        
+
         // Repository for data access (implements Repository Pattern)
         this.#repository = new PopulationRepository(pool);
-        
+
         // Socket service for communication (decouples socket logic)
         this.#socketService = new SocketService(io);
         this.#socketService.initialize();
-        
+
         // Event emitter for decoupled event handling
         this.events = populationEvents;
-        
+
         // Service state
         this.growthInterval = null;
         this.autoSaveInterval = null;
@@ -96,13 +96,13 @@ class PopulationService {
         this.birthCount = 0;
         this.deathCount = 0;
         this.lastRateReset = Date.now();
-        
+
         // In-memory event log for births and deaths
         this.eventLog = [];
-        
+
         // Statistics service for vital rates - use provided instance or create new one
         this.statisticsService = statisticsService || new StatisticsService();
-        
+
         // Setup event listeners
         this._setupEventListeners();
     }
@@ -308,7 +308,7 @@ class PopulationService {
     }
 
     // Rate tracking methods
-    
+
     /**
      * Track births with in-game date
      * Uses event emitter for decoupled notification
@@ -317,13 +317,13 @@ class PopulationService {
     trackBirths(count) {
         if (!this.calendarService) return;
         const date = this.calendarService.getCurrentDate();
-        
+
         for (let i = 0; i < count; i++) {
             this.eventLog.push({ type: 'birth', date: { ...date } });
             // Emit birth event instead of direct socket call
             this.events.emitBirth({ date, count: 1 });
         }
-        
+
         // Record in statistics service asynchronously
         if (this.statisticsService) {
             this.getPopulationStats().then(stats => {
@@ -343,13 +343,13 @@ class PopulationService {
     trackDeaths(count) {
         if (!this.calendarService) return;
         const date = this.calendarService.getCurrentDate();
-        
+
         for (let i = 0; i < count; i++) {
             this.eventLog.push({ type: 'death', date: { ...date } });
             // Emit death event instead of direct socket call
             this.events.emitDeath({ date, count: 1 });
         }
-        
+
         // Record in statistics service asynchronously
         if (this.statisticsService) {
             this.getPopulationStats().then(stats => {
