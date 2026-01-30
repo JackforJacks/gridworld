@@ -330,9 +330,9 @@ async function saveToDatabase(context) {
         // Clear all pending operation sets since we just saved everything
         await PopulationState.clearPendingOperations();
         await PopulationState.clearPendingFamilyOperations();
-        try { 
-            await storage.del('pending:village:inserts'); 
-        } catch (err) { 
+        try {
+            await storage.del('pending:village:inserts');
+        } catch (err) {
             logError(err, 'SaveOperations:ClearPendingVillageInserts', ErrorSeverity.LOW);
         }
 

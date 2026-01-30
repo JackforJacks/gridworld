@@ -162,7 +162,7 @@ async function withErrorHandling(operation, context, options = {}) {
         return await operation();
     } catch (error) {
         logError(error, context, severity);
-        
+
         if (onError && typeof onError === 'function') {
             try {
                 await onError(error);
@@ -190,10 +190,10 @@ async function ignoreErrors(fn, ignoreErrors = [], context = 'IgnoreErrors') {
     try {
         return await fn();
     } catch (error) {
-        const shouldIgnore = ignoreErrors.some(pattern => 
+        const shouldIgnore = ignoreErrors.some(pattern =>
             error.name === pattern || error.message.includes(pattern)
         );
-        
+
         if (!shouldIgnore) {
             logError(error, context, ErrorSeverity.LOW);
         }
@@ -208,10 +208,10 @@ module.exports = {
     ValidationError,
     StateError,
     LockError,
-    
+
     // Severity levels
     ErrorSeverity,
-    
+
     // Utility functions
     logError,
     safeExecute,
