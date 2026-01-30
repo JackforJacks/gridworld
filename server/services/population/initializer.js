@@ -2,6 +2,7 @@
 const { applySenescence } = require('./lifecycle.js');
 const { startRateTracking } = require('./PopStats.js');
 const config = require('../../config/server.js'); // Added for autoSaveInterval
+const deps = require('./dependencyContainer');
 
 // Function to ensure the 'people' table and its indexes exist
 async function ensureTableExists(pool) {
@@ -170,7 +171,7 @@ async function initializePopulationService(serviceInstance, io, calendarService)
                 if (pool) {
                     // 1. Form new families from bachelors (call less frequently to avoid over-population)
                     if (newDay % 7 === 1) { // Only on the first day of each week
-                        const { formNewFamilies } = require('./familyManager.js');
+                        const { formNewFamilies } = deps.getFamilyManager();
                         const newFamilies = await formNewFamilies(pool, serviceInstance.calendarService);
                         if (newFamilies > 0) {
                             // Quiet: new families formed (log suppressed)
@@ -178,7 +179,7 @@ async function initializePopulationService(serviceInstance, io, calendarService)
                     }
 
                     // 2. Process daily family events (births and pregnancies)
-                    const { processDailyFamilyEvents } = require('./lifecycle.js');
+                    const { processDailyFamilyEvents } = deps.getLifecycle();
                     const familyEvents = await processDailyFamilyEvents(pool, serviceInstance.calendarService, serviceInstance);
 
                     if (familyEvents.deliveries > 0 || familyEvents.newPregnancies > 0) {

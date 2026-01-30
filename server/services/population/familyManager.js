@@ -2,6 +2,7 @@
 const { calculateAge } = require('./calculator.js');
 const storage = require('../storage');
 const serverConfig = require('../../config/server.js');
+const deps = require('./dependencyContainer');
 
 // Delivery retry configuration - read from serverConfig at runtime to allow tests to modify values in beforeEach
 
@@ -14,8 +15,8 @@ const serverConfig = require('../../config/server.js');
  * @returns {Object} Created family record
  */
 async function createFamily(pool, husbandId, wifeId, tileId) {
-    const { acquireLock, releaseLock } = require('../../utils/lock');
-    const PopulationState = require('../populationState');
+    const { acquireLock, releaseLock } = deps.getLock();
+    const PopulationState = deps.getPopulationState();
     const coupleKeyParts = [husbandId, wifeId].map(id => Number(id)).sort((a, b) => a - b);
     const lockKey = `lock:couple:${coupleKeyParts[0]}:${coupleKeyParts[1]}`;
     let lockToken = null;
@@ -102,8 +103,8 @@ async function createFamily(pool, husbandId, wifeId, tileId) {
  * @returns {Object} Updated family record
  */
 async function startPregnancy(pool, calendarService, familyId) {
-    const PopulationState = require('../populationState');
-    const { acquireLock, releaseLock } = require('../../utils/lock');
+    const PopulationState = deps.getPopulationState();
+    const { acquireLock, releaseLock } = deps.getLock();
     const lockKey = `lock:family:${familyId}`;
     let lockToken = null;
 
@@ -232,7 +233,7 @@ async function startPregnancy(pool, calendarService, familyId) {
  * @returns {Object} Result with baby and updated family
  */
 async function deliverBaby(pool, calendarService, populationServiceInstance, familyId) {
-    const { acquireLock, releaseLock } = require('../../utils/lock');
+    const { acquireLock, releaseLock } = deps.getLock();
     const lockKey = `lock:family:${familyId}`;
     let lockToken = null;
 
@@ -255,7 +256,7 @@ async function deliverBaby(pool, calendarService, populationServiceInstance, fam
             return null;
         }
 
-        const PopulationState = require('../populationState');
+        const PopulationState = deps.getPopulationState();
 
         if (!storage.isAvailable()) {
             throw new Error('Storage not available - cannot deliver baby');
@@ -277,7 +278,7 @@ async function deliverBaby(pool, calendarService, populationServiceInstance, fam
         const birthDate = `${currentYear}-${String(currentMonth).padStart(2, '0')}-${String(currentDay).padStart(2, '0')}`;
 
         // Create baby
-        const { getRandomSex } = require('./calculator.js');
+        const { getRandomSex } = deps.getCalculator();
         const babySex = getRandomSex();
 
         // Get father's residency to assign to baby (from Redis)
@@ -339,7 +340,7 @@ async function deliverBaby(pool, calendarService, populationServiceInstance, fam
  */
 async function getFamiliesOnTile(pool, tileId) {
     try {
-        const PopulationState = require('../populationState');
+        const PopulationState = deps.getPopulationState();
         const allFamilies = await PopulationState.getAllFamilies();
         return allFamilies.filter(f => f.tile_id === tileId);
     } catch (error) {
@@ -358,7 +359,7 @@ async function getFamiliesOnTile(pool, tileId) {
  */
 async function processDeliveries(pool, calendarService, populationServiceInstance, daysAdvanced = 1) {
     try {
-        const PopulationState = require('../populationState');
+        const PopulationState = deps.getPopulationState();
 
         // Skip if restart is in progress
         if (PopulationState.isRestarting) {
@@ -419,8 +420,8 @@ async function processDeliveries(pool, calendarService, populationServiceInstanc
         }
 
         let babiesDelivered = 0;
+        const { acquireLock, releaseLock } = deps.getLock();
         for (const family of readyFamilies) {
-            const { acquireLock, releaseLock } = require('../../utils/lock');
             const lockKey = `lock:family:${family.id}`;
             let lockToken = null;
             try {
@@ -524,7 +525,7 @@ async function processDeliveries(pool, calendarService, populationServiceInstanc
  */
 async function getFamilyStats(pool) {
     try {
-        const PopulationState = require('../populationState');
+        const PopulationState = deps.getPopulationState();
         const allFamilies = await PopulationState.getAllFamilies();
 
         const totalFamilies = allFamilies.length;
@@ -555,8 +556,8 @@ async function getFamilyStats(pool) {
  */
 async function formNewFamilies(pool, calendarService) {
     try {
-        const PopulationState = require('../populationState');
-        const { calculateAge } = require('./calculator.js');
+        const PopulationState = deps.getPopulationState();
+        const { calculateAge } = deps.getCalculator();
 
         // Skip if restart is in progress
         if (PopulationState.isRestarting) {

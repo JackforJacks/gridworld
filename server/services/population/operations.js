@@ -4,6 +4,7 @@ const { ensureTableExists } = require('./initializer.js');
 const { Procreation } = require('./family.js');
 const serverConfig = require('../../config/server');
 const storage = require('../storage');
+const deps = require('./dependencyContainer');
 
 /**
  * Clears all population data from storage
@@ -80,10 +81,10 @@ async function resetAllPopulation(pool, serviceInstance, options = {}) {
     const flag = options ? options.preserveDatabase : false;
     const preserveDatabase = flag === true || flag === 'true';
     if (preserveDatabase) {
-        const { loadPopulationData, formatPopulationData } = require('./dataOperations.js');
-        const existingPopulations = await loadPopulationData(pool);
+        const dataOps = require('./dataOperations.js');
+        const existingPopulations = await dataOps.loadPopulationData(pool);
         await serviceInstance.broadcastUpdate('populationReset');
-        return formatPopulationData(existingPopulations);
+        return dataOps.formatPopulationData(existingPopulations);
     }
     if (serverConfig.verboseLogs) {
         console.log('[resetAllPopulation] preserveDatabase=false');
@@ -94,8 +95,8 @@ async function resetAllPopulation(pool, serviceInstance, options = {}) {
         await clearStoragePopulation();
         if (serverConfig.verboseLogs) console.log('[resetAllPopulation] Redis cleared. Broadcasting update...');
         await serviceInstance.broadcastUpdate('populationReset');
-        const { formatPopulationData } = require('./dataOperations.js');
-        return formatPopulationData({});
+        const dataOps = require('./dataOperations.js');
+        return dataOps.formatPopulationData({});
     } catch (error) {
         console.error('[resetAllPopulation] Error details:', error);
         throw error;
@@ -124,11 +125,11 @@ async function initializeTilePopulations(pool, calendarService, serviceInstance,
 
     try {
         // Import validation and data operations
-        const { validateTileIds } = require('./validation.js');
-        const { formatPopulationData } = require('./dataOperations.js');
-        const PopulationState = require('../populationState.js');
+        const validation = require('./validation.js');
+        const dataOps = require('./dataOperations.js');
+        const PopulationState = deps.getPopulationState();
 
-        validateTileIds(tileIds);
+        validation.validateTileIds(tileIds);
 
         // Check if population already exists in Redis - if so, and per-tile data is present, don't reinitialize.
         if (!forceAll) {
@@ -259,7 +260,7 @@ async function initializeTilePopulations(pool, calendarService, serviceInstance,
             console.warn('[PopulationOperations] CalendarService not available. Using system date as fallback:', currentDate);
         }
         const { year: currentYear, month: currentMonth, day: currentDay } = currentDate;
-        const { getRandomSex, getRandomAge, getRandomBirthDate } = require('./calculator.js');
+        const { getRandomSex, getRandomAge, getRandomBirthDate } = deps.getCalculator();
 
         // ========== Step 1: Pre-allocate IDs and generate people ==========
         const step1Start = Date.now();
@@ -645,7 +646,7 @@ async function initializeTilePopulations(pool, calendarService, serviceInstance,
             console.warn('[initPop] broadcastUpdate failed:', e && e.message ? e.message : e);
         }
 
-        return formatPopulationData(populations);
+        return dataOps.formatPopulationData(populations);
     } catch (error) {
         console.error('[PopulationOperations] Critical error in initializeTilePopulations:', error);
         console.error('[PopulationOperations] tileIds at time of error:', tileIds);

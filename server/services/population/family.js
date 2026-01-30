@@ -1,12 +1,6 @@
 // Population Family Operations - Enhanced with family table integration
 const { addPeopleToTile, removePeopleFromTile } = require('./manager.js');
-const {
-    createFamily,
-    startPregnancy,
-    deliverBaby,
-    processDeliveries,
-    getFamiliesOnTile
-} = require('./familyManager.js');
+const deps = require('./dependencyContainer');
 
 /**
  * Enhanced Procreation function with family management
@@ -117,13 +111,14 @@ async function createRandomFamilies(pool, tileId, calendarService = null) {
         // Create families with random pairing
         for (let i = 0; i < maxPairs && i < 5; i++) { // Limit to 5 new families per tile per update
             try {
+                const { createFamily } = deps.getFamilyManager();
                 const newFamily = await createFamily(pool, males[i].id, females[i].id, tileId);
 
                 // If calendarService available, register the family as fertile candidate if applicable
                 try {
                     if (newFamily && calendarService && typeof calendarService.getCurrentDate === 'function') {
                         const cd = calendarService.getCurrentDate();
-                        const PopulationState = require('../populationState');
+                        const PopulationState = deps.getPopulationState();
                         await PopulationState.addFertileFamily(newFamily.id, cd.year, cd.month, cd.day);
                     }
                 } catch (_) { }
@@ -136,6 +131,7 @@ async function createRandomFamilies(pool, tileId, calendarService = null) {
                     );
                     if (familyResult.rows.length > 0) {
                         try {
+                            const { startPregnancy } = deps.getFamilyManager();
                             await startPregnancy(pool, null, familyResult.rows[0].id);
                         } catch (err) {
                             console.warn(`[family.createRandomFamilies] startPregnancy failed for family ${familyResult.rows[0].id}: ${err.message || err}`);
@@ -154,10 +150,10 @@ async function createRandomFamilies(pool, tileId, calendarService = null) {
 module.exports = {
     Procreation,
     createRandomFamilies,
-    // Export family management functions for external use
-    createFamily,
-    startPregnancy,
-    deliverBaby,
-    processDeliveries,
-    getFamiliesOnTile
+    // Re-export family management functions (lazy-loaded to avoid circular deps)
+    get createFamily() { return deps.getFamilyManager().createFamily; },
+    get startPregnancy() { return deps.getFamilyManager().startPregnancy; },
+    get deliverBaby() { return deps.getFamilyManager().deliverBaby; },
+    get processDeliveries() { return deps.getFamilyManager().processDeliveries; },
+    get getFamiliesOnTile() { return deps.getFamilyManager().getFamiliesOnTile; }
 };

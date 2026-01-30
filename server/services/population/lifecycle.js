@@ -1,6 +1,7 @@
 // Population Lifecycle Management - Handles growth, aging, and life cycle events
 const config = require('../../config/server.js');
 const storage = require('../storage');
+const deps = require('./dependencyContainer');
 
 /**
  * Starts population growth simulation
@@ -106,7 +107,7 @@ async function updateGrowthRate(serviceInstance, rate) {
  */
 async function applySenescence(pool, calendarService, populationServiceInstance, daysAdvanced = 1) {
     try {
-        const PopulationState = require('../populationState');
+        const PopulationState = deps.getPopulationState();
 
         if (!storage.isAvailable()) {
             console.warn('⚠️ Storage not available - cannot process senescence');
@@ -129,7 +130,7 @@ async function applySenescence(pool, calendarService, populationServiceInstance,
 
         // Get all people from Redis
         const allPeople = await PopulationState.getAllPeople();
-        const { calculateAge } = require('./calculator.js');
+        const { calculateAge } = deps.getCalculator();
 
         const deaths = [];
         const DAYS_PER_YEAR = 96; // 8 days/month * 12 months
@@ -210,9 +211,9 @@ async function applySenescence(pool, calendarService, populationServiceInstance,
  */
 async function processDailyFamilyEvents(pool, calendarService, serviceInstance, daysAdvanced = 1) {
     try {
-        const { processDeliveries, startPregnancy } = require('./familyManager.js');
-        const PopulationState = require('../populationState');
-        const { calculateAge } = require('./calculator.js');
+        const { processDeliveries, startPregnancy } = deps.getFamilyManager();
+        const PopulationState = deps.getPopulationState();
+        const { calculateAge } = deps.getCalculator();
 
         // Skip if restart is in progress
         if (PopulationState.isRestarting) {
@@ -332,8 +333,8 @@ module.exports = {
  */
 async function assignResidencyForAdults(pool, tileId, calendarService) {
     try {
-        const StateManager = require('../stateManager');
-        const PopulationState = require('../populationState');
+        const StateManager = deps.getStateManager();
+        const PopulationState = deps.getPopulationState();
 
         // Get current date
         let currentYear = 4000, currentMonth = 1, currentDay = 1;
@@ -350,7 +351,7 @@ async function assignResidencyForAdults(pool, tileId, calendarService) {
 
         if (villages.length === 0) return; // No villages to assign to
 
-        const { calculateAge } = require('./calculator.js');
+        const { calculateAge } = deps.getCalculator();
 
         // Get all people from Redis
         const allPeople = await PopulationState.getAllPeople();
