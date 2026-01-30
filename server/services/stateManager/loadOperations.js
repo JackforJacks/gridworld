@@ -106,7 +106,7 @@ async function loadFromDatabase(context) {
     if (people.length > 0 && villages.length > 0) {
         const peopleTileIds = new Set(people.map(p => p.tile_id).filter(Boolean));
         const villageTileIds = new Set(villages.map(v => v.tile_id).filter(Boolean));
-        
+
         // Check if there's any overlap
         let hasOverlap = false;
         for (const tileId of peopleTileIds) {
@@ -115,12 +115,12 @@ async function loadFromDatabase(context) {
                 break;
             }
         }
-        
+
         if (!hasOverlap) {
             console.warn(`[StateManager] ⚠️ Villages don't match people's tiles! Regenerating villages...`);
             console.warn(`[StateManager] People tiles: ${[...peopleTileIds].slice(0, 5).join(', ')}...`);
             console.warn(`[StateManager] Village tiles: ${[...villageTileIds].slice(0, 5).join(', ')}...`);
-            
+
             // Clear old villages and regenerate
             await storage.del('village');
             const { seedVillagesStorageFirst } = require('../villageSeeder/redisSeeding');
@@ -196,7 +196,7 @@ async function clearExistingStorageState() {
             keysAfter = await storage.keys('*') || [];
         }
         console.log(`🧹 Keys after flush: ${keysAfter.length} keys`);
-        
+
         if (keysAfter.length > 0) {
             console.warn(`⚠️ WARNING: ${keysAfter.length} keys still exist after flushdb! Keys: ${keysAfter.slice(0, 10).join(', ')}${keysAfter.length > 10 ? '...' : ''}`);
         }
@@ -206,7 +206,7 @@ async function clearExistingStorageState() {
         try {
             // Clear all known hash keys
             await storage.del(
-                'village', 'person', 'family', 
+                'village', 'person', 'family',
                 'tile', 'tile:lands', 'tile:fertility',
                 'village:cleared', 'counts:global'
             );

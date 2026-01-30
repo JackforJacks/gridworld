@@ -289,7 +289,7 @@ async function seedWorldIfEmpty() {
     }
 
     const PopulationState = require('../populationState');
-    
+
     // Check if Redis already has people
     const existingPeople = await PopulationState.getTotalPopulation();
     if (existingPeople > 0) {
@@ -313,15 +313,15 @@ async function seedWorldIfEmpty() {
 
     // Now seed villages for these populated tiles
     const villageResult = await seedVillagesStorageFirst();
-    
+
     // Assign residency to people
     await assignResidencyStorage();
 
     console.log(`[villageSeeder] 🌍 World seeding complete: ${totalPeople} people, ${villageResult.created} villages`);
-    
-    return { 
-        seeded: true, 
-        people: totalPeople, 
+
+    return {
+        seeded: true,
+        people: totalPeople,
         villages: villageResult.created,
         tiles: tilesToPopulate.length
     };
@@ -389,7 +389,7 @@ async function createInitialTilesRedisFirst() {
 
     await pipeline.exec();
     console.log(`[villageSeeder] Created ${initialTiles.length} initial tiles in Redis`);
-    
+
     return initialTiles;
 }
 
