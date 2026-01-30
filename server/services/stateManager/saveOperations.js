@@ -57,6 +57,8 @@ async function saveToDatabase(context) {
         const familyCount = Object.keys(allFamilyData).length;
 
         // --- STEP: Pre-save validation for villages ---
+        // NOTE: Validation and repair happen BEFORE transaction to avoid Redis-DB inconsistency
+        // If repair fails, we abort before modifying the database
         const villageManager = await import('../villageSeeder/villageManager.cjs');
         const validation = await villageManager.validateVillageConsistency();
         if (!validation.valid) {
@@ -98,7 +100,8 @@ async function saveToDatabase(context) {
                     }
                 }
             } else {
-                console.error('[SaveOperations] ❌ Repair failed, saving potentially inconsistent state');
+                console.error('[SaveOperations] ❌ Repair failed - aborting save to prevent inconsistent state');
+                throw new Error('Village consistency repair failed - cannot safely proceed with save');
             }
         }
 
@@ -361,7 +364,13 @@ async function saveToDatabase(context) {
             familyLinks: peopleLinkedToFamilies
         };
     } catch (err) {
-        await client.query('ROLLBACK');
+        console.error('❌ [SaveOperations] Transaction failed, rolling back:', err.message);
+        try {
+            await client.query('ROLLBACK');
+            console.log('✅ [SaveOperations] Transaction rolled back successfully');
+        } catch (rollbackErr) {
+            console.error('❌ [SaveOperations] CRITICAL: Rollback failed:', rollbackErr.message);
+        }
         throw err;
     } finally {
         client.release();
