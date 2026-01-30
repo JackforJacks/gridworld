@@ -63,7 +63,7 @@ function tick(lastTime, autoRotate, targetRotation, rotation, camera, scene, ren
     // - Y rotation (horizontal mouse movement) rotates around the vertical Y-axis
     // - X rotation (vertical mouse movement) changes the camera's elevation angle
     // - The sphere rotates around its Y-axis for auto-rotation (like Earth)
-    
+
     // Apply sphere auto-rotation only around Y-axis (vertical axis)
     if (window.hexasphere && window.hexasphere.mesh) {
         if (autoRotate) {
