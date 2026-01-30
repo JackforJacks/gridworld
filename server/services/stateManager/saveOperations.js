@@ -260,6 +260,8 @@ async function saveToDatabase(context) {
 
         const elapsed = Date.now() - startTime;
 
+        console.log(`💾 [PostgreSQL] Saved in ${elapsed}ms — Tiles: ${tilesSaved}, Lands: ${landsSaved}, Villages: ${villagesInserted}, People: ${insertedCount}, Families: ${familiesInserted}`);
+
         // Emit save event
         if (context.io) {
             context.io.emit('gameSaved', {
