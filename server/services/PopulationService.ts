@@ -2,6 +2,8 @@
 // Population Service - Main service orchestrator for population management
 import pool from '../config/database';
 import config from '../config/server';
+import { Pool } from 'pg';
+import { Server as SocketIOServer } from 'socket.io';
 
 // Repository Pattern for data access
 import PopulationRepository from '../repositories/PopulationRepository';
@@ -11,6 +13,7 @@ import populationEvents from '../events/populationEvents';
 
 // Socket communication service
 import SocketService from './SocketService';
+import CalendarService from './calendarService';
 
 /**
  * @typedef {import('../../types/global').PopulationStats} PopulationStats
@@ -20,11 +23,9 @@ import SocketService from './SocketService';
  */
 
 // Core modules
-import { applySenescence } from './population/lifecycle';
+import { applySenescence, processDailyFamilyEvents } from './population/lifecycle';
 import {
     stopRateTracking,
-    trackBirths,
-    trackDeaths,
     startRateTracking,
     resetRateCounters
 } from './population/PopStats';
@@ -35,7 +36,6 @@ import {
     startAutoSave
 } from './population/initializer';
 import {
-    fetchPopulationStats,
     getPopulationStats,
     getAllPopulationData,
     printPeopleSample
@@ -68,10 +68,40 @@ import {
     setupRealtimeListeners
 } from './population/communication';
 
-import { validateTileIds } from './population/validation';
+// Additional modules for integrity, family management
+import { verifyAndRepairIntegrity } from './population/integrity';
+import { createRandomFamilies } from './population/family';
+import { formNewFamilies } from './population/familyManager';
+import { stopIntegrityAudit } from './population/initializer';
 
 // Statistics service for vital rates tracking
 import StatisticsService from './statisticsService';
+
+// Optional metrics module (may not exist)
+let metrics: { auditRunCounter?: { inc: (labels: Record<string, string>) => void }; auditDuration?: { observe: (value: number) => void }; auditFailures?: { inc: () => void }; issuesGauge?: { set: (value: number) => void }; lastRunGauge?: { set: (value: number) => void } } | null = null;
+try {
+    // eslint-disable-next-line @typescript-eslint/no-require-imports
+    metrics = require('./metrics');
+} catch {
+    // metrics module is optional
+}
+
+// Type definitions
+interface CalendarEventData {
+    daysAdvanced: number;
+    [key: string]: unknown;
+}
+
+interface PopulationData {
+    [tileId: string]: number;
+}
+
+interface IntegrityDetail {
+    duplicatesCount?: number;
+    missingCount?: number;
+    mismatchedCount?: number;
+    [key: string]: unknown;
+}
 
 interface EventLogEntry {
     type: 'birth' | 'death';
@@ -83,12 +113,12 @@ interface EventLogEntry {
  * Main service orchestrator for population management using Repository Pattern and Event Emitters
  */
 class PopulationService {
-    #pool: any;
+    #pool: Pool;
     #repository: PopulationRepository;
     #socketService: SocketService;
 
-    io: any;
-    calendarService: any;
+    io: SocketIOServer;
+    calendarService: CalendarService | null;
     events: typeof populationEvents;
     growthInterval: ReturnType<typeof setInterval> | null;
     autoSaveInterval: ReturnType<typeof setInterval> | null;
@@ -104,11 +134,11 @@ class PopulationService {
 
     /**
      * Create a population service
-     * @param {any} io - Socket.IO instance
-     * @param {any} [calendarService=null] - Calendar service instance
-     * @param {any} [statisticsService=null] - Statistics service instance
+     * @param io - Socket.IO instance
+     * @param calendarService - Calendar service instance
+     * @param statisticsService - Statistics service instance
      */
-    constructor(io: any, calendarService: any = null, statisticsService: StatisticsService | null = null) {
+    constructor(io: SocketIOServer, calendarService: CalendarService | null = null, statisticsService: StatisticsService | null = null) {
         // Direct dependencies
         this.io = io;
         this.calendarService = calendarService;
@@ -201,7 +231,7 @@ class PopulationService {
         return this.statisticsService;
     } 
 
-    async initialize(io: any, calendarService: any = null): Promise<void> {
+    async initialize(io: SocketIOServer, calendarService: CalendarService | null = null): Promise<void> {
         await initializePopulationService(this, io, calendarService);
         setupRealtimeListeners(io, this);
         // Initialize rate tracking
@@ -214,7 +244,7 @@ class PopulationService {
 
         // Listen to calendar tick events for daily population updates
         if (calendarService) {
-            calendarService.on('tick', async (eventData: any) => {
+            calendarService.on('tick', async (eventData: CalendarEventData) => {
                 // Process tick with the number of days advanced (not looping)
                 if (eventData.daysAdvanced > 0) {
                     await this.tick(eventData.daysAdvanced);
@@ -224,24 +254,24 @@ class PopulationService {
         }
     }
 
-    async loadData(): Promise<any> { return await loadPopulationData(this.#pool); }
-    async saveData(): Promise<any> { return await savePopulationData(); }
-    async getPopulations(): Promise<any> { return await this.loadData(); }
-    getFormattedPopulationData(populations: any = null): any { return formatPopulationData(populations); }
+    async loadData(): Promise<PopulationData> { return await loadPopulationData(this.#pool); }
+    async saveData(): Promise<void> { return await savePopulationData(); }
+    async getPopulations(): Promise<PopulationData> { return await this.loadData(); }
+    getFormattedPopulationData(populations: PopulationData | null = null): unknown { return formatPopulationData(populations); }
 
     async updatePopulation(tileId: number | string, population: number): Promise<void> {
         await updateTilePopulation(this.#pool, this.calendarService, this, tileId, population);
     }
-    async resetPopulation(options = {}) {
+    async resetPopulation(options: Record<string, unknown> = {}) {
         return await resetAllPopulation(this.#pool, this, options);
     }
-    async initializeTilePopulations(tileIds, options = {}) {
+    async initializeTilePopulations(tileIds: number[], options: Record<string, unknown> = {}) {
         return await initializeTilePopulations(this.#pool, this.calendarService, this, tileIds, options);
     }
-    async updateTilePopulations(tilePopulations) {
+    async updateTilePopulations(tilePopulations: Array<{ tileId: number; population: number }>) {
         return await updateMultipleTilePopulations(this.#pool, this.calendarService, this, tilePopulations);
     }
-    async regeneratePopulationWithNewAgeDistribution(): Promise<any> {
+    async regeneratePopulationWithNewAgeDistribution(): Promise<unknown> {
         return await regeneratePopulationWithNewAgeDistribution(this.#pool, this.calendarService, this);
     }
 
@@ -249,19 +279,17 @@ class PopulationService {
      * Run integrity check (and optional repair) on demand
      * options: { tiles: Array|null, repair: boolean }
      */
-    async runIntegrityCheck(options: { tiles?: any[] | null; repair?: boolean } = {}): Promise<any> {
+    async runIntegrityCheck(options: { tiles?: number[] | null; repair?: boolean } = {}): Promise<{ success: boolean; details: unknown }> {
         try {
             const { tiles = null, repair = false } = options;
-            const integrity = require('./population/integrity');
-            let metrics: any; try { metrics = require('./metrics'); } catch (_: unknown) { metrics = null; }
             const start = Date.now();
-            if (metrics && metrics.auditRunCounter) metrics.auditRunCounter.inc({ source: 'manual', repair: repair ? 'true' : 'false' });
-            const res = await integrity.verifyAndRepairIntegrity(this.#pool, tiles, {}, { repair });
+            if (metrics?.auditRunCounter) metrics.auditRunCounter.inc({ source: 'manual', repair: repair ? 'true' : 'false' });
+            const res = await verifyAndRepairIntegrity(this.#pool, tiles, {}, { repair });
             const durationSec = (Date.now() - start) / 1000;
             if (metrics && metrics.auditDuration) metrics.auditDuration.observe(durationSec);
             if (!res.ok) {
                 if (metrics && metrics.auditFailures) metrics.auditFailures.inc();
-                const issuesCount = Array.isArray(res.details) ? res.details.reduce((sum: number, d: any) => sum + (d.duplicatesCount || d.missingCount || d.mismatchedCount || 0), 0) : 0;
+                const issuesCount = Array.isArray(res.details) ? res.details.reduce((sum: number, d: IntegrityDetail) => sum + (d.duplicatesCount || d.missingCount || d.mismatchedCount || 0), 0) : 0;
                 if (metrics && metrics.issuesGauge) metrics.issuesGauge.set(issuesCount);
             } else {
                 if (metrics && metrics.issuesGauge) metrics.issuesGauge.set(0);
@@ -276,23 +304,22 @@ class PopulationService {
 
     startGrowth() { startGrowth(this); }
     stopGrowth() { stopGrowth(this); }
-    async updateGrowthRate(rate) { return await updateGrowthRate(this, rate); } async applySenescenceManually() {
+    async updateGrowthRate(rate: number) { return await updateGrowthRate(this, rate); }
+
+    async applySenescenceManually() {
+        const deaths = await applySenescence(this.#pool, this.calendarService, this);
+        if (deaths > 0) await this.broadcastUpdate('senescenceApplied');
+        const populations = await this.loadData();
+        return {
+            success: true,
+            deaths,
+            message: `Senescence applied: ${deaths} people died of old age`,
+            data: this.getFormattedPopulationData(populations)
+        };
+    }
+
+    async createFamiliesForExistingPopulation() {
         try {
-            const deaths = await applySenescence(this.#pool, this.calendarService, this);
-            if (deaths > 0) await this.broadcastUpdate('senescenceApplied');
-            const populations = await this.loadData();
-            return {
-                success: true,
-                deaths,
-                message: `Senescence applied: ${deaths} people died of old age`,
-                data: this.getFormattedPopulationData(populations)
-            };
-        } catch (error: unknown) {
-            throw error;
-        }
-    } async createFamiliesForExistingPopulation() {
-        try {
-            const { createRandomFamilies } = require('./population/family.js');
 
             // Use repository to get tiles with population
             const tilePopulations = await this.#repository.getTilePopulations();
@@ -352,9 +379,9 @@ class PopulationService {
     /**
      * Track births with in-game date
      * Uses event emitter for decoupled notification
-     * @param {number} count - Number of births
+     * @param count - Number of births
      */
-    trackBirths(count) {
+    trackBirths(count: number) {
         if (!this.calendarService) return;
         const date = this.calendarService.getCurrentDate();
 
@@ -383,9 +410,9 @@ class PopulationService {
     /**
      * Track deaths with in-game date
      * Uses event emitter for decoupled notification
-     * @param {number} count - Number of deaths
+     * @param count - Number of deaths
      */
-    trackDeaths(count) {
+    trackDeaths(count: number) {
         if (!this.calendarService) return;
         const date = this.calendarService.getCurrentDate();
 
@@ -431,14 +458,13 @@ class PopulationService {
             clearInterval(this.autoSaveInterval);
             this.autoSaveInterval = null;
         }
-    } async shutdown() {
+    }
+
+    async shutdown() {
         this.stopGrowth();
         this.stopAutoSave();
         // Stop scheduled integrity audit if running
-        try {
-            const { stopIntegrityAudit } = require('./population/initializer');
-            stopIntegrityAudit(this);
-        } catch (_: unknown) { }
+        stopIntegrityAudit(this);
         stopRateTracking(this);
         // Shutdown statistics service
         if (this.statisticsService) {
@@ -449,18 +475,16 @@ class PopulationService {
 
     /**
      * Tick method for population updates - processes births, deaths (senescence), and family formation
-     * @param {number} daysAdvanced - Number of days that passed in this tick (default 1)
+     * @param daysAdvanced - Number of days that passed in this tick (default 1)
      */
     async tick(daysAdvanced = 1) {
         // Quiet: population tick started (log suppressed)
 
         try {
             // 1. Apply senescence (aging deaths) - probability adjusted for days passed
-            const { applySenescence, processDailyFamilyEvents } = require('./population/lifecycle.js');
             await applySenescence(this.#pool, this.calendarService, this, daysAdvanced);
 
             // 2. Form new families from bachelors (run once per tick, families form over time)
-            const { formNewFamilies } = require('./population/familyManager.js');
             const newFamilies = await formNewFamilies(this.#pool, this.calendarService);
             if (newFamilies > 0) {
                 // Quiet: formed new families on tick (log suppressed)

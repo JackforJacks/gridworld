@@ -19,11 +19,8 @@ module.exports = (env, argv) => {
       clean: !isWatching // Don't clean on watch mode for faster rebuilds
     },
 
-    devServer: {
-      proxy: {
-        '/api': 'http://localhost:3000'
-      }
-    },
+    // Reduce console output
+    stats: isWatching ? 'minimal' : 'normal',
 
     // Watch mode configuration
     watchOptions: {
@@ -150,14 +147,17 @@ module.exports = (env, argv) => {
         },
         progress: true,
         webSocketURL: 'ws://localhost:8080/ws'
-      }, proxy: {
-        '/api': {
+      },
+      proxy: [
+        {
+          context: ['/api'],
           target: 'http://localhost:3000',
           changeOrigin: true,
           timeout: 60000,
           proxyTimeout: 60000,
         },
-        '/socket.io': {
+        {
+          context: ['/socket.io'],
           target: 'http://localhost:3000',
           ws: true,
           changeOrigin: true,
@@ -176,7 +176,7 @@ module.exports = (env, argv) => {
             'Connection': 'keep-alive',
           },
         },
-      },
+      ],
     },
 
     resolve: {
