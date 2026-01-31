@@ -88,6 +88,44 @@ interface ExtendedWindow {
 // Type assertion helper for window
 const extendedWindow = window as unknown as ExtendedWindow;
 
+// ============ HTML Template Helpers ============
+
+/** Format a number for display, with fallback */
+function fmt(value: number | undefined, fallback = 'N/A'): string {
+    return value !== undefined ? value.toLocaleString() : fallback;
+}
+
+/** Format a percentage for display */
+function fmtPct(value: number | undefined, fallback = '0.00'): string {
+    return value !== undefined ? value.toFixed(2) : fallback;
+}
+
+/** Format a decimal for display */
+function fmtDec(value: number | undefined, decimals = 1, fallback = '0.0'): string {
+    return value !== undefined ? value.toFixed(decimals) : fallback;
+}
+
+/** Create a stat row HTML */
+function statRow(label: string, value: string, id?: string): string {
+    const idAttr = id ? ` id="${id}"` : '';
+    return `<p><strong>${label}:</strong> <span${idAttr}>${value}</span></p>`;
+}
+
+/** Merge API stats into stats object */
+function mergeApiStats(stats: StatsData, popData: PopulationApiStats): void {
+    const keys: (keyof PopulationApiStats)[] = [
+        'male', 'female', 'minors', 'working_age', 'elderly', 'bachelors',
+        'birthRate', 'deathRate', 'birthCount', 'deathCount',
+        'totalFamilies', 'pregnantFamilies', 'familiesWithChildren',
+        'avgChildrenPerFamily', 'totalPopulation', 'villagesCount'
+    ];
+    for (const key of keys) {
+        if (popData[key] !== undefined) {
+            (stats as Record<string, number>)[key] = Number(popData[key]);
+        }
+    }
+}
+
 class UIManager {
     private controlsPanel: HTMLElement | null;
     private toggleHelpButton: HTMLElement | null;
@@ -448,37 +486,21 @@ class UIManager {
         }
 
         try {
-            // Show loading indicator while fetching
             this.showLoadingIndicator('Loading statistics...');
 
             // Get tile stats from sceneManager
-            const stats = (ctx.sceneManager.getPopulationStats ? ctx.sceneManager.getPopulationStats() : {}) as StatsData;
-            // Fetch demographic stats from backend API (force fresh)
+            const stats = (ctx.sceneManager.getPopulationStats?.() ?? {}) as StatsData;
+            
+            // Fetch and merge demographic stats from backend API
             const popData = await populationManager.makeApiRequest<PopulationApiStats>('/stats', 'GET');
-            // Merge demographic stats if available
             if (popData) {
-                if (typeof popData.male !== 'undefined') stats.male = Number(popData.male);
-                if (typeof popData.female !== 'undefined') stats.female = Number(popData.female);
-                if (typeof popData.minors !== 'undefined') stats.minors = Number(popData.minors);
-                if (typeof popData.working_age !== 'undefined') stats.working_age = Number(popData.working_age);
-                if (typeof popData.elderly !== 'undefined') stats.elderly = Number(popData.elderly);
-                if (typeof popData.bachelors !== 'undefined') stats.bachelors = Number(popData.bachelors);
-                if (typeof popData.birthRate !== 'undefined') stats.birthRate = Number(popData.birthRate);
-                if (typeof popData.deathRate !== 'undefined') stats.deathRate = Number(popData.deathRate);
-                if (typeof popData.birthCount !== 'undefined') stats.birthCount = Number(popData.birthCount);
-                if (typeof popData.deathCount !== 'undefined') stats.deathCount = Number(popData.deathCount);
-                if (typeof popData.totalFamilies !== 'undefined') stats.totalFamilies = Number(popData.totalFamilies);
-                if (typeof popData.pregnantFamilies !== 'undefined') stats.pregnantFamilies = Number(popData.pregnantFamilies);
-                if (typeof popData.familiesWithChildren !== 'undefined') stats.familiesWithChildren = Number(popData.familiesWithChildren);
-                if (typeof popData.avgChildrenPerFamily !== 'undefined') stats.avgChildrenPerFamily = Number(popData.avgChildrenPerFamily);
-                if (typeof popData.totalPopulation !== 'undefined') stats.totalPopulation = Number(popData.totalPopulation);
-                if (typeof popData.villagesCount !== 'undefined') stats.villagesCount = Number(popData.villagesCount);
+                mergeApiStats(stats, popData);
             }
+            
             this.currentTotalPopulation = stats.totalPopulation ?? 0;
             const growthStats = populationManager.getGrowthStats();
             this.hideLoadingIndicator();
             this.showStatsModal(stats, growthStats);
-            // [log removed]
         } catch (error: unknown) {
             this.hideLoadingIndicator();
             console.error('Failed to get statistics:', error);
@@ -486,105 +508,106 @@ class UIManager {
         }
     }
 
-    showStatsModal(stats: StatsData, growthStats: GrowthStats): void {
+    showStatsModal(stats: StatsData, _growthStats: GrowthStats): void {
         // Remove existing modal if any
-        const existingModal = document.getElementById('stats-modal-overlay');
-        if (existingModal) {
-            existingModal.remove();
-        }
+        document.getElementById('stats-modal-overlay')?.remove();
 
         // Create overlay
         const overlay = document.createElement('div');
         overlay.id = 'stats-modal-overlay';
-        overlay.classList.add('stats-modal-overlay');
-
-        // Create modal
-        const modal = document.createElement('div');
-        modal.classList.add('stats-modal');
-
-        // Modal Header
-        const header = document.createElement('div');
-        header.classList.add('stats-modal-header');
-        header.innerHTML = '<h3>📊 Population Statistics</h3>';
-
-        // Add Refresh button
-        const refreshButton = document.createElement('button');
-        refreshButton.classList.add('stats-modal-refresh');
-        refreshButton.innerHTML = '⟳ Refresh';
-        refreshButton.style.marginRight = '8px';
-        refreshButton.onclick = async () => {
-            refreshButton.disabled = true;
-            refreshButton.textContent = 'Refreshing...';
-            try {
-                await this.handleShowStats();
-            } finally {
-                // The modal will be replaced, so no need to re-enable
-            }
-        };
-        header.appendChild(refreshButton);
-
-        const closeButton = document.createElement('button');
-        closeButton.classList.add('stats-modal-close');
-        closeButton.innerHTML = '&times;';
-        closeButton.onclick = () => overlay.remove();
-        header.appendChild(closeButton);
-
-        // Modal Content
-        const content = document.createElement('div');
-        content.classList.add('stats-modal-content');
-        content.innerHTML = `
-            <p><strong>Total Population:</strong> <span id="stats-modal-total-population">${stats.totalPopulation?.toLocaleString() ?? 'N/A'}</span></p>
-            <p><strong>Male Population:</strong> <span id="stats-modal-male-population">${stats.male?.toLocaleString() ?? 'N/A'}</span></p>
-            <p><strong>Female Population:</strong> <span id="stats-modal-female-population">${stats.female?.toLocaleString() ?? 'N/A'}</span></p>
-            <p><strong>Minors (under 16):</strong> <span id="stats-modal-minors">${stats.minors?.toLocaleString() ?? 'N/A'}</span></p>
-            <p><strong>Working Age (16-60):</strong> <span id="stats-modal-working-age">${stats.working_age?.toLocaleString() ?? 'N/A'}</span></p>
-            <p><strong>Elderly (over 60):</strong> <span id="stats-modal-elderly">${stats.elderly?.toLocaleString() ?? 'N/A'}</span></p>
-            <p><strong>Bachelors:</strong> <span id="stats-modal-bachelors">${stats.bachelors?.toLocaleString() ?? 'N/A'}</span></p>
-            <hr class="stats-modal-separator">
-            <p><strong>Total Families:</strong> <span id="stats-modal-total-families">${stats.totalFamilies?.toLocaleString() ?? '0'}</span></p>
-            <p><strong>Pregnant Families:</strong> <span id="stats-modal-pregnant-families">${stats.pregnantFamilies?.toLocaleString() ?? '0'}</span></p>
-            <p><strong>Families with Children:</strong> <span id="stats-modal-families-with-children">${stats.familiesWithChildren?.toLocaleString() ?? '0'}</span></p>
-            <p><strong>Avg. Children per Family:</strong> <span id="stats-modal-avg-children">${stats.avgChildrenPerFamily?.toFixed(1) ?? '0.0'}</span></p>
-            <hr class="stats-modal-separator">
-            <p><strong>Birth Rate:</strong> <span id="stats-modal-birth-rate">${stats.birthRate?.toFixed(2) ?? '0.00'} %</span></p>
-            <p><strong>Death Rate:</strong> <span id="stats-modal-death-rate">${stats.deathRate?.toFixed(2) ?? '0.00'} %</span></p>
-            <p><strong>Total Births:</strong> <span id="stats-modal-birth-count">${stats.birthCount?.toLocaleString() ?? '0'}</span></p>
-            <p><strong>Total Deaths:</strong> <span id="stats-modal-death-count">${stats.deathCount?.toLocaleString() ?? '0'}</span></p>
-            <hr class="stats-modal-separator">
-            <p><strong>Total Tiles:</strong> ${stats.totalTiles}</p>
-            <p><strong>Total Villages:</strong> <span id="stats-modal-total-villages">${stats.villagesCount?.toLocaleString() ?? '0'}</span></p>
-            <p><strong>Habitable Tiles:</strong> ${stats.habitableTiles}</p>
-            <p><strong>Populated Tiles:</strong> ${stats.populatedTiles}</p>
-            <p><strong>High Pop Tiles (≥${stats.threshold}):</strong> ${stats.highPopulationTiles}</p>
-            <p><strong>Red Tiles:</strong> ${stats.redTiles}</p>
-            ${stats.biomes ? `
-            <hr class="stats-modal-separator">
-            <h4>🌿 Biome Distribution</h4>
-            <p><strong>🏔️ Tundra:</strong> ${stats.biomes.tundra.tiles} tiles (${stats.biomes.tundra.population.toLocaleString()} people)</p>
-            <p><strong>🏜️ Desert:</strong> ${stats.biomes.desert.tiles} tiles (${stats.biomes.desert.population.toLocaleString()} people)</p>
-            <p><strong>🌾 Plains:</strong> ${stats.biomes.plains.tiles} tiles (${stats.biomes.plains.population.toLocaleString()} people)</p>
-            <p><strong>🌱 Grassland:</strong> ${stats.biomes.grassland.tiles} tiles (${stats.biomes.grassland.population.toLocaleString()} people)</p>
-            <p><strong>⛰️ Alpine:</strong> ${stats.biomes.alpine.tiles} tiles (${stats.biomes.alpine.population.toLocaleString()} people)</p>
-            ` : ''}
-            <hr class="stats-modal-separator">
-            <div style="margin: 24px 0;">
-                <h4>Vital Rates (per 1000 people, last 100 years)</h4>
-                <canvas id="vital-rates-chart" width="600" height="300"></canvas>
-            </div>
-        `;
-
-        modal.appendChild(header);
-        modal.appendChild(content);
-        overlay.appendChild(modal);
+        overlay.className = 'stats-modal-overlay';
+        overlay.innerHTML = this.generateStatsModalHTML(stats);
         document.body.appendChild(overlay);
+
+        // Attach event handlers
+        this.attachStatsModalHandlers(overlay);
 
         // Render the vital rates chart
         this.renderVitalRatesChart();
+    }
 
-        overlay.addEventListener('click', (event) => {
-            if (event.target === overlay) {
-                overlay.remove();
-            }
+    /** Generate stats modal HTML content */
+    private generateStatsModalHTML(stats: StatsData): string {
+        const SEP = '<hr class="stats-modal-separator">';
+        
+        // Biome section
+        const biomeSection = stats.biomes ? `
+            ${SEP}
+            <h4>🌿 Biome Distribution</h4>
+            ${this.biomeRow('🏔️ Tundra', stats.biomes.tundra)}
+            ${this.biomeRow('🏜️ Desert', stats.biomes.desert)}
+            ${this.biomeRow('🌾 Plains', stats.biomes.plains)}
+            ${this.biomeRow('🌱 Grassland', stats.biomes.grassland)}
+            ${this.biomeRow('⛰️ Alpine', stats.biomes.alpine)}
+        ` : '';
+
+        return `
+            <div class="stats-modal">
+                <div class="stats-modal-header">
+                    <h3>📊 Population Statistics</h3>
+                    <button class="stats-modal-refresh" style="margin-right:8px">⟳ Refresh</button>
+                    <button class="stats-modal-close">&times;</button>
+                </div>
+                <div class="stats-modal-content">
+                    ${statRow('Total Population', fmt(stats.totalPopulation), 'stats-modal-total-population')}
+                    ${statRow('Male Population', fmt(stats.male), 'stats-modal-male-population')}
+                    ${statRow('Female Population', fmt(stats.female), 'stats-modal-female-population')}
+                    ${statRow('Minors (under 16)', fmt(stats.minors), 'stats-modal-minors')}
+                    ${statRow('Working Age (16-60)', fmt(stats.working_age), 'stats-modal-working-age')}
+                    ${statRow('Elderly (over 60)', fmt(stats.elderly), 'stats-modal-elderly')}
+                    ${statRow('Bachelors', fmt(stats.bachelors), 'stats-modal-bachelors')}
+                    ${SEP}
+                    ${statRow('Total Families', fmt(stats.totalFamilies, '0'), 'stats-modal-total-families')}
+                    ${statRow('Pregnant Families', fmt(stats.pregnantFamilies, '0'), 'stats-modal-pregnant-families')}
+                    ${statRow('Families with Children', fmt(stats.familiesWithChildren, '0'), 'stats-modal-families-with-children')}
+                    ${statRow('Avg. Children per Family', fmtDec(stats.avgChildrenPerFamily), 'stats-modal-avg-children')}
+                    ${SEP}
+                    ${statRow('Birth Rate', fmtPct(stats.birthRate) + ' %', 'stats-modal-birth-rate')}
+                    ${statRow('Death Rate', fmtPct(stats.deathRate) + ' %', 'stats-modal-death-rate')}
+                    ${statRow('Total Births', fmt(stats.birthCount, '0'), 'stats-modal-birth-count')}
+                    ${statRow('Total Deaths', fmt(stats.deathCount, '0'), 'stats-modal-death-count')}
+                    ${SEP}
+                    ${statRow('Total Tiles', String(stats.totalTiles ?? 'N/A'))}
+                    ${statRow('Total Villages', fmt(stats.villagesCount, '0'), 'stats-modal-total-villages')}
+                    ${statRow('Habitable Tiles', String(stats.habitableTiles ?? 'N/A'))}
+                    ${statRow('Populated Tiles', String(stats.populatedTiles ?? 'N/A'))}
+                    ${statRow(`High Pop Tiles (≥${stats.threshold ?? 0})`, String(stats.highPopulationTiles ?? 'N/A'))}
+                    ${statRow('Red Tiles', String(stats.redTiles ?? 'N/A'))}
+                    ${biomeSection}
+                    ${SEP}
+                    <div style="margin: 24px 0;">
+                        <h4>Vital Rates (per 1000 people, last 100 years)</h4>
+                        <canvas id="vital-rates-chart" width="600" height="300"></canvas>
+                    </div>
+                </div>
+            </div>
+        `;
+    }
+
+    /** Generate biome row HTML */
+    private biomeRow(label: string, biome: { tiles: number; population: number }): string {
+        return `<p><strong>${label}:</strong> ${biome.tiles} tiles (${biome.population.toLocaleString()} people)</p>`;
+    }
+
+    /** Attach event handlers to stats modal */
+    private attachStatsModalHandlers(overlay: HTMLElement): void {
+        const refreshBtn = overlay.querySelector('.stats-modal-refresh') as HTMLButtonElement;
+        const closeBtn = overlay.querySelector('.stats-modal-close');
+
+        if (refreshBtn) {
+            refreshBtn.onclick = async () => {
+                refreshBtn.disabled = true;
+                refreshBtn.textContent = 'Refreshing...';
+                await this.handleShowStats();
+            };
+        }
+
+        if (closeBtn) {
+            closeBtn.addEventListener('click', () => overlay.remove());
+        }
+
+        overlay.addEventListener('click', (e) => {
+            if (e.target === overlay) overlay.remove();
         });
     }
 
