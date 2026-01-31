@@ -223,7 +223,7 @@ class PopulationService {
 
     getStatisticsService(): StatisticsService {
         return this.statisticsService;
-    } 
+    }
 
     async initialize(io: SocketIOServer, calendarService: CalendarService | null = null): Promise<void> {
         await initializePopulationService(this, io, calendarService);
