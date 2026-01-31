@@ -1,0 +1,107 @@
+// Family Manager - Pregnancy Module
+import { ErrorSeverity, safeExecute } from '../../../utils/errorHandler';
+import storage from '../../storage';
+import * as deps from '../dependencyContainer';
+import { Pool } from 'pg';
+import { withLock, familyLockConfig } from '../lockUtils';
+import { CalendarService, FamilyRecord, PersonRecord } from './types';
+import { getCurrentDate, parseBirthDate, calculateAgeFromDates, formatDate } from './helpers';
+
+/** Maximum age for pregnancy */
+const MAX_PREGNANCY_AGE = 33;
+
+/**
+ * Starts pregnancy for a family - storage-only
+ */
+export async function startPregnancy(
+    pool: Pool | null,
+    calendarService: CalendarService | null,
+    familyId: number
+): Promise<FamilyRecord | null> {
+    const PopulationState = deps.getPopulationState();
+
+    // Record attempt
+    await safeExecute(
+        () => storage.incr('stats:pregnancy:attempts'),
+        'FamilyManager:PregnancyAttempts',
+        null,
+        ErrorSeverity.LOW
+    );
+
+    // Skip if restart is in progress
+    if (PopulationState.isRestarting) {
+        return null;
+    }
+
+    const lockConfig = familyLockConfig(familyId, {
+        contentionStatsKey: 'stats:pregnancy:contention'
+    });
+
+    const result = await withLock(lockConfig, async () => {
+        const currentDate = getCurrentDate(calendarService);
+
+        // Get family from Redis
+        const family = await PopulationState.getFamily(familyId) as FamilyRecord | null;
+        if (!family) {
+            return null;
+        }
+
+        // Check if already pregnant
+        if (family.pregnancy) {
+            console.warn(`Family ${familyId} is already pregnant - skipping startPregnancy`);
+            return null;
+        }
+
+        // Get wife from Redis
+        const wife = await PopulationState.getPerson(family.wife_id) as PersonRecord | null;
+        if (!wife || !wife.date_of_birth) {
+            return null;
+        }
+
+        // Calculate wife's age
+        const birthDateParts = parseBirthDate(wife.date_of_birth);
+        const wifeAge = calculateAgeFromDates(birthDateParts, currentDate);
+
+        // Check if wife is too old for pregnancy
+        if (wifeAge > MAX_PREGNANCY_AGE) {
+            throw new Error(`Wife too old for pregnancy: age ${wifeAge} (limit ${MAX_PREGNANCY_AGE})`);
+        }
+
+        // Calculate delivery date (~9 months later)
+        let deliveryMonth = currentDate.month + 9;
+        let deliveryYear = currentDate.year;
+        if (deliveryMonth > 12) {
+            deliveryMonth -= 12;
+            deliveryYear++;
+        }
+        const deliveryDate = formatDate(deliveryYear, deliveryMonth, currentDate.day);
+
+        // Update family in Redis
+        await PopulationState.updateFamily(familyId, {
+            pregnancy: true,
+            delivery_date: deliveryDate
+        });
+
+        // Remove from fertile set
+        await safeExecute(
+            () => PopulationState.removeFertileFamily(familyId),
+            'FamilyManager:RemoveFertileFamily',
+            null,
+            ErrorSeverity.MEDIUM
+        );
+
+        return { ...family, pregnancy: true, delivery_date: deliveryDate };
+    });
+
+    if (!result.acquired) {
+        console.warn(`[startPregnancy] Could not acquire lock for family ${familyId}`);
+        return null;
+    }
+
+    if (result.error) {
+        console.error(`Error starting pregnancy for family ${familyId}:`, result.error.message);
+        throw result.error;
+    }
+
+    return result.result ?? null;
+}

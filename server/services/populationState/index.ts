@@ -149,6 +149,7 @@ class PopulationState {
     // =========== FAMILY OPERATIONS (delegates to FamilyState) ===========
     static async getNextFamilyId(): Promise<number> { return FamilyState.getNextId(); }
     static async addFamily(family: FamilyData, isNew?: boolean): Promise<boolean> { return FamilyState.addFamily(family, isNew); }
+    static async batchAddFamilies(families: FamilyData[], isNew?: boolean): Promise<number> { return FamilyState.batchAddFamilies(families, isNew); }
     static async getFamily(familyId: number | string): Promise<StoredFamilyData | null> { return FamilyState.getFamily(Number(familyId)); }
     static async updateFamily(familyId: number | string, updates: Partial<FamilyData>): Promise<boolean> { return FamilyState.updateFamily(Number(familyId), updates); }
     static async getAllFamilies(): Promise<StoredFamilyData[]> { return FamilyState.getAllFamilies(); }

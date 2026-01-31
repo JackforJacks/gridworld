@@ -151,6 +151,49 @@ class FamilyState {
     }
 
     /**
+     * Batch add families to Redis
+     * Optimized: Uses pipeline to batch all add operations
+     * @param families - Array of family objects
+     * @param isNew - If true, track as pending inserts
+     * @returns Number of families added
+     */
+    static async batchAddFamilies(families: FamilyData[], isNew: boolean = false): Promise<number> {
+        if (!storage.isAvailable() || !families || families.length === 0) return 0;
+        try {
+            const pipeline = storage.pipeline();
+
+            for (const family of families) {
+                if (!family || family.id === undefined || family.id === null) continue;
+
+                const id = family.id.toString();
+                const f: StoredFamilyData = {
+                    id: family.id,
+                    husband_id: family.husband_id,
+                    wife_id: family.wife_id,
+                    tile_id: family.tile_id,
+                    pregnancy: family.pregnancy || false,
+                    delivery_date: family.delivery_date || null,
+                    children_ids: family.children_ids || [],
+                    _isNew: isNew
+                };
+
+                pipeline.hset('family', id, JSON.stringify(f));
+
+                if (isNew) {
+                    pipeline.sadd('pending:family:inserts', id);
+                }
+            }
+
+            await pipeline.exec();
+            return families.length;
+        } catch (err: unknown) {
+            const message = err instanceof Error ? err.message : String(err);
+            console.warn('[FamilyState] batchAddFamilies failed:', message);
+            return 0;
+        }
+    }
+
+    /**
      * Get all families from Redis
      */
     static async getAllFamilies(): Promise<StoredFamilyData[]> {
