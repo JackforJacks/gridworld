@@ -1,6 +1,7 @@
 // @ts-check
 // Three.js/scene/tile helpers
 import * as THREE from 'three';
+import { getAppContext } from '../AppContext';
 
 /**
  * @typedef {import('../../../types/global').TileData} TileData
@@ -120,16 +121,17 @@ function tick(lastTime, autoRotate, targetRotation, rotation, camera, scene, ren
     // - The sphere rotates around its Y-axis for auto-rotation (like Earth)
 
     // Apply sphere auto-rotation only around Y-axis (vertical axis)
-    if (window.hexasphere && window.hexasphere.mesh) {
+    const ctx = getAppContext();
+    if (ctx.hexasphere && ctx.hexasphere.mesh) {
         if (autoRotate) {
             // Auto-rotate the sphere around its own Y-axis (like Earth)
-            window.hexasphere.mesh.rotation.y = rotation.y;
+            ctx.hexasphere.mesh.rotation.y = rotation.y;
         } else {
             // When manually controlling, keep sphere orientation fixed and move camera
-            window.hexasphere.mesh.rotation.y = 0;
+            ctx.hexasphere.mesh.rotation.y = 0;
         }
-        window.hexasphere.mesh.rotation.x = 0;
-        window.hexasphere.mesh.rotation.z = 0;
+        ctx.hexasphere.mesh.rotation.x = 0;
+        ctx.hexasphere.mesh.rotation.z = 0;
     }
 
     // Position camera using proper spherical coordinates for vertical axis

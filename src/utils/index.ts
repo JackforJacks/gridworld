@@ -1,5 +1,7 @@
 // Utility functions for GridWorld
 
+import { getAppContext } from '../core/AppContext';
+
 // Define terrain colors and land function globally
 const terrainColors = {
     ocean: 0x4A90E2,      // Light blue
@@ -27,16 +29,19 @@ const isLand = function (centerPoint) {
 
 // Simple dashboard update function (non-ECSY)
 function updateDashboard() {
-    // Use SceneManager hexasphere tiles directly - single source of truth
-    if (!window.sceneManager || !window.sceneManager.hexasphere || !window.sceneManager.hexasphere.tiles) {
+    // Use AppContext to get tiles - single source of truth
+    const ctx = getAppContext();
+    const tiles = ctx.getHexasphereTiles();
+    
+    if (!tiles || tiles.length === 0) {
         return;
     }
 
-    const tiles = window.sceneManager.hexasphere.tiles;
-    let totalTiles = tiles.length;
+    const totalTiles = tiles.length;
     let landTileCount = 0;
 
-    tiles.forEach((tile: { isLand?: boolean | null; centerPoint?: { x: number; y: number; z: number } }) => {
+    // Type assertion since we know the tile structure
+    (tiles as Array<{ isLand?: boolean | null; centerPoint?: { x: number; y: number; z: number } }>).forEach((tile) => {
         // Use tile properties directly - no separate data structure needed!
         if (tile.isLand === true || (tile.isLand === null && tile.centerPoint && isLand(tile.centerPoint))) {
             landTileCount++;

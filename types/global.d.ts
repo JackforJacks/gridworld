@@ -164,11 +164,19 @@ export interface TransactionClient {
 
 declare global {
     interface Window {
+        // Legacy window references - maintained for backward compatibility during transition
+        // New code should use AppContext singleton instead (src/core/AppContext.ts)
+        sceneManager?: {
+            hexasphere?: { tiles: unknown[] } | null;
+        };
+        tileSelector?: {
+            selectedTile?: unknown;
+            hideInfoPanel?: () => void;
+            deselectAll?: () => void;
+        };
+        // Deprecated: Use AppContext instead
         hexasphere?: {
             mesh: THREE.Mesh;
         };
-        tileSelector?: any;
-        __tileSelectorJustClosed?: number;
-        __tileSelectorDebug?: boolean;
     }
 }

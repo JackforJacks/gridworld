@@ -8,6 +8,9 @@ import '../css/styles.css';
 import * as THREE from 'three';
 (window as Window & { THREE: typeof THREE }).THREE = THREE;
 
+// Import centralized application context
+import AppContext, { getAppContext } from './core/AppContext';
+
 // Import modules using modern ES6 imports
 import CameraController from './core/scene/CameraController';
 import InputHandler from './components/controls/InputHandler';
@@ -199,30 +202,37 @@ class GridWorldApp {
     }
 
     setGlobalReferences(): void {
-        // Maintain compatibility with existing code
-        window.scene = this.scene;
-        window.renderer = this.renderer;
-        window.camera = this.camera;
-        window.sceneManager = this.sceneManager ?? undefined; // Expose sceneManager as single source of truth
-        window.uiManager = this.uiManager; // Expose uiManager globally if needed
-        window.hexasphere = undefined; // Will be set by scene manager
-        window.currentTiles = [];
-        window.tilePopup = document.getElementById('tilePopup');
-        window.borderLines = null;
+        // Use centralized AppContext instead of window pollution
+        const ctx = getAppContext();
+        
+        ctx.scene = this.scene;
+        ctx.renderer = this.renderer;
+        ctx.camera = this.camera;
+        ctx.sceneManager = this.sceneManager;
+        ctx.uiManager = this.uiManager;
+        ctx.hexasphere = null; // Will be set by scene manager
+        ctx.currentTiles = [];
+        ctx.tilePopup = document.getElementById('tilePopup');
+        ctx.borderLines = null;
 
         // State references
-        window.mouseState = {
+        ctx.mouseState = {
             isDragging: false,
             previousPosition: { x: 0, y: 0 },
             initialPosition: { x: 0, y: 0 },
             clickStartTime: 0
         };
 
-        window.rotationState = {
+        ctx.rotationState = {
             current: { x: 0, y: 0 },
             target: { x: 0, y: 0 },
             autoRotate: true
         };
+        
+        // Maintain minimal window compatibility for legacy code during transition
+        // These can be removed once all consumers use AppContext
+        window.sceneManager = this.sceneManager ?? undefined;
+        // Note: window.tileSelector is set by TileSelector constructor
     }
 
     async initializeGameData(): Promise<void> {
@@ -300,8 +310,10 @@ class GridWorldApp {
                 // Apply incoming village updates to client-side tiles so UI totals refresh in real time
                 const applyVillageUpdate = (village: VillageUpdate): void => {
                     try {
-                        if (!window.sceneManager || !window.sceneManager.hexasphere) return;
-                        const hexasphere = window.sceneManager.hexasphere as unknown as { tiles?: TileWithLands[] };
+                        const ctx = getAppContext();
+                        const sceneManager = ctx.sceneManager;
+                        if (!sceneManager || !sceneManager.hexasphere) return;
+                        const hexasphere = sceneManager.hexasphere as unknown as { tiles?: TileWithLands[] };
                         const tiles = hexasphere.tiles || [];
                         const tile = tiles.find((t: TileWithLands) => t.id === village.tile_id);
                         if (!tile || !Array.isArray(tile.lands)) return;
@@ -327,8 +339,7 @@ class GridWorldApp {
                         }
 
                         // If the info panel for this tile is open, refresh it immediately
-                        // tileSelector is typed as 'any' in global.d.ts, so direct property access works
-                        const selector = window.tileSelector as { infoRefreshTileId?: number | string; updateInfoPanel?: (tile: unknown) => void } | null;
+                        const selector = ctx.tileSelector;
                         if (selector && selector.infoRefreshTileId === tile.id && typeof selector.updateInfoPanel === 'function') {
                             selector.updateInfoPanel(tile);
                         }
@@ -421,7 +432,7 @@ class GridWorldApp {
             }
 
             // Update stats if in debug mode
-            if (window.DEBUG) {
+            if (getAppContext().debug) {
                 this.updateDebugStats(deltaTime);
             }
 

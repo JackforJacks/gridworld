@@ -4,6 +4,7 @@ import * as THREE from 'three';
 import { terrainColors, biomeColors, isLand } from '../../utils/index';
 import Hexasphere from '../hexasphere/HexaSphere';
 import populationManager from '../../managers/population/PopulationManager';
+import { getAppContext } from '../AppContext';
 
 // Tile boundary point interface
 interface BoundaryPoint {
@@ -454,11 +455,12 @@ class SceneManager {
                         yearEl.textContent = `Year: ${calendarState.currentDate.year}`;
                         // [log removed]
                     }
-                    if (window.GridWorldApp && window.GridWorldApp.calendarManager) {
+                    const ctx = getAppContext();
+                    if (ctx.calendarManager && ctx.calendarManager.updateState) {
                         try {
-                            window.GridWorldApp.calendarManager.updateState(calendarState);
-                            if (window.GridWorldApp.calendarDisplay && typeof window.GridWorldApp.calendarDisplay.updateDateDisplay === 'function') {
-                                window.GridWorldApp.calendarDisplay.updateDateDisplay(calendarState);
+                            ctx.calendarManager.updateState(calendarState);
+                            if (ctx.calendarDisplay && typeof ctx.calendarDisplay.updateDateDisplay === 'function') {
+                                ctx.calendarDisplay.updateDateDisplay(calendarState);
                             }
                             // [log removed]
                         } catch (e: unknown) {
@@ -647,7 +649,7 @@ class SceneManager {
             hexasphereMesh.userData = { hexasphere: this.hexasphere };
             this.currentTiles.push(hexasphereMesh);
             this.scene!.add(hexasphereMesh);
-            window.currentTiles = this.currentTiles;
+            getAppContext().currentTiles = this.currentTiles;
         } catch (error: unknown) {
             console.error('❌ Error creating hexasphere mesh:', error);
             console.error('Vertices count:', vertices.length);

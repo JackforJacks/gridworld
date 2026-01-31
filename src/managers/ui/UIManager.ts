@@ -2,6 +2,7 @@
 // Handles UI setup, controls panel, and user interface interactions
 
 import populationManager from '../population/PopulationManager';
+import { getAppContext } from '../../core/AppContext';
 
 // Interface for SceneManager to avoid circular dependencies
 interface SceneManagerLike {
@@ -440,7 +441,8 @@ class UIManager {
     }
 
     async handleShowStats(): Promise<void> {
-        if (!extendedWindow.sceneManager) {
+        const ctx = getAppContext();
+        if (!ctx.sceneManager) {
             this.showMessage('Scene manager not available', 'error');
             return;
         }
@@ -450,7 +452,7 @@ class UIManager {
             this.showLoadingIndicator('Loading statistics...');
 
             // Get tile stats from sceneManager
-            const stats = extendedWindow.sceneManager.getPopulationStats() as StatsData;
+            const stats = (ctx.sceneManager.getPopulationStats ? ctx.sceneManager.getPopulationStats() : {}) as StatsData;
             // Fetch demographic stats from backend API (force fresh)
             const popData = await populationManager.makeApiRequest<PopulationApiStats>('/stats', 'GET');
             // Merge demographic stats if available

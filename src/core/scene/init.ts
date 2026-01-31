@@ -1,24 +1,22 @@
 // Initialization logic for GridWorld
 import { updateDashboard } from '../../utils/index';
+import { getAppContext } from '../AppContext';
 
 async function initializeAndStartGame() {
-
-  if (window.sceneInitialized) {
+  const ctx = getAppContext();
+  
+  if (ctx.sceneInitialized) {
     return;
   }
   // Remove the redundant createScene call - SceneManager already handles this
   // The SceneManager already created the hexasphere during initialization
   // Just update the dashboard with the existing data
-  if (window.sceneManager && window.sceneManager.hexasphere) {
+  if (ctx.sceneManager && ctx.sceneManager.hexasphere) {
     // No separate tileData structure needed - properties are on tiles directly
     updateDashboard();
   }
 
-  window.sceneInitialized = true;
-}
-
-if (typeof window !== 'undefined') {
-  window.initializeAndStartGame = initializeAndStartGame;
+  ctx.sceneInitialized = true;
 }
 
 export { initializeAndStartGame };
