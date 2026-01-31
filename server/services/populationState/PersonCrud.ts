@@ -9,13 +9,13 @@
 
 import storage from '../storage';
 import idAllocator from '../idAllocator';
-import { 
-    StoredPerson, 
-    PersonInput, 
-    PersonUpdates, 
-    GlobalCounts, 
+import {
+    StoredPerson,
+    PersonInput,
+    PersonUpdates,
+    GlobalCounts,
     PipelineResult,
-    getErrorMessage 
+    getErrorMessage
 } from './types';
 import { removeEligiblePerson } from './EligibleSets';
 
@@ -58,12 +58,12 @@ export async function addPerson(person: PersonInput, isNew: boolean = false): Pr
             _isNew: isNew
         };
         await storage.hset('person', id, JSON.stringify(p));
-        
+
         // Add to tile's village population set
         if (p.tile_id && p.residency !== null && p.residency !== undefined) {
             await storage.sadd(`village:${p.tile_id}:${p.residency}:people`, id);
         }
-        
+
         // Update global counts
         await storage.hincrby('counts:global', 'total', 1);
         if (p.sex === true) await storage.hincrby('counts:global', 'male', 1);

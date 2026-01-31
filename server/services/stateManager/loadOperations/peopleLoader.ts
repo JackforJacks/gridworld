@@ -17,7 +17,7 @@ export interface PersonLoadResult {
  */
 export async function fetchPeople(villageLookup: Map<string, number>): Promise<PersonLoadResult> {
     const { rows: people } = await pool.query<PersonRow>('SELECT * FROM people');
-    
+
     let maleCount = 0;
     let femaleCount = 0;
     const peopleData: Array<{ id: string; json: string; villageKey: string | null }> = [];
@@ -69,14 +69,14 @@ export async function loadPeople(pipeline: Pipeline): Promise<LoadPeopleResult> 
     const { rows: villageRows } = await pool.query<{ id: number; tile_id: number; land_chunk_index: number }>(
         'SELECT id, tile_id, land_chunk_index FROM villages'
     );
-    
+
     const villageLookup = new Map<string, number>();
     for (const v of villageRows) {
         villageLookup.set(`${v.tile_id}:${v.land_chunk_index}`, v.id);
     }
 
     const { people, peopleData, maleCount, femaleCount } = await fetchPeople(villageLookup);
-    
+
     for (const p of peopleData) {
         pipeline.hset('person', p.id, p.json);
         if (p.villageKey) {

@@ -28,13 +28,13 @@ export async function syncFromPostgres() {
 
     try {
         console.log('[PopulationSync] Syncing population from Postgres to storage...');
-        
+
         // Clear existing data
         try {
             console.log('[PopulationSync.syncFromPostgres] About to delete person hash!');
             console.trace('[PopulationSync.syncFromPostgres] Stack trace:');
             await storage.del('person');
-            
+
             const stream = storage.scanStream({ match: 'village:*:*:people', count: 1000 });
             const keys: string[] = [];
             for await (const resultKeys of stream) {
@@ -59,7 +59,7 @@ export async function syncFromPostgres() {
                 [batchSize, offset]
             );
             if (!res.rows || res.rows.length === 0) break;
-            
+
             const pipeline = storage.pipeline();
             for (const p of res.rows) {
                 const id = p.id.toString();
@@ -131,7 +131,7 @@ export async function rebuildVillageMemberships() {
         const ids = Object.keys(peopleObj || {});
         const pipeline = storage.pipeline();
         let total = 0;
-        
+
         for (const id of ids) {
             const json = peopleObj[id];
             if (!json) continue;
@@ -180,7 +180,7 @@ export async function repairIfNeeded() {
             for (const k of ks as string[]) keys.push(k);
         }
         if (keys.length === 0) return { ok: true, reason: 'no village sets' };
-        
+
         const pipeline = storage.pipeline();
         for (const key of keys) pipeline.scard(key);
         const results = await pipeline.exec() as PipelineResult;
@@ -195,7 +195,7 @@ export async function repairIfNeeded() {
             for (const m of members) personSet.add(String(m));
         }
         const totalUnique = personSet.size;
-        
+
         if (totalScards > totalUnique) {
             console.warn('[PopulationSync] repairIfNeeded detected duplicate memberships: total=', totalScards, 'unique=', totalUnique);
             const res = await rebuildVillageMemberships();

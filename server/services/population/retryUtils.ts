@@ -39,20 +39,20 @@ export async function scheduleRetry(
     config: RetryConfig
 ): Promise<RetryResult> {
     const id = String(itemId);
-    
+
     try {
         // Increment attempt counter
         const attempts = await storage.hincrby(config.attemptsKey, id, 1);
-        
+
         if (attempts <= config.maxAttempts) {
             // Calculate delay with exponential backoff
             const delay = Math.round(
                 config.baseDelayMs * Math.pow(config.backoffMultiplier, attempts - 1)
             );
-            
+
             // Schedule retry
             await storage.zadd(config.retryQueueKey, Date.now() + delay, id);
-            
+
             // Track retry stats
             if (config.retryStatsKey) {
                 try {
@@ -61,7 +61,7 @@ export async function scheduleRetry(
                     // Ignore stats errors
                 }
             }
-            
+
             return {
                 shouldRetry: true,
                 attemptNumber: attempts,
@@ -77,7 +77,7 @@ export async function scheduleRetry(
                     // Ignore stats errors
                 }
             }
-            
+
             return {
                 shouldRetry: false,
                 attemptNumber: attempts,
@@ -126,7 +126,7 @@ export async function popDueRetries(
         if (!due || due.length === 0) {
             return [];
         }
-        
+
         // Remove from queue
         for (const id of due) {
             try {
@@ -135,7 +135,7 @@ export async function popDueRetries(
                 // Continue even if one fails
             }
         }
-        
+
         return due.map(id => parseInt(id, 10)).filter(id => !isNaN(id));
     } catch {
         return [];

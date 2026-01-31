@@ -21,7 +21,7 @@ export interface LandLoadResult {
  */
 export async function fetchTiles(): Promise<TileLoadResult> {
     const { rows: tiles } = await pool.query<TileRow>('SELECT * FROM tiles');
-    
+
     const tilesData = tiles.map(t => ({
         id: t.id.toString(),
         json: JSON.stringify({
@@ -41,7 +41,7 @@ export async function fetchTiles(): Promise<TileLoadResult> {
         }),
         fertility: t.fertility !== null ? t.fertility.toString() : null
     }));
-    
+
     return { tiles, tilesData };
 }
 

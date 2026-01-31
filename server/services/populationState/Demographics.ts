@@ -7,12 +7,12 @@
  */
 
 import storage from '../storage';
-import { 
-    StoredPerson, 
-    CurrentDate, 
-    DemographicStats, 
+import {
+    StoredPerson,
+    CurrentDate,
+    DemographicStats,
     PipelineResult,
-    getErrorMessage 
+    getErrorMessage
 } from './types';
 import { getAllPeople } from './PersonCrud';
 
@@ -72,9 +72,9 @@ export async function getAllTilePopulations(): Promise<Record<number, number>> {
  */
 function calculateAge(dateOfBirth: string | Date, currentDate: CurrentDate): number | null {
     const { year: currentYear, month: currentMonth, day: currentDay } = currentDate;
-    
+
     let birthYear: number, birthMonth: number, birthDay: number;
-    
+
     if (typeof dateOfBirth === 'string') {
         const datePart = dateOfBirth.split('T')[0];
         [birthYear, birthMonth, birthDay] = datePart.split('-').map(Number);

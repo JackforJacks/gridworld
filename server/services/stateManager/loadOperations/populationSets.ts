@@ -37,7 +37,7 @@ export async function populateFertileFamilies(
 
         const currentDate = getCurrentDate(calendarService);
         const PopulationState = require('../../populationState').default;
-        
+
         // Filter eligible families first
         const eligibleFamilies = families.filter(f => {
             const childrenCount = (f.children_ids || []).length;
@@ -63,7 +63,7 @@ export async function populateFertileFamilies(
                 }
             }));
         }
-        
+
         if (eligibleFamilies.length > 0) {
             console.log(`🌱 Populated ${eligibleFamilies.length} fertile families`);
         }
@@ -103,7 +103,7 @@ export async function populateEligibleSets(
                 }
             }));
         }
-        
+
         if (processed > 0) {
             console.log(`💑 Populated ${processed} eligible people for matchmaking`);
         }

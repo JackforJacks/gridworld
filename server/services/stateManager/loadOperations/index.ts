@@ -50,7 +50,7 @@ export async function loadFromDatabase(context: LoadContext): Promise<LoadResult
     // ===== PHASE 1: Parallel Database Queries =====
     // Run all independent queries concurrently for ~40-60% faster loading
     console.log('🔄 Loading data from PostgreSQL (parallel queries)...');
-    
+
     const [tilesResult, landsResult, villagesResult, familiesResult, landCountsResult] = await Promise.all([
         fetchTiles(),
         fetchTilesLands(),
@@ -81,13 +81,13 @@ export async function loadFromDatabase(context: LoadContext): Promise<LoadResult
 
     // ===== PHASE 3: Population Sets (Batched) =====
     const setsStart = Date.now();
-    
+
     // These are now batched internally with Promise.all
     await Promise.all([
         populateFertileFamilies(familiesResult.families, peopleResult.people, context.calendarService),
         populateEligibleSets(peopleResult.people, context.calendarService)
     ]);
-    
+
     const setsDuration = ((Date.now() - setsStart) / 1000).toFixed(2);
     console.log(`💑 Population sets complete in ${setsDuration}s`);
 
@@ -140,10 +140,10 @@ async function executeChunkedPipeline(
     landCountsResult: LandCountLoadResult
 ): Promise<void> {
     // Collect all operations
-    type PipelineOp = 
+    type PipelineOp =
         | { type: 'hset'; key: string; field: string; value: string }
         | { type: 'sadd'; key: string; member: string };
-    
+
     const operations: PipelineOp[] = [];
 
     // Tiles
@@ -193,7 +193,7 @@ async function executeChunkedPipeline(
     for (let i = 0; i < operations.length; i += PIPELINE_CHUNK_SIZE) {
         const chunk = operations.slice(i, i + PIPELINE_CHUNK_SIZE);
         const pipeline = storage.pipeline();
-        
+
         for (const op of chunk) {
             if (op.type === 'hset') {
                 pipeline.hset(op.key, op.field, op.value);
@@ -201,7 +201,7 @@ async function executeChunkedPipeline(
                 pipeline.sadd(op.key, op.member);
             }
         }
-        
+
         await pipeline.exec();
     }
 }
@@ -224,7 +224,7 @@ async function handleRedisFirstMode(context: LoadContext): Promise<LoadResult> {
     const villageCount = typeof storage.hlen === 'function' ? await storage.hlen('village') : 0;
     const personCount = typeof storage.hlen === 'function' ? await storage.hlen('person') : 0;
     const familyCount = typeof storage.hlen === 'function' ? await storage.hlen('family') : 0;
-    
+
     return { villages: villageCount, people: personCount, families: familyCount, skipped: true };
 }
 

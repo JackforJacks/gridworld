@@ -14,7 +14,7 @@ export interface FamilyLoadResult {
  */
 export async function fetchFamilies(): Promise<FamilyLoadResult> {
     const { rows: families } = await pool.query<FamilyRow>('SELECT * FROM family');
-    
+
     const familiesData = families.map(f => ({
         id: f.id.toString(),
         json: JSON.stringify({
@@ -27,7 +27,7 @@ export async function fetchFamilies(): Promise<FamilyLoadResult> {
             children_ids: f.children_ids || [],
         })
     }));
-    
+
     return { families, familiesData };
 }
 

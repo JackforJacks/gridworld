@@ -21,10 +21,10 @@ export interface LandCountLoadResult {
  */
 export async function fetchVillages(): Promise<VillageLoadResult> {
     const { rows: villages } = await pool.query<VillageRow>('SELECT * FROM villages');
-    
+
     const villagesData: Array<{ id: string; json: string }> = [];
     const villageLookup = new Map<string, number>();
-    
+
     for (const v of villages) {
         let housingSlots: number[] = [];
         try {
@@ -54,11 +54,11 @@ export async function fetchVillages(): Promise<VillageLoadResult> {
                 housing_slots: housingSlots,
             })
         });
-        
+
         // Build lookup for people loader
         villageLookup.set(`${v.tile_id}:${v.land_chunk_index}`, v.id);
     }
-    
+
     return { villages, villagesData, villageLookup };
 }
 

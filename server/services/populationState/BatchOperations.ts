@@ -9,13 +9,13 @@
  */
 
 import storage from '../storage';
-import { 
-    StoredPerson, 
-    PersonInput, 
-    PipelineResult, 
-    ResidencyUpdate, 
+import {
+    StoredPerson,
+    PersonInput,
+    PipelineResult,
+    ResidencyUpdate,
     IdMapping,
-    getErrorMessage 
+    getErrorMessage
 } from './types';
 
 /**
@@ -274,12 +274,12 @@ export async function reassignIds(mappings: IdMapping[]): Promise<void> {
             try { person = JSON.parse(json as string) as StoredPerson; } catch { continue; }
 
             writePipeline.hdel('person', tempId.toString());
-            
+
             if (person.tile_id && person.residency !== null && person.residency !== undefined) {
                 writePipeline.srem(`village:${person.tile_id}:${person.residency}:people`, tempId.toString());
                 writePipeline.sadd(`village:${person.tile_id}:${person.residency}:people`, newId.toString());
             }
-            
+
             const sex = person.sex === true ? 'male' : 'female';
             if (person.tile_id) {
                 writePipeline.srem(`eligible:${sex}:${person.tile_id}`, tempId.toString());
@@ -287,7 +287,7 @@ export async function reassignIds(mappings: IdMapping[]): Promise<void> {
                     writePipeline.sadd(`eligible:${sex}:${person.tile_id}`, newId.toString());
                 }
             }
-            
+
             person.id = newId;
             delete person._isNew;
             writePipeline.hset('person', newId.toString(), JSON.stringify(person));
