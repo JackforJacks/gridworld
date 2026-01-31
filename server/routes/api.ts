@@ -108,7 +108,8 @@ async function selfGet(path: string): Promise<Record<string, unknown>> {
                 if (statusCode >= 200 && statusCode < 300) {
                     try {
                         resolve(JSON.parse(data || '{}'));
-                    } catch (_: unknown) {
+                    } catch (e: unknown) {
+                        console.warn('[selfGet] Failed to parse JSON response:', (e as Error)?.message ?? e);
                         resolve({});
                     }
                 } else {
@@ -298,7 +299,7 @@ router.post('/worldrestart', async (req: Request, res: Response) => {
                     calendarService.state.lastTickTime = Date.now();
                 }
                 if (typeof calendarService.saveStateToDB === 'function') {
-                    try { await calendarService.saveStateToDB(); } catch (_: unknown) { }
+                    try { await calendarService.saveStateToDB(); } catch (e: unknown) { console.warn('[worldrestart] Failed to save calendar state to DB:', (e as Error)?.message ?? e); }
                 }
                 calendarState = calendarService.getState();
                 if (calendarService.io && typeof calendarService.io.emit === 'function') {

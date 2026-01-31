@@ -408,7 +408,7 @@ router.get('/', async (req: Request, res: Response): Promise<void> => {
                                             last_food_update: village.last_food_update
                                         };
                                     }
-                                } catch (_: unknown) { }
+                                } catch (e: unknown) { console.warn('[tiles] Failed to parse village JSON:', villageId, (e as Error)?.message ?? e); }
                             }
                         }
                         // No matching village found - clear any stale village_id

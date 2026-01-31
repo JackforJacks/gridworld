@@ -11,6 +11,6 @@ const { getPopulationStats } = require('../server/services/population/PopStats')
         console.error('printDemographics failed:', err && err.message ? err.message : err);
         process.exitCode = 2;
     } finally {
-        try { await pool.end(); } catch (_) { }
+        try { await pool.end(); } catch (e) { console.warn('[printDemographics] Failed to close pool:', e?.message ?? e); }
     }
 })();

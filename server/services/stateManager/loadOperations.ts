@@ -582,7 +582,7 @@ async function populateFertileFamilies(families: FamilyRow[], people: PersonRow[
                 const wife = peopleMap[f.wife_id];
                 if (!wife || !wife.date_of_birth) continue;
                 await PopulationState.addFertileFamily(f.id, currentDate.year, currentDate.month, currentDate.day);
-            } catch (_: unknown) { }
+            } catch (e: unknown) { console.warn('[loadOperations] Failed to add fertile family:', f.id, (e as Error)?.message ?? e); }
         }
     } catch (e: unknown) {
         const errMsg = e instanceof Error ? e.message : String(e);

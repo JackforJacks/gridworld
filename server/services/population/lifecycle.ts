@@ -351,7 +351,7 @@ async function processDailyFamilyEvents(
                 const wifeAge = calculator.calculateAge(wife.date_of_birth, currentDate.year, currentDate.month, currentDate.day);
                 if (wifeAge > 33) {
                     // Remove from fertile set if aged out
-                    try { await PopulationState.removeFertileFamily(familyId); } catch (_: unknown) { }
+                    try { await PopulationState.removeFertileFamily(familyId); } catch (e: unknown) { console.warn('[lifecycle] Failed to remove aged-out family from fertile set:', familyId, (e as Error)?.message ?? e); }
                     continue;
                 }
 

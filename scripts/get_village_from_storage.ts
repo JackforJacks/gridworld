@@ -9,7 +9,7 @@ async function waitForStorageReady(timeoutMs = 10000) {
             done = true;
             resolve();
         };
-        try { storage.on && storage.on('ready', finish); } catch (_) { /* ignore */ }
+        try { storage.on && storage.on('ready', finish); } catch (e) { console.warn('[get_village_from_storage] Failed to attach ready listener:', e?.message ?? e); }
         setTimeout(finish, timeoutMs);
     });
 }
@@ -21,7 +21,7 @@ async function main() {
         try {
             const redisClient = require('../server/config/redis');
             console.log('Redis client status:', redisClient && redisClient.status);
-        } catch (_) { /* ignore */ }
+        } catch (e) { console.warn('[get_village_from_storage] Failed to check redis client status:', e?.message ?? e); }
         console.log('Adapter in script:', adapter && adapter.constructor ? adapter.constructor.name : typeof adapter);
         const villageJson = await storage.hget('village', '1001');
         const personEntries = await storage.hgetall('person');

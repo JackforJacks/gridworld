@@ -468,7 +468,7 @@ async function processDeliveries(pool: Pool | null, calendarService: CalendarSer
                 retryCandidateIds = due.map(id => parseInt(id, 10));
                 // remove them from the retry zset (we'll re-attempt now)
                 for (const id of due) {
-                    try { await storage.zrem('pending:deliveries:retry', id); } catch (_: unknown) { }
+                    try { await storage.zrem('pending:deliveries:retry', id); } catch (e: unknown) { console.warn('[processDeliveries] Failed to remove from retry zset:', (e as Error)?.message ?? e); }
                 }
             }
         } catch (e: unknown) { /* ignore */ }
@@ -488,7 +488,7 @@ async function processDeliveries(pool: Pool | null, calendarService: CalendarSer
             }
             // Also append retryCandidateIds that may have come from earlier code path
             for (const id of retryCandidateIds) {
-                try { const f = await PopulationState.getFamily(id) as FamilyRecord | null; if (f) readyFamilies.push(f); } catch (_: unknown) { }
+                try { const f = await PopulationState.getFamily(id) as FamilyRecord | null; if (f) readyFamilies.push(f); } catch (e: unknown) { console.warn('[processDeliveries] Failed to get family for retry:', id, (e as Error)?.message ?? e); }
             }
         } else {
             // Fallback: scan all families as before
@@ -499,7 +499,7 @@ async function processDeliveries(pool: Pool | null, calendarService: CalendarSer
                 return deliveryValue <= currentDateValue;
             });
             for (const id of retryCandidateIds) {
-                try { const f = await PopulationState.getFamily(id) as FamilyRecord | null; if (f && !readyFamilies.find((r: FamilyRecord) => r.id === f.id)) readyFamilies.push(f); } catch (_: unknown) { }
+                try { const f = await PopulationState.getFamily(id) as FamilyRecord | null; if (f && !readyFamilies.find((r: FamilyRecord) => r.id === f.id)) readyFamilies.push(f); } catch (e: unknown) { console.warn('[processDeliveries] Failed to get family in fallback path:', id, (e as Error)?.message ?? e); }
             }
         }
 
@@ -513,7 +513,7 @@ async function processDeliveries(pool: Pool | null, calendarService: CalendarSer
                 // Increased TTL/timeout/retry to reduce contention under load
                 lockToken = await acquireLock(lockKey, 10000, 5000, 100);
                 if (!lockToken) {
-                    try { await storage.incr('stats:deliveries:contention'); } catch (_: unknown) { }
+                    try { await storage.incr('stats:deliveries:contention'); } catch (e: unknown) { console.warn('[processDeliveries] Failed to incr contention stat:', (e as Error)?.message ?? e); }
                     // Increment retry attempts and schedule a retry if under the max attempts
                     try {
                         const attempts = await storage.hincrby('pending:delivery:attempts', String(family.id), 1);
@@ -524,12 +524,12 @@ async function processDeliveries(pool: Pool | null, calendarService: CalendarSer
                             const delay = Math.round(baseDelay * Math.pow(serverConfig.deliveryRetryBackoffMultiplier || 2, attempts - 1));
 
                             await storage.zadd('pending:deliveries:retry', Date.now() + delay, String(family.id));
-                            try { await storage.incr('stats:deliveries:retries'); } catch (_: unknown) { }
+                            try { await storage.incr('stats:deliveries:retries'); } catch (e: unknown) { console.warn('[processDeliveries] Failed to incr retries stat:', (e as Error)?.message ?? e); }
                             const adapter: any = storage.getAdapter ? storage.getAdapter() : storage;
                             const holder = adapter && adapter.client && typeof adapter.client.get === 'function' ? await adapter.client.get(lockKey) : null;
                             console.warn(`[processDeliveries] Could not acquire lock for family ${family.id} - requeued for retry (attempt ${attempts}, delay ${delay}ms) - holder=${holder || 'unknown'}`);
                         } else {
-                            try { await storage.incr('stats:deliveries:permanent_failures'); } catch (_: unknown) { }
+                            try { await storage.incr('stats:deliveries:permanent_failures'); } catch (e: unknown) { console.warn('[processDeliveries] Failed to incr permanent_failures stat:', (e as Error)?.message ?? e); }
                             console.warn(`[processDeliveries] Family ${family.id} reached max delivery retry attempts (${attempts}) - skipping permanently`);
                         }
                     } catch (e: unknown) {
@@ -572,12 +572,12 @@ async function processDeliveries(pool: Pool | null, calendarService: CalendarSer
                             await PopulationState.addFertileFamily(f.id, cd.year, cd.month, cd.day);
                         }
                     }
-                } catch (e: unknown) { /* ignore */ }
+                } catch (e: unknown) { console.warn('[processDeliveries] Failed to re-add family to fertile set:', (e as Error)?.message ?? e); }
                 // Clear retry attempts and any queued retry entries after successful delivery
                 try {
                     await storage.hdel('pending:delivery:attempts', String(family.id));
                     await storage.zrem('pending:deliveries:retry', String(family.id));
-                } catch (_: unknown) { }
+                } catch (e: unknown) { console.warn('[processDeliveries] Failed to clear retry tracking:', (e as Error)?.message ?? e); }
                 babiesDelivered++;
             } catch (error: unknown) {
                 // Suppress "Family not found" errors (race condition with save)
@@ -684,7 +684,7 @@ async function formNewFamilies(pool: Pool | null, calendarService: CalendarServi
 
                 for (let i = 0; i < pairs; i++) {
                     // Record attempt
-                    try { await storage.incr('stats:matchmaking:attempts'); } catch (_: unknown) { }
+                    try { await storage.incr('stats:matchmaking:attempts'); } catch (e: unknown) { console.warn('[formNewFamilies] Failed to incr attempts stat:', (e as Error)?.message ?? e); }
 
                     // Pop one candidate from each set (emulate spop using smembers + srem)
                     const maleMembers = await storage.smembers(maleSetKey);
@@ -705,14 +705,14 @@ async function formNewFamilies(pool: Pool | null, calendarService: CalendarServi
                         const newFamily = await createFamily(pool, parseInt(maleId), parseInt(femaleId), parseInt(tileId));
                         if (!newFamily) {
                             // Creation failed (race or restart) - return survivors to sets
-                            try { await storage.sadd(maleSetKey, maleId); } catch (_: unknown) { }
-                            try { await storage.sadd(femaleSetKey, femaleId); } catch (_: unknown) { }
+                            try { await storage.sadd(maleSetKey, maleId); } catch (e: unknown) { console.warn('[formNewFamilies] Failed to return male to set:', (e as Error)?.message ?? e); }
+                            try { await storage.sadd(femaleSetKey, femaleId); } catch (e: unknown) { console.warn('[formNewFamilies] Failed to return female to set:', (e as Error)?.message ?? e); }
                             continue;
                         }
                         // Add family to fertile family set if wife is fertile
                         try {
                             await PopulationState.addFertileFamily(newFamily.id, year, month, day);
-                        } catch (_: unknown) { }
+                        } catch (e: unknown) { console.warn('[formNewFamilies] Failed to add new family to fertile set:', newFamily.id, (e as Error)?.message ?? e); }
 
                         newFamiliesCount++;
 
@@ -721,11 +721,11 @@ async function formNewFamilies(pool: Pool | null, calendarService: CalendarServi
                             try { await startPregnancy(pool, calendarService, newFamily.id); } catch (e: unknown) { /* ignore */ }
                         }
                     } catch (err: unknown) {
-                        try { await storage.incr('stats:matchmaking:failures'); } catch (_: unknown) { }
+                        try { await storage.incr('stats:matchmaking:failures'); } catch (e: unknown) { console.warn('[formNewFamilies] Failed to incr failures stat:', (e as Error)?.message ?? e); }
                         console.error(`Error creating family between ${maleId} and ${femaleId} on tile ${tileId}:`, err);
                         // Return survivors to sets
-                        try { await storage.sadd(maleSetKey, maleId); } catch (_: unknown) { }
-                        try { await storage.sadd(femaleSetKey, femaleId); } catch (_: unknown) { }
+                        try { await storage.sadd(maleSetKey, maleId); } catch (e: unknown) { console.warn('[formNewFamilies] Failed to return male to set:', (e as Error)?.message ?? e); }
+                        try { await storage.sadd(femaleSetKey, femaleId); } catch (e: unknown) { console.warn('[formNewFamilies] Failed to return female to set:', (e as Error)?.message ?? e); }
                     }
                 }
             } catch (err: unknown) {

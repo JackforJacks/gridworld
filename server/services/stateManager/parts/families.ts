@@ -14,7 +14,7 @@ async function processFamilyDeletes(PopulationState) {
             for (const fid of pendingFamilyDeletes) {
                 await storage.srem('eligible:pregnancy:families', fid.toString());
             }
-        } catch (_: unknown) { }
+        } catch (e: unknown) { console.warn('[processFamilyDeletes] Failed to remove from eligible:pregnancy:families:', (e as Error)?.message ?? e); }
 
         // Clear family_id references in people table
         const famPlaceholders = pendingFamilyDeletes.map((_, idx) => `$${idx + 1}`).join(',');

@@ -14,7 +14,7 @@ async function doChecks() {
         try {
             if (adapter && adapter.constructor && adapter.constructor.name) adapterName = adapter.constructor.name;
             else if (adapter && adapter.client && adapter.client.constructor && adapter.client.constructor.name) adapterName = adapter.client.constructor.name;
-        } catch (_) { }
+        } catch (e) { console.warn('[checkStorage] Failed to determine adapter name:', e?.message ?? e); }
 
         console.log('storage.isAvailable:', storage.isAvailable());
         console.log('adapter:', adapterName);

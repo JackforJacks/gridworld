@@ -47,7 +47,7 @@ async function doRebuild() {
                         pipeline.sadd(key, String(p.id));
                         added++;
                     }
-                } catch (_) { }
+                } catch (e) { console.warn('[rebuildVillageSets] Failed to parse person:', id, e?.message ?? e); }
             }
             await pipeline.exec();
         }
@@ -62,7 +62,7 @@ async function doRebuild() {
                 total++;
                 if (p.sex === true) male++;
                 else if (p.sex === false) female++;
-            } catch (_) { }
+            } catch (e) { console.warn('[rebuildVillageSets] Failed to parse person for counts:', id, e?.message ?? e); }
         }
         await storage.hset('counts:global', 'total', String(total));
         await storage.hset('counts:global', 'male', String(male));
@@ -83,7 +83,7 @@ try {
     try {
         if (adapter && adapter.constructor && adapter.constructor.name) adapterName = adapter.constructor.name;
         else if (adapter && adapter.client && adapter.client.constructor && adapter.client.constructor.name) adapterName = adapter.client.constructor.name;
-    } catch (_) { }
+    } catch (e) { console.warn('[rebuildVillageSets] Failed to determine adapter name:', e?.message ?? e); }
 
     if (adapterName && adapterName.toLowerCase().includes('memory')) {
         console.log('Current adapter appears to be MemoryAdapter — waiting for Redis ready event before rebuilding (timeout 10s)');

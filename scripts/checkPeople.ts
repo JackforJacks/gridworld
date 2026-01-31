@@ -37,7 +37,7 @@ async function withTimeout(p, ms, label) {
             try {
                 const p = JSON.parse(v);
                 if (p && p.date_of_birth) dobCount++;
-            } catch (_) { }
+            } catch (e) { console.warn('[checkPeople] Failed to parse person:', e?.message ?? e); }
         }
         console.log('people with non-null date_of_birth:', dobCount);
     } catch (err) {

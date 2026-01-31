@@ -48,7 +48,7 @@ async function inspect() {
             console.log('person hash:', personJson);
             try {
                 if (personJson) console.log('parsed:', JSON.parse(personJson));
-            } catch (e) { }
+            } catch (e) { console.warn('[inspect_duplicate_memberships] Failed to parse person JSON:', e?.message ?? e); }
 
             // Also show which villages their membership points to
             console.log('\nMembership count distribution for duplicated persons (first 100):');

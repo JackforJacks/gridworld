@@ -122,7 +122,7 @@ class TileSelector {
             if (this.tileInfoPanel && typeof MutationObserver !== 'undefined') {
                 this._infoPanelMutationObserver = new MutationObserver((_mutations: MutationRecord[]) => {
                     if (getAppContext().tileSelectorDebug) console.debug('TileSelector: tileInfoPanel mutated', _mutations);
-                    try { this.ensureCloseButtonAttached(); } catch (_: unknown) { /* ignore */ }
+                    try { this.ensureCloseButtonAttached(); } catch (e: unknown) { if (getAppContext().tileSelectorDebug) console.debug('[TileSelector] ensureCloseButtonAttached error:', (e as Error)?.message ?? e); }
                 });
                 this._infoPanelMutationObserver.observe(this.tileInfoPanel, { childList: true, subtree: true, attributes: true, characterData: true });
             }
@@ -136,10 +136,10 @@ class TileSelector {
             pageButtons.forEach(btn => {
                 btn.addEventListener('click', (_e: Event) => {
                     if (getAppContext().tileSelectorDebug) console.debug('TileSelector: page button clicked', (btn as HTMLElement).id);
-                    try { this.ensureCloseButtonAttached(); } catch (_: unknown) { /* ignore */ }
+                    try { this.ensureCloseButtonAttached(); } catch (e: unknown) { if (getAppContext().tileSelectorDebug) console.debug('[TileSelector] ensureCloseButtonAttached error:', (e as Error)?.message ?? e); }
                 }, true);
             });
-        } catch (_: unknown) { /* ignore */ }
+        } catch (e: unknown) { if (getAppContext().tileSelectorDebug) console.debug('[TileSelector] page button listener setup error:', (e as Error)?.message ?? e); }
 
         // Use event delegation on the panel itself to handle close button clicks
         // This works even if the button is replaced/recreated. Attach only once.
@@ -151,8 +151,8 @@ class TileSelector {
                     e.preventDefault();
                     e.stopPropagation();
                     const ctx = getAppContext();
-                    try { if (ctx.tileSelector && typeof ctx.tileSelector.hideInfoPanel === 'function') ctx.tileSelector.hideInfoPanel(); } catch (_: unknown) { /* ignore */ }
-                    try { if (ctx.tileSelector && typeof ctx.tileSelector.deselectAll === 'function') ctx.tileSelector.deselectAll(); } catch (_: unknown) { /* ignore */ }
+                    try { if (ctx.tileSelector && typeof ctx.tileSelector.hideInfoPanel === 'function') ctx.tileSelector.hideInfoPanel(); } catch (err: unknown) { if (ctx.tileSelectorDebug) console.debug('[TileSelector] hideInfoPanel error:', (err as Error)?.message ?? err); }
+                    try { if (ctx.tileSelector && typeof ctx.tileSelector.deselectAll === 'function') ctx.tileSelector.deselectAll(); } catch (err: unknown) { if (ctx.tileSelectorDebug) console.debug('[TileSelector] deselectAll error:', (err as Error)?.message ?? err); }
                 }
             });
             this.tileInfoPanel.dataset.closeDelegateAttached = '1';
@@ -168,8 +168,8 @@ class TileSelector {
                     if (ctx.tileSelectorDebug) console.debug('TileSelector: docHandler caught close click (debug)', target);
                     e.preventDefault();
                     e.stopPropagation();
-                    try { if (ctx.tileSelector && typeof ctx.tileSelector.hideInfoPanel === 'function') ctx.tileSelector.hideInfoPanel(); } catch (_: unknown) { /* ignore */ }
-                    try { if (ctx.tileSelector && typeof ctx.tileSelector.deselectAll === 'function') ctx.tileSelector.deselectAll(); } catch (_: unknown) { /* ignore */ }
+                    try { if (ctx.tileSelector && typeof ctx.tileSelector.hideInfoPanel === 'function') ctx.tileSelector.hideInfoPanel(); } catch (err: unknown) { if (ctx.tileSelectorDebug) console.debug('[TileSelector] hideInfoPanel error:', (err as Error)?.message ?? err); }
+                    try { if (ctx.tileSelector && typeof ctx.tileSelector.deselectAll === 'function') ctx.tileSelector.deselectAll(); } catch (err: unknown) { if (ctx.tileSelectorDebug) console.debug('[TileSelector] deselectAll error:', (err as Error)?.message ?? err); }
                     // As a fallback, directly hide the DOM panel in case the instance method fails
                     try {
                         const panel = document.getElementById('tileInfoPanel');
@@ -177,12 +177,12 @@ class TileSelector {
                             panel.classList.add('hidden');
                             panel.style.display = 'none';
                             panel.style.pointerEvents = 'none';
-                            try { ctx.tileSelectorJustClosed = Date.now(); } catch (_: unknown) { /* ignore */ }
+                            try { ctx.tileSelectorJustClosed = Date.now(); } catch (err: unknown) { if (ctx.tileSelectorDebug) console.debug('[TileSelector] tileSelectorJustClosed error:', (err as Error)?.message ?? err); }
                         }
-                    } catch (_: unknown) { /* ignore */ }
+                    } catch (err: unknown) { if (ctx.tileSelectorDebug) console.debug('[TileSelector] fallback panel hide error:', (err as Error)?.message ?? err); }
                     // Try removing visual selection if instance exists
-                    try { if (ctx.tileSelector && typeof ctx.tileSelector.removeBorder === 'function') ctx.tileSelector.removeBorder(); } catch (_: unknown) { /* ignore */ }
-                    try { if (ctx.tileSelector) ctx.tileSelector.selectedTile = null; } catch (_: unknown) { /* ignore */ }
+                    try { if (ctx.tileSelector && typeof ctx.tileSelector.removeBorder === 'function') ctx.tileSelector.removeBorder(); } catch (err: unknown) { if (ctx.tileSelectorDebug) console.debug('[TileSelector] removeBorder error:', (err as Error)?.message ?? err); }
+                    try { if (ctx.tileSelector) ctx.tileSelector.selectedTile = null; } catch (err: unknown) { if (ctx.tileSelectorDebug) console.debug('[TileSelector] selectedTile error:', (err as Error)?.message ?? err); }
                 }
             };
             // capture click/pointer events early to catch interactions even if propagation is stopped elsewhere
@@ -194,8 +194,8 @@ class TileSelector {
             const keyHandler = (ev: KeyboardEvent): void => {
                 const ctx = getAppContext();
                 if (ev.key === 'Escape' || ev.key === 'Esc') {
-                    try { if (ctx.tileSelector && typeof ctx.tileSelector.hideInfoPanel === 'function') ctx.tileSelector.hideInfoPanel(); } catch (_: unknown) { /* ignore */ }
-                    try { if (ctx.tileSelector && typeof ctx.tileSelector.deselectAll === 'function') ctx.tileSelector.deselectAll(); } catch (_: unknown) { /* ignore */ }
+                    try { if (ctx.tileSelector && typeof ctx.tileSelector.hideInfoPanel === 'function') ctx.tileSelector.hideInfoPanel(); } catch (err: unknown) { if (ctx.tileSelectorDebug) console.debug('[TileSelector] hideInfoPanel error:', (err as Error)?.message ?? err); }
+                    try { if (ctx.tileSelector && typeof ctx.tileSelector.deselectAll === 'function') ctx.tileSelector.deselectAll(); } catch (err: unknown) { if (ctx.tileSelectorDebug) console.debug('[TileSelector] deselectAll error:', (err as Error)?.message ?? err); }
                 }
             };
             document.addEventListener('keydown', keyHandler, true);
@@ -208,7 +208,7 @@ class TileSelector {
     handleClick(event: MouseEvent): void {
         // Debug trace: log when clicks reach the TileSelector
         // debug: clicks reach TileSelector (guarded by tileSelectorDebug if needed)
-        if (getAppContext().tileSelectorDebug) try { console.debug('TileSelector.handleClick', event.clientX, event.clientY, 'target=', event.target && (event.target as HTMLElement).tagName); } catch (_: unknown) { /* ignore */ }
+        if (getAppContext().tileSelectorDebug) try { console.debug('TileSelector.handleClick', event.clientX, event.clientY, 'target=', event.target && (event.target as HTMLElement).tagName); } catch (e: unknown) { console.debug('[TileSelector] handleClick debug error:', (e as Error)?.message ?? e); }
         // Check if the click is on the info panel - if so, ignore it
         if (this.tileInfoPanel && this.tileInfoPanel.contains(event.target as Node)) {
             return;
@@ -342,7 +342,7 @@ class TileSelector {
     showInfoPanel(tile: HexTile): void {
         if (!this.tileInfoPanel) return;
         // Clear recent-close guard so user clicks always reopen panel
-        try { getAppContext().tileSelectorJustClosed = undefined; } catch (_: unknown) { /* ignore */ }
+        try { getAppContext().tileSelectorJustClosed = undefined; } catch (e: unknown) { if (getAppContext().tileSelectorDebug) console.debug('[TileSelector] tileSelectorJustClosed clear error:', (e as Error)?.message ?? e); }
         // Clear any existing interval
         if (this.infoRefreshInterval) {
             clearInterval(this.infoRefreshInterval);
@@ -356,8 +356,8 @@ class TileSelector {
         // Ensure panel is visible and page1 is active
         if (this.tileInfoPanel) {
             // Make sure panel is visible even if it was forcibly hidden
-            try { this.tileInfoPanel.style.display = 'block'; } catch (_: unknown) { /* ignore */ }
-            try { this.tileInfoPanel.style.pointerEvents = 'auto'; } catch (_: unknown) { /* ignore */ }
+            try { this.tileInfoPanel.style.display = 'block'; } catch (e: unknown) { if (getAppContext().tileSelectorDebug) console.debug('[TileSelector] style.display error:', (e as Error)?.message ?? e); }
+            try { this.tileInfoPanel.style.pointerEvents = 'auto'; } catch (e: unknown) { if (getAppContext().tileSelectorDebug) console.debug('[TileSelector] style.pointerEvents error:', (e as Error)?.message ?? e); }
             this.tileInfoPanel.classList.remove('hidden');
             // Ensure panel sits above the canvas and can receive pointer events
             try {
@@ -370,8 +370,8 @@ class TileSelector {
                         document.body.appendChild(this.tileInfoPanel);
                         if (getAppContext().tileSelectorDebug) console.debug('TileSelector: moved tileInfoPanel to document.body');
                     }
-                } catch (_e: unknown) { /* ignore */ }
-            } catch (_: unknown) { /* ignore */ }
+                } catch (e: unknown) { if (getAppContext().tileSelectorDebug) console.debug('[TileSelector] reparent panel error:', (e as Error)?.message ?? e); }
+            } catch (e: unknown) { if (getAppContext().tileSelectorDebug) console.debug('[TileSelector] panel style setup error:', (e as Error)?.message ?? e); }
             const page1 = this.tileInfoPanel.querySelector('#info-panel-page-1') as HTMLElement | null;
             const page2 = this.tileInfoPanel.querySelector('#info-panel-page-2') as HTMLElement | null;
             if (page1) page1.style.display = '';
@@ -381,19 +381,19 @@ class TileSelector {
             const closeBtn = this.tileInfoPanel.querySelector('#closeInfoPanel') as HTMLElement | null;
             if (closeBtn && !closeBtn.dataset.listenerAttached) {
                 // make sure the button can receive pointer events and sits above the canvas
-                try { closeBtn.style.pointerEvents = 'auto'; } catch (_: unknown) { /* ignore */ }
-                try { closeBtn.style.zIndex = '100000'; } catch (_: unknown) { /* ignore */ }
-                try { closeBtn.style.position = 'absolute'; } catch (_: unknown) { /* ignore */ }
-                try { closeBtn.style.top = '10px'; } catch (_: unknown) { /* ignore */ }
-                try { closeBtn.style.right = '10px'; } catch (_: unknown) { /* ignore */ }
+                try { closeBtn.style.pointerEvents = 'auto'; } catch (e: unknown) { if (getAppContext().tileSelectorDebug) console.debug('[TileSelector] closeBtn pointerEvents error:', (e as Error)?.message ?? e); }
+                try { closeBtn.style.zIndex = '100000'; } catch (e: unknown) { if (getAppContext().tileSelectorDebug) console.debug('[TileSelector] closeBtn zIndex error:', (e as Error)?.message ?? e); }
+                try { closeBtn.style.position = 'absolute'; } catch (e: unknown) { if (getAppContext().tileSelectorDebug) console.debug('[TileSelector] closeBtn position error:', (e as Error)?.message ?? e); }
+                try { closeBtn.style.top = '10px'; } catch (e: unknown) { if (getAppContext().tileSelectorDebug) console.debug('[TileSelector] closeBtn top error:', (e as Error)?.message ?? e); }
+                try { closeBtn.style.right = '10px'; } catch (e: unknown) { if (getAppContext().tileSelectorDebug) console.debug('[TileSelector] closeBtn right error:', (e as Error)?.message ?? e); }
                 const handler = (ev: Event): void => {
                     ev.preventDefault();
                     ev.stopPropagation();
-                    try { closeBtn.style.pointerEvents = 'auto'; } catch (_: unknown) { /* ignore */ }
+                    try { closeBtn.style.pointerEvents = 'auto'; } catch (e: unknown) { if (getAppContext().tileSelectorDebug) console.debug('[TileSelector] closeBtn pointerEvents error:', (e as Error)?.message ?? e); }
                     const ctx = getAppContext();
                     if (ctx.tileSelectorDebug) console.debug('closeInfoPanel direct handler fired (debug)', ev.target);
-                    try { if (ctx.tileSelector && typeof ctx.tileSelector.hideInfoPanel === 'function') ctx.tileSelector.hideInfoPanel(); } catch (_: unknown) { /* ignore */ }
-                    try { if (ctx.tileSelector && typeof ctx.tileSelector.deselectAll === 'function') ctx.tileSelector.deselectAll(); } catch (_: unknown) { /* ignore */ }
+                    try { if (ctx.tileSelector && typeof ctx.tileSelector.hideInfoPanel === 'function') ctx.tileSelector.hideInfoPanel(); } catch (err: unknown) { if (ctx.tileSelectorDebug) console.debug('[TileSelector] hideInfoPanel error:', (err as Error)?.message ?? err); }
+                    try { if (ctx.tileSelector && typeof ctx.tileSelector.deselectAll === 'function') ctx.tileSelector.deselectAll(); } catch (err: unknown) { if (ctx.tileSelectorDebug) console.debug('[TileSelector] deselectAll error:', (err as Error)?.message ?? err); }
                 };
                 closeBtn.addEventListener('click', handler, true);
                 closeBtn.addEventListener('pointerup', handler, true);
@@ -615,14 +615,14 @@ class TileSelector {
         if (closeBtn.dataset.listenerAttached && !ctx.tileSelectorDebug) return;
 
         const handler = (ev: Event): void => {
-            try { ev.preventDefault(); ev.stopPropagation(); } catch (_: unknown) { /* ignore */ }
+            try { ev.preventDefault(); ev.stopPropagation(); } catch (e: unknown) { if (ctx.tileSelectorDebug) console.debug('[TileSelector] preventDefault/stopPropagation error:', (e as Error)?.message ?? e); }
             if (ctx.tileSelectorDebug) console.debug('closeInfoPanel direct handler fired (ensure)', ev ? ev.target : null);
-            try { if (ctx.tileSelector && typeof ctx.tileSelector.hideInfoPanel === 'function') ctx.tileSelector.hideInfoPanel(); } catch (_: unknown) { /* ignore */ }
-            try { if (ctx.tileSelector && typeof ctx.tileSelector.deselectAll === 'function') ctx.tileSelector.deselectAll(); } catch (_: unknown) { /* ignore */ }
+            try { if (ctx.tileSelector && typeof ctx.tileSelector.hideInfoPanel === 'function') ctx.tileSelector.hideInfoPanel(); } catch (err: unknown) { if (ctx.tileSelectorDebug) console.debug('[TileSelector] hideInfoPanel error:', (err as Error)?.message ?? err); }
+            try { if (ctx.tileSelector && typeof ctx.tileSelector.deselectAll === 'function') ctx.tileSelector.deselectAll(); } catch (err: unknown) { if (ctx.tileSelectorDebug) console.debug('[TileSelector] deselectAll error:', (err as Error)?.message ?? err); }
         };
         // remove any previous handlers bound with same signature to avoid duplicates
-        try { closeBtn.removeEventListener('click', handler, true); } catch (_: unknown) { /* ignore */ }
-        try { closeBtn.removeEventListener('pointerup', handler, true); } catch (_: unknown) { /* ignore */ }
+        try { closeBtn.removeEventListener('click', handler, true); } catch (e: unknown) { if (ctx.tileSelectorDebug) console.debug('[TileSelector] removeEventListener click error:', (e as Error)?.message ?? e); }
+        try { closeBtn.removeEventListener('pointerup', handler, true); } catch (e: unknown) { if (ctx.tileSelectorDebug) console.debug('[TileSelector] removeEventListener pointerup error:', (e as Error)?.message ?? e); }
         closeBtn.addEventListener('click', handler, true);
         closeBtn.addEventListener('pointerup', handler, true);
         closeBtn.dataset.listenerAttached = '1';

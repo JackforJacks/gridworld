@@ -898,7 +898,7 @@ class PeopleState {
                             const sampleId = duplicates[0].id;
                             const personJson = await storage.hget('person', sampleId);
                             console.warn('[PeopleState] Sample duplicated person hash:', personJson);
-                            try { if (personJson) console.warn('[PeopleState] Sample parsed:', JSON.parse(personJson)); } catch (_: unknown) { }
+                            try { if (personJson) console.warn('[PeopleState] Sample parsed:', JSON.parse(personJson)); } catch (e: unknown) { console.warn('[PeopleState] Failed to parse sample person JSON:', (e as Error)?.message ?? e); }
                         }
                     } catch (e: unknown) {
                         console.warn('[PeopleState] Duplicate diagnostic failed:', getErrorMessage(e));

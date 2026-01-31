@@ -92,7 +92,7 @@ class StateManager {
                 } catch (e: unknown) { /* ignore */ }
             }
             // release lock
-            try { await releaseLock(lockKey, token); } catch (_: unknown) { }
+            try { await releaseLock(lockKey, token); } catch (e: unknown) { console.warn('[StateManager] Failed to release lock:', (e as Error)?.message ?? e); }
         }
     }
 
