@@ -9,6 +9,9 @@ import { ensureVillageIdColumn } from './dbUtils';
 import { seedRandomVillages } from './postgresSeeding';
 import idAllocator from '../idAllocator';
 import PopulationState from '../populationState';
+import serverConfig from '../../config/server';
+import { getRandomSex, getRandomAge, getRandomBirthDate } from '../population/calculator';
+import * as VillageManager from './villageManager';
 
 // ==================== Type Definitions ====================
 
@@ -142,12 +145,12 @@ async function seedVillagesStorageFirst(): Promise<SeedVillagesResult> {
             // logic can compute desired villages per tile.
             tilePopulations = byTile;
             if (populatedTileIds.length === 0) {
-                if (require('../../config/server').verboseLogs) console.log('[villageSeeder] Fallback grouping found no populated tiles either');
+                if (serverConfig.verboseLogs) console.log('[villageSeeder] Fallback grouping found no populated tiles either');
                 return { created: 0, villages: [] };
             }
         }
 
-        if (require('../../config/server').verboseLogs) console.log(`[villageSeeder] Found ${populatedTileIds.length} populated tiles in storage`);
+        if (serverConfig.verboseLogs) console.log(`[villageSeeder] Found ${populatedTileIds.length} populated tiles in storage`);
 
         // Set tile fertility in storage (get from Redis tile data)
         for (const tileId of populatedTileIds) {
@@ -236,7 +239,6 @@ async function seedVillagesStorageFirst(): Promise<SeedVillagesResult> {
         }
         await pipeline.exec();
 
-        const serverConfig = require('../../config/server');
         if (serverConfig.verboseLogs) console.log(`[villageSeeder] Created ${allVillages.length} villages in storage (pending Postgres save)`);
 
         // Assign residency to people in storage
@@ -347,7 +349,6 @@ async function assignResidencyStorage(populatedTileIds: string[], allVillages: V
             await villagePipeline.exec();
         }
 
-        const serverConfig = require('../../config/server');
         if (serverConfig.verboseLogs) console.log(`[villageSeeder] Assigned residency to ${personUpdates.length} people in storage`);
     } catch (err: unknown) {
         console.error('[villageSeeder] Failed to assign residency in storage:', err);
@@ -389,7 +390,6 @@ async function seedWorldIfEmpty(): Promise<SeedWorldResult> {
     console.log(`[villageSeeder] Created ${totalPeople} people on ${tilesToPopulate.length} tiles`);
 
     // Use the robust VillageManager to create villages and assign residency
-    const VillageManager = require('./villageManager');
     const villageResult: { totalVillages?: number } = await VillageManager.ensureVillagesForPopulatedTiles({ force: true });
 
     console.log(`[villageSeeder] 🌍 World seeding complete: ${totalPeople} people, ${villageResult.totalVillages || 0} villages`);
@@ -476,8 +476,6 @@ async function createInitialTilesRedisFirst(): Promise<InitialTile[]> {
  */
 async function createInitialPopulationRedisFirst(tileId: number): Promise<number> {
     // PopulationState is imported at the top of the file
-    const { getRandomSex, getRandomAge, getRandomBirthDate } = require('../population/calculator');
-
     // Add 100-200 people per tile
     const peopleCount: number = 100 + Math.floor(Math.random() * 100);
     const people: Person[] = [];

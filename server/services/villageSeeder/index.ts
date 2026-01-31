@@ -14,6 +14,8 @@ import { seedRandomVillages, seedVillagesForTile } from './postgresSeeding';
 import { seedVillagesStorageFirst, seedWorldIfEmpty, SeedVillagesResult } from './redisSeeding';
 import { assignResidencyForTile } from './residency';
 import storage from '../storage';
+import PopulationState from '../populationState';
+import { getRandomSex, getRandomAge, getRandomBirthDate } from '../population/calculator';
 
 // Re-export SeedVillagesResult for external use
 export type { SeedVillagesResult };
@@ -38,7 +40,6 @@ async function seedIfNoVillages() {
         console.log('[villageSeeder] No villages found, seeding initial villages...');
 
         // --- REDIS-FIRST CHECK ---
-        const PopulationState = require('../populationState').default;
         if (storage.isAvailable()) {
             const peopleCount = await PopulationState.getTotalPopulation();
             const villagesData = await storage.hgetall('village');
@@ -218,9 +219,6 @@ async function createInitialTiles() {
  * Create initial population on a tile
  */
 async function createInitialPopulation(tileId) {
-    const PopulationState = require('../populationState').default;
-    const { getRandomSex, getRandomAge, getRandomBirthDate } = require('../population/calculator');
-
     // Add 100-200 people per tile
     const peopleCount = 100 + Math.floor(Math.random() * 100);
 
@@ -245,7 +243,6 @@ async function createInitialPopulation(tileId) {
 
         // Debug: verify first person was added
         if (i === 0) {
-            const storage = require('../storage').default;
             const check = await storage.hget('person', tempId.toString());
             console.log(`[DEBUG] First person add result: ${result}, verification hget: ${check ? 'OK' : 'MISSING'}`);
         }

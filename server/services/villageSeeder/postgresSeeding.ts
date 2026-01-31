@@ -6,6 +6,8 @@
 import pool from '../../config/database';
 import { ensureVillageIdColumn } from './dbUtils';
 import { assignResidencyForTile } from './residency';
+import serverConfig from '../../config/server';
+import PopulationState from '../populationState';
 
 /**
  * Seed random villages for all populated tiles in Postgres
@@ -119,7 +121,6 @@ async function seedRandomVillages(count: number | null = null) {
         }
 
         await pool.query('COMMIT');
-        const serverConfig = require('../../config/server');
         if (serverConfig.verboseLogs) console.log(`[villageSeeder] Created ${insertedCount} villages`);
         return { created: insertedCount, villages: [] };
     } catch (err: unknown) {
@@ -201,7 +202,6 @@ async function seedVillagesForTile(tileId) {
         // Get tile population from Redis first, fallback to Postgres
         let tilePopulation = 0;
         try {
-            const PopulationState = require('../populationState').default;
             const tilePops = await PopulationState.getAllTilePopulations();
             tilePopulation = tilePops[String(tileId)] || tilePops[tileId] || 0;
         } catch (e: unknown) {

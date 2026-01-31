@@ -77,14 +77,8 @@ import { stopIntegrityAudit } from './population/initializer';
 // Statistics service for vital rates tracking
 import StatisticsService from './statisticsService';
 
-// Optional metrics module (may not exist)
-let metrics: { auditRunCounter?: { inc: (labels: Record<string, string>) => void }; auditDuration?: { observe: (value: number) => void }; auditFailures?: { inc: () => void }; issuesGauge?: { set: (value: number) => void }; lastRunGauge?: { set: (value: number) => void } } | null = null;
-try {
-    // eslint-disable-next-line @typescript-eslint/no-require-imports
-    metrics = require('./metrics');
-} catch {
-    // metrics module is optional
-}
+// Optional metrics module (may not exist) - currently not implemented
+const metrics: { auditRunCounter?: { inc: (labels: Record<string, string>) => void }; auditDuration?: { observe: (value: number) => void }; auditFailures?: { inc: () => void }; issuesGauge?: { set: (value: number) => void }; lastRunGauge?: { set: (value: number) => void } } | null = null;
 
 // Type definitions
 interface CalendarEventData {
