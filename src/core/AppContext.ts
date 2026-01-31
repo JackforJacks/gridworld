@@ -66,7 +66,7 @@ interface IAppContext {
     scene: THREE.Scene | null;
     renderer: THREE.WebGLRenderer | null;
     camera: THREE.PerspectiveCamera | null;
-    
+
     // Managers - using any to allow actual class instances
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     sceneManager: any;
@@ -78,23 +78,23 @@ interface IAppContext {
     calendarManager: any;
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     calendarDisplay: any;
-    
+
     // Scene data
     hexasphere: HexasphereData | null;
     currentTiles: THREE.Mesh[];
-    
+
     // DOM references
     tilePopup: HTMLElement | null;
     borderLines: THREE.Line | null;
-    
+
     // Input state
     mouseState: MouseState;
     rotationState: RotationState;
-    
+
     // App state flags
     sceneInitialized: boolean;
     debug: boolean;
-    
+
     // TileSelector internal flags
     tileSelectorJustClosed?: number;
     tileSelectorDebug: boolean;
@@ -109,12 +109,12 @@ interface IAppContext {
  */
 class AppContext implements IAppContext {
     private static instance: AppContext | null = null;
-    
+
     // Three.js core objects
     public scene: THREE.Scene | null = null;
     public renderer: THREE.WebGLRenderer | null = null;
     public camera: THREE.PerspectiveCamera | null = null;
-    
+
     // Managers - using 'any' internally to allow actual class instances to be assigned
     // External access via getters provides type hints
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -127,15 +127,15 @@ class AppContext implements IAppContext {
     public calendarManager: any = null;
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     public calendarDisplay: any = null;
-    
+
     // Scene data
     public hexasphere: HexasphereData | null = null;
     public currentTiles: THREE.Mesh[] = [];
-    
+
     // DOM references
     public tilePopup: HTMLElement | null = null;
     public borderLines: THREE.Line | null = null;
-    
+
     // Input state
     public mouseState: MouseState = {
         isDragging: false,
@@ -143,26 +143,26 @@ class AppContext implements IAppContext {
         initialPosition: { x: 0, y: 0 },
         clickStartTime: 0
     };
-    
+
     public rotationState: RotationState = {
         current: { x: 0, y: 0 },
         target: { x: 0, y: 0 },
         autoRotate: true
     };
-    
+
     // App state flags
     public sceneInitialized: boolean = false;
     public debug: boolean = false;
-    
+
     // TileSelector internal flags
     public tileSelectorJustClosed?: number;
     public tileSelectorDebug: boolean = false;
     public tileSelectorCloseHandlerAttached: boolean = false;
-    
+
     private constructor() {
         // Private constructor to enforce singleton pattern
     }
-    
+
     /**
      * Get the singleton instance of AppContext
      */
@@ -172,7 +172,7 @@ class AppContext implements IAppContext {
         }
         return AppContext.instance;
     }
-    
+
     /**
      * Reset all state (useful for testing or world restart)
      */
@@ -205,14 +205,14 @@ class AppContext implements IAppContext {
         this.tileSelectorDebug = false;
         this.tileSelectorCloseHandlerAttached = false;
     }
-    
+
     /**
      * Check if the app is fully initialized
      */
     public isInitialized(): boolean {
         return !!(this.scene && this.renderer && this.camera && this.sceneManager);
     }
-    
+
     /**
      * Get hexasphere tiles safely
      */

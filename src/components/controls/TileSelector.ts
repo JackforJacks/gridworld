@@ -240,7 +240,7 @@ class TileSelector {
     findClosestTile(intersectionPoint: THREE.Vector3): HexTile | null {
         const ctx = getAppContext();
         const tiles = ctx.getHexasphereTiles() as HexTile[];
-        
+
         if (!tiles || tiles.length === 0) {
             return null;
         }

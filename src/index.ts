@@ -204,7 +204,7 @@ class GridWorldApp {
     setGlobalReferences(): void {
         // Use centralized AppContext instead of window pollution
         const ctx = getAppContext();
-        
+
         ctx.scene = this.scene;
         ctx.renderer = this.renderer;
         ctx.camera = this.camera;
@@ -228,7 +228,7 @@ class GridWorldApp {
             target: { x: 0, y: 0 },
             autoRotate: true
         };
-        
+
         // Maintain minimal window compatibility for legacy code during transition
         // These can be removed once all consumers use AppContext
         window.sceneManager = this.sceneManager ?? undefined;

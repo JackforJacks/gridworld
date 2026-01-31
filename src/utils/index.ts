@@ -32,7 +32,7 @@ function updateDashboard() {
     // Use AppContext to get tiles - single source of truth
     const ctx = getAppContext();
     const tiles = ctx.getHexasphereTiles();
-    
+
     if (!tiles || tiles.length === 0) {
         return;
     }

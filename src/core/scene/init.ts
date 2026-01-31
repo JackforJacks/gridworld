@@ -4,7 +4,7 @@ import { getAppContext } from '../AppContext';
 
 async function initializeAndStartGame() {
   const ctx = getAppContext();
-  
+
   if (ctx.sceneInitialized) {
     return;
   }
