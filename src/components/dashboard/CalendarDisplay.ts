@@ -320,7 +320,7 @@ class CalendarDisplay {
 
         // Update UI elements
         this.updateMoonPhase(moonEmoji);
-        this.updateYearLabel(year);
+        this.updateYearLabel(year, month);
         this.drawMonthSteps(month, day, year);
     }
 
@@ -346,13 +346,27 @@ class CalendarDisplay {
     }
 
     /**
-     * Update the year label with current year
-     * @param year - Current year
+     * Get season emoji from month number
+     * @param month - Month number (1-12)
+     * @returns Season emoji
      */
-    private updateYearLabel(year: number): void {
+    private getSeasonEmoji(month: number): string {
+        // Winter (months 12, 1, 2), Spring (3-5), Summer (6-8), Autumn (9-11)
+        if (month === 12 || month === 1 || month === 2) return '❄️';
+        if (month >= 3 && month <= 5) return '🌸';
+        if (month >= 6 && month <= 8) return '☀️';
+        return '🍂';
+    }
+
+    /**
+     * Update the year label with current year and season
+     * @param year - Current year
+     * @param month - Current month (1-12)
+     */
+    private updateYearLabel(year: number, month: number): void {
         const yearLabel = document.getElementById('calendar-year-inline');
         if (yearLabel) {
-            yearLabel.textContent = `Year: ${year}`;
+            yearLabel.textContent = `${this.getSeasonEmoji(month)} ${year}`;
         }
 
         // Remove year from below the calendar (keep only inline)
