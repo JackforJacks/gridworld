@@ -23,7 +23,7 @@ class SceneManager {
     private renderer: THREE.WebGLRenderer | null;
     private hexasphereMesh: THREE.Mesh | null;
     private currentTiles: THREE.Mesh[];
-    
+
     // Lighting state
     private lightingState: LightingState;
 
@@ -49,7 +49,7 @@ class SceneManager {
         this.habitableTileIds = [];
         this.sphereRadius = 30;
         this.overlayManager = null;
-        
+
         // Pre-cache all biome and terrain colors
         initializeColorCaches();
     }
@@ -60,7 +60,7 @@ class SceneManager {
         this.renderer.setClearColor(0x000000, 0);
         this.scene = new THREE.Scene();
         this.overlayManager = new TileOverlayManager(this.scene);
-        
+
         this.populationUnsubscribe = populationManager.subscribe((eventType: PopulationEventType, _data: unknown) => {
             if (eventType === 'populationUpdate') {
                 updateTilePopulations(this.hexasphere);
@@ -113,18 +113,18 @@ class SceneManager {
     buildTilesFromData(tileData: TileDataResponse): void {
         const result = buildTilesFromData(tileData);
         if (!result) return;
-        
+
         this.hexasphere = result.hexasphere;
         this.habitableTileIds = result.habitableTileIds;
         this.tileColorIndices = result.tileColorIndices;
-        
+
         // Create mesh and add to scene
         const mesh = createHexasphereMesh(result.geometry, result.hexasphere);
         this.hexasphereMesh = mesh;
         this.currentTiles.push(mesh);
         this.scene!.add(mesh);
         getAppContext().currentTiles = this.currentTiles;
-        
+
         // Apply population data
         updateTilePopulations(this.hexasphere);
         if (this.overlayManager) {
@@ -296,7 +296,7 @@ class SceneManager {
         }
 
         const cr = color.r, cg = color.g, cb = color.b;
-        
+
         for (let i = 1; i < boundaryPoints.length - 1; i++) {
             const p0 = boundaryPoints[0];
             const p1 = boundaryPoints[i];
@@ -316,7 +316,7 @@ class SceneManager {
     // Legacy method - kept for compatibility
     createHexasphereMesh(geometry: THREE.BufferGeometry, vertices: number[], colors: number[], indices: number[]): void {
         createBufferGeometry(geometry, vertices, colors, indices);
-        
+
         const material = new THREE.MeshPhongMaterial({
             vertexColors: true,
             side: THREE.DoubleSide
@@ -344,7 +344,7 @@ class SceneManager {
             }
             this.currentTiles.length = 0;
         }
-        
+
         if (this.hexasphereMesh) {
             this.scene!.remove(this.hexasphereMesh);
             if (this.hexasphereMesh.geometry) this.hexasphereMesh.geometry.dispose();

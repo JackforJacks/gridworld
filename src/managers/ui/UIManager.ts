@@ -490,13 +490,13 @@ class UIManager {
 
             // Get tile stats from sceneManager
             const stats = (ctx.sceneManager.getPopulationStats?.() ?? {}) as StatsData;
-            
+
             // Fetch and merge demographic stats from backend API
             const popData = await populationManager.makeApiRequest<PopulationApiStats>('/stats', 'GET');
             if (popData) {
                 mergeApiStats(stats, popData);
             }
-            
+
             this.currentTotalPopulation = stats.totalPopulation ?? 0;
             const growthStats = populationManager.getGrowthStats();
             this.hideLoadingIndicator();
@@ -529,7 +529,7 @@ class UIManager {
     /** Generate stats modal HTML content */
     private generateStatsModalHTML(stats: StatsData): string {
         const SEP = '<hr class="stats-modal-separator">';
-        
+
         // Biome section
         const biomeSection = stats.biomes ? `
             ${SEP}
