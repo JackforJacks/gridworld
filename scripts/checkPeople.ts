@@ -2,7 +2,7 @@
 const storage = require('../server/services/storage');
 
 async function withTimeout<T>(promise: Promise<T>, ms: number, label: string): Promise<T> {
-    const timeout = new Promise<never>((_, rej) => 
+    const timeout = new Promise<never>((_, rej) =>
         setTimeout(() => rej(new Error(`${label} timeout ${ms}ms`)), ms)
     );
     return Promise.race([promise, timeout]);
