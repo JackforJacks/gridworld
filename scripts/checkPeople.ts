@@ -1,19 +1,22 @@
 #!/usr/bin/env node
 const storage = require('../server/services/storage');
 
-async function withTimeout(p, ms, label) {
-    return Promise.race([p, new Promise((_, rej) => setTimeout(() => rej(new Error(`${label} timeout ${ms}ms`)), ms))]);
+async function withTimeout<T>(promise: Promise<T>, ms: number, label: string): Promise<T> {
+    const timeout = new Promise<never>((_, rej) => 
+        setTimeout(() => rej(new Error(`${label} timeout ${ms}ms`)), ms)
+    );
+    return Promise.race([promise, timeout]);
 }
 
 (async function run() {
     try {
         console.log('storage.isAvailable:', storage.isAvailable());
-        const counts = await withTimeout(Promise.resolve().then(() => storage.hgetall('counts:global')), 3000, 'hgetall counts');
+        const counts = await withTimeout(storage.hgetall('counts:global'), 3000, 'hgetall counts');
         console.log('counts:global:', counts || {});
 
         let personHash = {};
         try {
-            personHash = await withTimeout(Promise.resolve().then(() => storage.hgetall('person')), 5000, 'hgetall person');
+            personHash = await withTimeout(storage.hgetall('person'), 5000, 'hgetall person');
         } catch (e) {
             console.warn('hgetall person failed or timed out:', e.message || e);
         }
