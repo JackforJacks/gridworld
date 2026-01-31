@@ -7,8 +7,11 @@
 
     <!-- Preload and load CSS - reveal page once loaded -->
     <link rel="preload" href="css/styles.css" as="style">
-    <link rel="stylesheet" href="css/styles.css" onload="document.documentElement.style.visibility='';document.documentElement.style.opacity=''">
-    <noscript><link rel="stylesheet" href="css/styles.css"></noscript>
+    <link rel="stylesheet" href="css/styles.css"
+        onload="document.documentElement.style.visibility='';document.documentElement.style.opacity=''">
+    <noscript>
+        <link rel="stylesheet" href="css/styles.css">
+    </noscript>
 
     <meta name="Description" content="Javascript library to generate a sphere covered in hexagons." />
     <meta name="Keywords"
@@ -41,9 +44,18 @@
         <div class="tile-info-content">
             <div class="info-panel-page" id="info-panel-page-1"><!-- Dynamic: Population --></div>
             <div class="info-panel-page hidden" id="info-panel-page-2"><!-- Dynamic: Buildings --></div>
-            <div class="info-panel-page hidden" id="info-panel-page-3"><h3>🌾 Resources</h3><p>Coming soon...</p></div>
-            <div class="info-panel-page hidden" id="info-panel-page-4"><h3>⚔️ Military</h3><p>Coming soon...</p></div>
-            <div class="info-panel-page hidden" id="info-panel-page-5"><h3>💰 Economy</h3><p>Coming soon...</p></div>
+            <div class="info-panel-page hidden" id="info-panel-page-3">
+                <h3>🌾 Resources</h3>
+                <p>Coming soon...</p>
+            </div>
+            <div class="info-panel-page hidden" id="info-panel-page-4">
+                <h3>⚔️ Military</h3>
+                <p>Coming soon...</p>
+            </div>
+            <div class="info-panel-page hidden" id="info-panel-page-5">
+                <h3>💰 Economy</h3>
+                <p>Coming soon...</p>
+            </div>
             <div class="info-panel-page hidden" id="info-panel-page-6">
                 <h3>⚙️ Settings</h3>
                 <label><input type="checkbox" id="auto-manage-population"> Auto-manage population</label>
@@ -64,7 +76,7 @@
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
     <script>
         // Info panel tab/page switching logic
-        (function() {
+        (function () {
             const PAGES = 6;
             const CLOSE_DEBOUNCE = 300;
 
@@ -88,10 +100,10 @@
                 }
             }
 
-            document.addEventListener('DOMContentLoaded', function() {
+            document.addEventListener('DOMContentLoaded', function () {
                 for (let i = 1; i <= PAGES; i++) {
                     const btn = document.getElementById('info-btn-' + i);
-                    if (btn) btn.addEventListener('click', function(e) {
+                    if (btn) btn.addEventListener('click', function (e) {
                         e.preventDefault();
                         e.stopPropagation();
                         switchPage(i);

@@ -85,8 +85,8 @@ module.exports = (env, argv) => {
         scriptLoading: 'defer',
         // Inject CSS before scripts to prevent FOUC
         meta: {
-          'css-preload': { 
-            rel: 'preload', 
+          'css-preload': {
+            rel: 'preload',
             as: 'style',
             href: isProduction ? 'main.[contenthash].css' : 'main.css'
           }

@@ -184,10 +184,23 @@ kbd {
     min-height: 0;
 }
 
-.tile-info-content::-webkit-scrollbar { width: 6px; }
-.tile-info-content::-webkit-scrollbar-track { background: #f1f1f1; border-radius: 3px; }
-.tile-info-content::-webkit-scrollbar-thumb { background: #ccc; border-radius: 3px; }
-.tile-info-content::-webkit-scrollbar-thumb:hover { background: #999; }
+.tile-info-content::-webkit-scrollbar {
+    width: 6px;
+}
+
+.tile-info-content::-webkit-scrollbar-track {
+    background: #f1f1f1;
+    border-radius: 3px;
+}
+
+.tile-info-content::-webkit-scrollbar-thumb {
+    background: #ccc;
+    border-radius: 3px;
+}
+
+.tile-info-content::-webkit-scrollbar-thumb:hover {
+    background: #999;
+}
 
 .tile-info-row {
     display: flex;
@@ -217,18 +230,49 @@ kbd {
 }
 
 /* Value Type Specific Colors (consolidated) */
-.value.terrain-ocean { color: #4A90E2; }
-.value.terrain-flats { color: #DAA520; }
-.value.terrain-hills { color: #DEB887; }
-.value.terrain-mountains { color: #8B4513; }
-.value.terrain-grassland { color: #4CAF50; }
-.value.terrain-ice { color: #87CEEB; }
+.value.terrain-ocean {
+    color: #4A90E2;
+}
 
-.value.biome-grassland { color: #4CAF50; }
-.value.biome-plains { color: #7BC142; }
-.value.biome-tundra { color: #87CEEB; }
-.value.biome-desert { color: #DEB887; }
-.value.biome-alpine { color: #8B7355; }
+.value.terrain-flats {
+    color: #DAA520;
+}
+
+.value.terrain-hills {
+    color: #DEB887;
+}
+
+.value.terrain-mountains {
+    color: #8B4513;
+}
+
+.value.terrain-grassland {
+    color: #4CAF50;
+}
+
+.value.terrain-ice {
+    color: #87CEEB;
+}
+
+.value.biome-grassland {
+    color: #4CAF50;
+}
+
+.value.biome-plains {
+    color: #7BC142;
+}
+
+.value.biome-tundra {
+    color: #87CEEB;
+}
+
+.value.biome-desert {
+    color: #DEB887;
+}
+
+.value.biome-alpine {
+    color: #8B7355;
+}
 
 .value.population-inhabited {
     color: #FF5722;
@@ -245,13 +289,29 @@ kbd {
     font-weight: bold;
 }
 
-.value.fertility-good { color: #8BC34A; }
-.value.fertility-fair { color: #CDDC39; }
-.value.fertility-poor { color: #FF9800; }
-.value.fertility-barren { color: #795548; }
+.value.fertility-good {
+    color: #8BC34A;
+}
 
-.value.Habitable-yes { color: #4CAF50; }
-.value.Habitable-no { color: #f44336; }
+.value.fertility-fair {
+    color: #CDDC39;
+}
+
+.value.fertility-poor {
+    color: #FF9800;
+}
+
+.value.fertility-barren {
+    color: #795548;
+}
+
+.value.Habitable-yes {
+    color: #4CAF50;
+}
+
+.value.Habitable-no {
+    color: #f44336;
+}
 
 .tile-info-footer {
     margin-top: 14px;
@@ -290,8 +350,15 @@ kbd {
     justify-content: center;
 }
 
-.info-panel-btn:hover { background: #444; transform: scale(1.08); }
-.info-panel-btn.active { background: #007acc; color: #fff; }
+.info-panel-btn:hover {
+    background: #444;
+    transform: scale(1.08);
+}
+
+.info-panel-btn.active {
+    background: #007acc;
+    color: #fff;
+}
 
 .info-panel-buttons {
     position: absolute;
@@ -312,7 +379,9 @@ kbd {
     box-sizing: border-box;
 }
 
-.info-panel-page.hidden { display: none; }
+.info-panel-page.hidden {
+    display: none;
+}
 
 .info-panel-page h3 {
     margin: 0 0 10px 0;
@@ -341,7 +410,9 @@ kbd {
     margin: 5px 0;
 }
 
-.info-panel-page button:hover { background: #005a9e; }
+.info-panel-page button:hover {
+    background: #005a9e;
+}
 
 .info-panel-page label {
     color: #333;
@@ -350,7 +421,9 @@ kbd {
     cursor: pointer;
 }
 
-.info-panel-page input[type="checkbox"] { margin-right: 8px; }
+.info-panel-page input[type="checkbox"] {
+    margin-right: 8px;
+}
 
 /* ==========================================================================
    4. Components - Dashboard Elements
@@ -383,27 +456,50 @@ kbd {
     box-shadow: 0 2px 6px rgba(0, 0, 0, 0.2);
 }
 
-.reset-button { background: #FF9800; }
-.reset-button:hover { background: #F57C00; }
+.reset-button {
+    background: #FF9800;
+}
 
-.save-button { background: #4CAF50; }
-.save-button:hover { background: #388E3C; }
+.reset-button:hover {
+    background: #F57C00;
+}
+
+.save-button {
+    background: #4CAF50;
+}
+
+.save-button:hover {
+    background: #388E3C;
+}
+
 .save-button:disabled,
 .load-button:disabled {
     background: #9E9E9E;
     cursor: not-allowed;
     transform: none;
 }
+
 .save-button.saving,
 .load-button.loading {
     background: #FFC107;
     animation: pulse 0.5s infinite alternate;
 }
-.save-button.saved { background: #4CAF50; }
 
-.load-button { background: #2196F3; }
-.load-button:hover { background: #1976D2; }
-.load-button.loaded { background: #2196F3; }
+.save-button.saved {
+    background: #4CAF50;
+}
+
+.load-button {
+    background: #2196F3;
+}
+
+.load-button:hover {
+    background: #1976D2;
+}
+
+.load-button.loaded {
+    background: #2196F3;
+}
 
 .dashboard-toggle-help {
     background: #4CAF50;
@@ -450,8 +546,13 @@ kbd {
     transition: color 0.3s ease;
 }
 
-.population-panel-icon.connected { color: #00ff00; }
-.population-panel-icon.disconnected { color: #ff0000; }
+.population-panel-icon.connected {
+    color: #00ff00;
+}
+
+.population-panel-icon.disconnected {
+    color: #ff0000;
+}
 
 /* ==========================================================================
    5. Components - Controls Panel (Help Panel)
@@ -605,7 +706,10 @@ kbd {
     transition: background-color 0.2s;
 }
 
-.stats-modal-refresh:hover { background: #45a049; }
+.stats-modal-refresh:hover {
+    background: #45a049;
+}
+
 .stats-modal-refresh:disabled {
     background: #ccc;
     cursor: not-allowed;
@@ -620,7 +724,9 @@ kbd {
     padding: 0 5px;
 }
 
-.stats-modal-close:hover { color: #333; }
+.stats-modal-close:hover {
+    color: #333;
+}
 
 .stats-modal-content {
     overflow-y: auto;
@@ -628,16 +734,23 @@ kbd {
     padding-right: 10px;
 }
 
-.stats-modal-content::-webkit-scrollbar { width: 8px; }
+.stats-modal-content::-webkit-scrollbar {
+    width: 8px;
+}
+
 .stats-modal-content::-webkit-scrollbar-track {
     background: #f1f1f1;
     border-radius: 4px;
 }
+
 .stats-modal-content::-webkit-scrollbar-thumb {
     background: #ccc;
     border-radius: 4px;
 }
-.stats-modal-content::-webkit-scrollbar-thumb:hover { background: #999; }
+
+.stats-modal-content::-webkit-scrollbar-thumb:hover {
+    background: #999;
+}
 
 .stats-modal-content p {
     margin: 0 0 10px 0;
@@ -681,10 +794,22 @@ kbd {
     transition: all 0.3s ease;
 }
 
-.message-element.info { background-color: #2196F3; }
-.message-element.success { background-color: #4CAF50; }
-.message-element.warning { background-color: #FF9800; }
-.message-element.error { background-color: #F44336; }
+.message-element.info {
+    background-color: #2196F3;
+}
+
+.message-element.success {
+    background-color: #4CAF50;
+}
+
+.message-element.warning {
+    background-color: #FF9800;
+}
+
+.message-element.error {
+    background-color: #F44336;
+}
+
 .message-element.visible {
     opacity: 1;
     transform: translateX(0);
@@ -943,6 +1068,7 @@ kbd {
         opacity: 0.3;
         transform: scale(0.8);
     }
+
     100% {
         opacity: 1;
         transform: scale(1.2);
@@ -950,11 +1076,21 @@ kbd {
 }
 
 @keyframes spin {
-    0% { transform: rotate(0deg); }
-    100% { transform: rotate(360deg); }
+    0% {
+        transform: rotate(0deg);
+    }
+
+    100% {
+        transform: rotate(360deg);
+    }
 }
 
 @keyframes pulse {
-    from { opacity: 1; }
-    to { opacity: 0.7; }
+    from {
+        opacity: 1;
+    }
+
+    to {
+        opacity: 0.7;
+    }
 }
