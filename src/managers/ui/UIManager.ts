@@ -425,38 +425,12 @@ class UIManager {
             return;
         }
 
-        // Require user confirmation before wiping all data
-        const confirmed = window.confirm(
-            '⚠️ WARNING: This will DELETE ALL POPULATION DATA permanently!\n\n' +
-            'All people, families, and villages will be wiped and regenerated.\n\n' +
-            'Are you absolutely sure you want to restart the world?'
-        );
-
-        if (!confirmed) {
-            // [log removed]
-            return;
-        }
-
+        // Use SceneManager's regenerateTiles which handles confirmation and in-place refresh
         try {
-            // [log removed]
-            // Single fast-reset endpoint handles: regenerate tiles/lands, reset & reinit population, seed villages
-            // Must send confirmation token to prove intentional restart
-            const fastResult = await this.fetchWithFallback([
-                'http://localhost:3000/api/worldrestart', // hit backend directly first to avoid proxy empty responses
-                '/api/worldrestart'
-            ], {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ confirm: 'DELETE_ALL_DATA' })
-            });
-            // [log removed]
+            await this.sceneManager.regenerateTiles();
         } catch (error: unknown) {
-            console.error("❌ Error during data reset:", error);
-            // Still reload even on error so state is consistent
+            console.error("❌ Error during world restart:", error);
         }
-        // Always reload page after reset attempt to guarantee fresh client state
-        // [log removed]
-        window.location.reload();
     }
 
     // Try multiple URLs until one succeeds; throws if all fail

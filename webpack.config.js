@@ -54,8 +54,8 @@ module.exports = (env, argv) => {
         }, {
           test: /\.css$/,
           use: [
-            // Use style-loader in development for faster CSS injection, MiniCssExtractPlugin in production
-            isProduction ? MiniCssExtractPlugin.loader : 'style-loader',
+            // Always extract CSS to prevent FOUC (Flash of Unstyled Content)
+            MiniCssExtractPlugin.loader,
             'css-loader'
           ]
         },
@@ -81,13 +81,23 @@ module.exports = (env, argv) => {
       new HtmlWebpackPlugin({
         template: './index.html',
         filename: 'index.html',
-        inject: 'head',
-        scriptLoading: 'defer' // Changed from 'blocking' to 'defer'
+        inject: true,
+        scriptLoading: 'defer',
+        // Inject CSS before scripts to prevent FOUC
+        meta: {
+          'css-preload': { 
+            rel: 'preload', 
+            as: 'style',
+            href: isProduction ? 'main.[contenthash].css' : 'main.css'
+          }
+        }
       }),
       // Always include MiniCssExtractPlugin
       new MiniCssExtractPlugin({
-        filename: isProduction ? '[name].[contenthash].css' : '[name].css', // Simpler name for dev
-        chunkFilename: isProduction ? '[id].[contenthash].css' : '[id].css' // Simpler name for dev
+        filename: isProduction ? '[name].[contenthash].css' : '[name].css',
+        chunkFilename: isProduction ? '[id].[contenthash].css' : '[id].css',
+        // Insert CSS at the beginning of head for faster loading
+        insert: 'head'
       }),
       ...(isProduction ? [
         // Production-only plugins like CompressionPlugin were here
@@ -99,14 +109,14 @@ module.exports = (env, argv) => {
         })
       ] : []), new CopyWebpackPlugin({
         patterns: [
-          // Only copy CSS in production mode, in dev mode webpack handles it via style-loader
-          ...(isProduction ? [{
+          // Always copy CSS since we now extract it in all modes
+          {
             from: 'css',
             to: 'css',
             globOptions: {
               ignore: ['**/*.map']
             }
-          }] : []),
+          },
           {
             from: 'include/FileSaver.min.js', // Only copy FileSaver, not three.min.js
             to: 'include/FileSaver.min.js'

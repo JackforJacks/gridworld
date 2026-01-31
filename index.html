@@ -1,158 +1,18 @@
 <!DOCTYPE html>
-<html lang="en">
+<html lang="en" style="visibility:hidden;opacity:0">
 
 <head>
     <meta charset="utf-8">
     <title>GridWorld</title>
 
+    <!-- Preload and load CSS - reveal page once loaded -->
+    <link rel="preload" href="css/styles.css" as="style">
+    <link rel="stylesheet" href="css/styles.css" onload="document.documentElement.style.visibility='';document.documentElement.style.opacity=''">
+    <noscript><link rel="stylesheet" href="css/styles.css"></noscript>
+
     <meta name="Description" content="Javascript library to generate a sphere covered in hexagons." />
     <meta name="Keywords"
         content="hexasphere, hexasphere.js, geodesic sphere, geodesic polyhedron, javascript, hexagons" />
-
-    <style>
-        /* Critical FOUC Prevention CSS - Updated */
-        html,
-        body {
-            margin: 0;
-            padding: 0;
-            width: 100%;
-            height: 100%;
-            overflow: hidden;
-            font-family: 'Segoe UI', Arial, sans-serif;
-            color: #fff;
-            /* Use the final gradient background from styles.css */
-            background: linear-gradient(to bottom, #000022 0%, #0a0a2a 50%, #1a1a4a 100%);
-        }
-
-        #stars {
-            position: fixed;
-            top: 0;
-            left: 0;
-            width: 100%;
-            height: 100%;
-            z-index: 0;
-            pointer-events: none;
-        }
-
-        #dashboard {
-            position: fixed;
-            top: 0;
-            left: 0;
-            width: 100%;
-            height: 75px;
-            /* Must match height in styles.css */
-            background-color: #333;
-            /* Must match background in styles.css */
-            z-index: 1000;
-            /* Must match z-index in styles.css */
-            box-sizing: border-box;
-            /* Added from main styles for consistency */
-            display: flex;
-            align-items: center;
-        }
-
-        #container {
-            position: fixed;
-            top: 0;
-            left: 0;
-            width: 100%;
-            height: 100%;
-            margin-top: 60px;
-            /* Account for fixed dashboard height */
-            z-index: 1;
-            background: transparent;
-        }
-
-        #projection {
-            display: none;
-        }
-
-        .info-panel-btn {
-            width: 48px;
-            flex: 1 1 0;
-            min-height: 0;
-            max-height: 64px;
-            font-size: 2rem;
-            border-radius: 12px;
-            border: none;
-            background: #fff;
-            color: #000000;
-            margin: 0;
-            box-shadow: 0 2px 8px rgba(0, 0, 0, 0.2);
-            transition: background 0.2s, transform 0.2s;
-            cursor: pointer;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-        }
-
-        .info-panel-btn:last-child {
-            margin-bottom: 0;
-        }
-
-        .info-panel-btn:hover {
-            background: #444;
-            transform: scale(1.08);
-        }
-
-        .info-panel-buttons {
-            height: calc(100% - 60px);
-            /* Adjust if your header/footer is a different height */
-            display: flex;
-            flex-direction: column;
-            justify-content: space-between;
-            align-items: center;
-        }
-
-        .info-panel-page {
-            padding: 10px;
-            line-height: 1.6;
-        }
-
-        .info-panel-page h3 {
-            margin: 0 0 10px 0;
-            color: black;
-            font-size: 1.2em;
-        }
-
-        .info-panel-page p {
-            margin: 0 0 15px 0;
-            color: #ccc;
-            font-size: 0.9em;
-        }
-
-        .info-panel-page div {
-            margin: 5px 0;
-            color: black;
-        }
-
-        .info-panel-page button {
-            background: #007acc;
-            color: #fff;
-            border: none;
-            padding: 8px 16px;
-            border-radius: 4px;
-            cursor: pointer;
-            margin: 5px 0;
-        }
-
-        .info-panel-page button:hover {
-            background: #005a9e;
-        }
-
-        .info-panel-page label {
-            color: #fff;
-            display: block;
-            margin: 8px 0;
-            cursor: pointer;
-        }
-
-        .info-panel-page input[type="checkbox"] {
-            margin-right: 8px;
-        }
-
-        /* End Critical FOUC Prevention CSS */
-    </style>
 
     <!-- Webpack will inject CSS <link> and JS <script> tags automatically -->
     <link rel="icon" href="favicon.ico">
@@ -173,55 +33,26 @@
     </div>
     <div id="container">
     </div>
-    <div id="tileInfoPanel" class="tile-info-panel hidden" style="position:fixed; overflow:visible;">
+    <div id="tileInfoPanel" class="tile-info-panel hidden">
         <div class="tile-info-header">
             <strong id="tileInfoTitle">Tile Information</strong>
             <button id="closeInfoPanel" class="close-info-panel">×</button>
         </div>
         <div class="tile-info-content">
-            <div class="info-panel-page" id="info-panel-page-1">
-                <h3>👤 Population</h3>
-                <p>View population statistics, demographics, and family information for this tile.</p>
-                <div>Current Population: <strong>0</strong></div>
-                <div>Families: <strong>0</strong></div>
-                <div>Birth Rate: <strong>0%</strong></div>
-            </div>
-            <div class="info-panel-page" id="info-panel-page-2" style="display:none;">
-                <h3>🏛️ buildings</h3>
-                <p>Manage buildings on this tile.</p>
-                <div>Villages: <strong>0</strong></div>
-                <div>Available Housing Slots: <strong>0</strong></div>
-                <button>Build New Village</button>
-            </div>
-            <div class="info-panel-page" id="info-panel-page-3" style="display:none;">
-                <h3>🌾 Resources</h3>
-                <p>View and manage tile resources and production.</p>
-                <div>Food Production: <strong>0</strong></div>
-                <div>Available Resources: <strong>None</strong></div>
-            </div>
-            <div class="info-panel-page" id="info-panel-page-4" style="display:none;">
-                <h3>⚔️ Military</h3>
-                <p>Military units and defense information.</p>
-                <div>Defense Rating: <strong>0</strong></div>
-                <div>Military Units: <strong>0</strong></div>
-            </div>
-            <div class="info-panel-page" id="info-panel-page-5" style="display:none;">
-                <h3>💰 Economy</h3>
-                <p>Economic information and trade data.</p>
-                <div>Wealth Level: <strong>Poor</strong></div>
-                <div>Trade Routes: <strong>0</strong></div>
-            </div>
-            <div class="info-panel-page" id="info-panel-page-6" style="display:none;">
+            <div class="info-panel-page" id="info-panel-page-1"><!-- Dynamic: Population --></div>
+            <div class="info-panel-page hidden" id="info-panel-page-2"><!-- Dynamic: Buildings --></div>
+            <div class="info-panel-page hidden" id="info-panel-page-3"><h3>🌾 Resources</h3><p>Coming soon...</p></div>
+            <div class="info-panel-page hidden" id="info-panel-page-4"><h3>⚔️ Military</h3><p>Coming soon...</p></div>
+            <div class="info-panel-page hidden" id="info-panel-page-5"><h3>💰 Economy</h3><p>Coming soon...</p></div>
+            <div class="info-panel-page hidden" id="info-panel-page-6">
                 <h3>⚙️ Settings</h3>
-                <p>Tile-specific settings and configuration.</p>
-                <label><input type="checkbox" id="auto-manage-population" name="auto-manage-population"> Auto-manage
-                    population</label><br>
-                <label><input type="checkbox" id="enable-trade" name="enable-trade"> Enable trade</label><br>
-                <button>Reset Tile</button>
+                <label><input type="checkbox" id="auto-manage-population"> Auto-manage population</label>
+                <label><input type="checkbox" id="enable-trade"> Enable trade</label>
+                <button id="reset-tile-btn">Reset Tile</button>
             </div>
         </div>
-        <div class="info-panel-buttons" style="position:absolute; top:50px; right:-55px; height:calc(100% - 50px);">
-            <button class="info-panel-btn" id="info-btn-1">👤</button>
+        <div class="info-panel-buttons">
+            <button class="info-panel-btn active" id="info-btn-1">👤</button>
             <button class="info-panel-btn" id="info-btn-2">🏛️</button>
             <button class="info-panel-btn" id="info-btn-3">🌾</button>
             <button class="info-panel-btn" id="info-btn-4">⚔️</button>
@@ -233,62 +64,41 @@
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
     <script>
         // Info panel tab/page switching logic
-        window.addEventListener('load', function () {
-            const pageIds = [
-                'info-panel-page-1',
-                'info-panel-page-2',
-                'info-panel-page-3',
-                'info-panel-page-4',
-                'info-panel-page-5',
-                'info-panel-page-6'
-            ];
+        (function() {
+            const PAGES = 6;
+            const CLOSE_DEBOUNCE = 300;
 
+            function switchPage(pageNum) {
+                // Debounce close action
+                if (window.__tileSelectorJustClosed && Date.now() - window.__tileSelectorJustClosed < CLOSE_DEBOUNCE) return;
 
-            for (let i = 1; i <= 6; i++) {
-                const btn = document.getElementById('info-btn-' + i);
-                if (!btn) continue;
+                const panel = document.getElementById('tileInfoPanel');
+                if (!panel) return;
 
-                btn.addEventListener('click', function (e) {
-                    e.preventDefault();
-                    e.stopPropagation();
+                // Show panel
+                panel.classList.remove('hidden');
+                panel.style.cssText = 'opacity:1;transform:translateY(0);pointer-events:auto;display:flex;';
 
-                    // Remove hidden class from info panel to make it visible
-                    const infoPanel = document.getElementById('tileInfoPanel');
-                    if (infoPanel) {
-                        // If the panel was just closed, ignore immediate re-open (avoid race with close handler)
-                        try {
-                            if (window.__tileSelectorJustClosed && (Date.now() - window.__tileSelectorJustClosed) < 300) {
-                                return;
-                            }
-                        } catch (e) { }
-                        infoPanel.classList.remove('hidden');
-                        // Force visibility in case hidden class has strong CSS rules
-                        infoPanel.style.opacity = '1';
-                        infoPanel.style.transform = 'translateY(0)';
-                        infoPanel.style.pointerEvents = 'auto';
-                        infoPanel.style.display = 'block';
-                    }
-
-                    // Switch pages
-                    pageIds.forEach((pid, idx) => {
-                        const page = document.getElementById(pid);
-                        if (page) {
-                            const shouldShow = (idx === i - 1);
-                            page.style.display = shouldShow ? 'block' : 'none';
-                        } else {
-                        }
-                    });
-
-                    // Add visual feedback to show which button is active
-                    document.querySelectorAll('.info-panel-btn').forEach(b => {
-                        b.style.backgroundColor = '#fff';
-                        b.style.color = '#000000';
-                    });
-                    btn.style.backgroundColor = '#007acc';
-                    btn.style.color = '#ffffff';
-                });
+                // Switch pages using CSS classes
+                for (let i = 1; i <= PAGES; i++) {
+                    const page = document.getElementById('info-panel-page-' + i);
+                    const btn = document.getElementById('info-btn-' + i);
+                    if (page) page.classList.toggle('hidden', i !== pageNum);
+                    if (btn) btn.classList.toggle('active', i === pageNum);
+                }
             }
-        });
+
+            document.addEventListener('DOMContentLoaded', function() {
+                for (let i = 1; i <= PAGES; i++) {
+                    const btn = document.getElementById('info-btn-' + i);
+                    if (btn) btn.addEventListener('click', function(e) {
+                        e.preventDefault();
+                        e.stopPropagation();
+                        switchPage(i);
+                    });
+                }
+            });
+        })();
     </script>
     <!-- ref:include analytics -->
     <!-- endref -->

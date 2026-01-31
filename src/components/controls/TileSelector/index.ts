@@ -128,15 +128,17 @@ class TileSelector {
         this.stopRefresh();
         this.updatePanel(tile);
 
-        // Show panel
+        // Show panel and reset to page 1
         this.tileInfoPanel.classList.remove('hidden');
-        this.tileInfoPanel.style.display = 'block';
+        this.tileInfoPanel.style.cssText = 'opacity:1;transform:translateY(0);pointer-events:auto;display:flex;';
 
-        // Ensure page1 is active
-        const page1 = this.tileInfoPanel.querySelector('#info-panel-page-1') as HTMLElement | null;
-        const page2 = this.tileInfoPanel.querySelector('#info-panel-page-2') as HTMLElement | null;
-        if (page1) page1.style.display = '';
-        if (page2) page2.style.display = 'none';
+        // Ensure page1 is active using CSS classes
+        this.tileInfoPanel.querySelectorAll('.info-panel-page').forEach((page, idx) => {
+            page.classList.toggle('hidden', idx !== 0);
+        });
+        this.tileInfoPanel.querySelectorAll('.info-panel-btn').forEach((btn, idx) => {
+            btn.classList.toggle('active', idx === 0);
+        });
 
         // Start periodic refresh
         this.infoRefreshTileId = tile.id;
