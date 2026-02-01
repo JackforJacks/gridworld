@@ -6,6 +6,11 @@ import { CalendarService, CalendarDate, FamilyRow, PersonRow, PeopleMap } from '
 /** Batch size for population set updates */
 const BATCH_SIZE = 500;
 
+/** Check if sex value represents male (handles various data formats from Postgres/Redis) */
+function checkIsMale(sex: boolean | string | number | null | undefined): boolean {
+    return sex === true || sex === 'true' || sex === 1 || sex === 't' || sex === 'M';
+}
+
 /**
  * Get current date from calendar service
  */
@@ -72,24 +77,59 @@ export async function populateFertileFamilies(
 /**
  * Populate eligible matchmaking sets based on loaded people
  * Optimized with batched processing
+ * 
+ * Only adds people who are:
+ * - NOT married (not husband/wife in any family)
+ * - In eligible age range (males 16-45, females 16-33)
+ * - Have a valid tile_id
  */
 export async function populateEligibleSets(
     people: PersonRow[],
-    calendarService?: CalendarService
+    calendarService?: CalendarService,
+    families?: FamilyRow[]
 ): Promise<void> {
     try {
         const PopulationState = require('../../populationState').default;
+        const { calculateAge } = require('../../../utils/ageCalculation');
         const currentDate = getCurrentDate(calendarService);
+
+        // Build set of married person IDs (husband_id and wife_id from all families)
+        const marriedPersonIds = new Set<number>();
+        if (families) {
+            for (const f of families) {
+                if (f.husband_id !== null) marriedPersonIds.add(f.husband_id);
+                if (f.wife_id !== null) marriedPersonIds.add(f.wife_id);
+            }
+        }
+
+        // Filter eligible people first
+        const eligiblePeople = people.filter(p => {
+            // Must have valid tile_id
+            if (p.tile_id === null) return false;
+            
+            // Must not be married
+            if (marriedPersonIds.has(p.id)) return false;
+            
+            // Must have valid birth date
+            if (!p.date_of_birth) return false;
+            
+            // Calculate age and check eligibility range
+            const age = calculateAge(p.date_of_birth, currentDate.year, currentDate.month, currentDate.day);
+            const isMale = checkIsMale(p.sex);
+            const maxAge = isMale ? 45 : 33;
+            
+            return age >= 16 && age <= maxAge;
+        });
 
         // Process in batches with Promise.all for parallelism
         let processed = 0;
-        for (let i = 0; i < people.length; i += BATCH_SIZE) {
-            const batch = people.slice(i, i + BATCH_SIZE);
+        for (let i = 0; i < eligiblePeople.length; i += BATCH_SIZE) {
+            const batch = eligiblePeople.slice(i, i + BATCH_SIZE);
             await Promise.all(batch.map(async p => {
                 try {
                     await PopulationState.addEligiblePerson(
                         p.id,
-                        p.sex === true,
+                        checkIsMale(p.sex),
                         p.tile_id
                     );
                     processed++;
@@ -100,7 +140,7 @@ export async function populateEligibleSets(
         }
 
         if (processed > 0) {
-            console.log(`💑 Populated ${processed} eligible people for matchmaking`);
+            console.log(`💑 Populated ${processed} eligible people for matchmaking (filtered from ${people.length} total)`);
         }
     } catch (e: unknown) {
         const errMsg = e instanceof Error ? e.message : String(e);

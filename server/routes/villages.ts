@@ -1,5 +1,4 @@
 import express, { Router } from 'express';
-import pool from '../config/database';
 import * as villageSeeder from '../services/villageSeeder';
 import StateManager from '../services/stateManager';
 import { logError, ErrorSeverity } from '../utils/errorHandler';
@@ -12,6 +11,7 @@ import {
     TileIdParamSchema,
     VillageIdParamSchema
 } from '../schemas';
+import idAllocator from '../services/idAllocator';
 
 const router: Router = express.Router();
 
@@ -59,22 +59,11 @@ async function getVillagesFromRedis(filterTileId: string | number | null = null)
 // GET /api/villages - Get all villages
 router.get('/', async (req, res) => {
     try {
-        const redisVillages = await getVillagesFromRedis();
-        if (redisVillages) {
-            return res.json({ villages: redisVillages });
+        if (!storage.isAvailable()) {
+            return res.status(503).json({ error: 'Storage not available' });
         }
-
-        // Fallback to Postgres if Redis unavailable
-        const { rows } = await pool.query(`
-            SELECT v.*, t.center_x, t.center_y, t.terrain_type, t.biome,
-                   tl.land_type, tl.cleared,
-                   jsonb_array_length(v.housing_slots) as occupied_slots
-            FROM villages v
-            JOIN tiles t ON v.tile_id = t.id
-                LEFT JOIN tiles_lands tl ON v.tile_id = tl.tile_id AND v.land_chunk_index = tl.chunk_index
-            ORDER BY v.id
-        `);
-        res.json({ villages: rows });
+        const redisVillages = await getVillagesFromRedis();
+        return res.json({ villages: redisVillages || [] });
     } catch (err: unknown) {
         console.error('Error fetching villages:', err);
         res.status(500).json({ error: 'Failed to fetch villages' });
@@ -85,56 +74,60 @@ router.get('/', async (req, res) => {
 router.get('/tile/:tileId', validateParams(TileIdParamSchema), async (req, res) => {
     const { tileId } = req.params;
     try {
-        const redisVillages = await getVillagesFromRedis(tileId);
-        if (redisVillages) {
-            return res.json({ villages: redisVillages });
+        if (!storage.isAvailable()) {
+            return res.status(503).json({ error: 'Storage not available' });
         }
-
-        // Fallback to Postgres if Redis unavailable
-        const { rows } = await pool.query(`
-            SELECT v.*, tl.land_type, tl.cleared,
-                   jsonb_array_length(v.housing_slots) as occupied_slots
-            FROM villages v
-                LEFT JOIN tiles_lands tl ON v.tile_id = tl.tile_id AND v.land_chunk_index = tl.chunk_index
-            WHERE v.tile_id = $1
-            ORDER BY v.land_chunk_index
-        `, [tileId]);
-        res.json({ villages: rows });
+        const redisVillages = await getVillagesFromRedis(tileId);
+        return res.json({ villages: redisVillages || [] });
     } catch (err: unknown) {
         console.error('Error fetching villages for tile:', err);
         res.status(500).json({ error: 'Failed to fetch villages for tile' });
     }
 });
 
-// POST /api/villages - Create a new village
+// POST /api/villages - Create a new village (Redis-only)
 router.post('/', validateBody(CreateVillageSchema), async (req, res) => {
     const { tile_id, land_chunk_index, name } = req.body;
     try {
-        // Check if the land chunk is cleared and available (no need to check village_id)
-        const { rows: landCheck } = await pool.query(`
-            SELECT * FROM tiles_lands 
-            WHERE tile_id = $1 AND chunk_index = $2 AND land_type = 'cleared'
-        `, [tile_id, land_chunk_index]);
-        if (landCheck.length === 0) {
+        if (!storage.isAvailable()) {
+            return res.status(503).json({ error: 'Storage not available' });
+        }
+
+        // Check if the land chunk is cleared and available from Redis
+        const landsJson = await storage.hget('tile:lands', tile_id.toString());
+        if (!landsJson) {
+            return res.status(400).json({ error: 'Tile lands data not found' });
+        }
+        const lands = JSON.parse(landsJson);
+        const land = Array.isArray(lands) ? lands.find((l: any) => l.chunk_index === land_chunk_index) : null;
+        if (!land || land.land_type !== 'cleared') {
             return res.status(400).json({ error: 'Land chunk is not available for a village' });
         }
+
         // Check if a village already exists at this location
-        const { rows: existingVillage } = await pool.query(
-            'SELECT * FROM villages WHERE tile_id = $1 AND land_chunk_index = $2',
-            [tile_id, land_chunk_index]
+        const existingVillages = await StateManager.getAllVillages();
+        const existingVillage = existingVillages.find(
+            (v: any) => v.tile_id === tile_id && v.land_chunk_index === land_chunk_index
         );
-        if (existingVillage.length > 0) {
+        if (existingVillage) {
             return res.status(400).json({ error: 'A village already exists at this location' });
         }
+
         // Create the village with fixed capacity 1000
-        const housingSlots = JSON.stringify([]);
-        const housingCapacity = 1000;
-        const { rows } = await pool.query(`
-            INSERT INTO villages (tile_id, land_chunk_index, name, housing_slots, housing_capacity)
-            VALUES ($1, $2, $3, $4, $5)
-            RETURNING *
-        `, [tile_id, land_chunk_index, name, housingSlots, housingCapacity]);
-        const village = rows[0];
+        const villageId = await idAllocator.getNextVillageId();
+        const village = {
+            id: villageId,
+            tile_id,
+            land_chunk_index,
+            name: name || `Village ${villageId}`,
+            housing_slots: [],
+            housing_capacity: 1000,
+            food_stores: 10000,
+            created_at: new Date().toISOString(),
+            updated_at: new Date().toISOString()
+        };
+
+        await storage.hset('village', villageId.toString(), JSON.stringify(village));
         res.json({ village });
     } catch (err: unknown) {
         console.error('Error creating village:', err);
@@ -172,21 +165,23 @@ router.post('/seed-tile/:tileId', validateParams(TileIdParamSchema), async (req,
     }
 });
 
-// PUT /api/villages/:id/assign-family - Assign a family to a village
+// PUT /api/villages/:id/assign-family - Assign a family to a village (Redis-only)
 router.put('/:id/assign-family', validateParams(VillageIdParamSchema), validateBody(AssignFamilySchema), async (req, res) => {
     const { id } = req.params;
     const { family_id } = req.body;
     try {
-        // Get current village
-        const { rows: villageRows } = await pool.query(
-            'SELECT * FROM villages WHERE id = $1',
-            [id]
-        );
-        if (villageRows.length === 0) {
+        if (!storage.isAvailable()) {
+            return res.status(503).json({ error: 'Storage not available' });
+        }
+
+        // Get current village from Redis
+        const villageJson = await storage.hget('village', id);
+        if (!villageJson) {
             return res.status(404).json({ error: 'Village not found' });
         }
-        const village = villageRows[0];
+        const village = JSON.parse(villageJson);
         const currentSlots = village.housing_slots || [];
+        
         // Check if village is full using the capacity column
         const capacity = village.housing_capacity || 100;
         if (currentSlots.length >= capacity) {
@@ -196,33 +191,35 @@ router.put('/:id/assign-family', validateParams(VillageIdParamSchema), validateB
         if (currentSlots.includes(family_id)) {
             return res.status(400).json({ error: 'Family already assigned to this village' });
         }
+        
         // Add family to housing slots
-        const updatedSlots = [...currentSlots, family_id];
-        const { rows } = await pool.query(`
-            UPDATE villages 
-            SET housing_slots = $1, updated_at = CURRENT_TIMESTAMP
-            WHERE id = $2
-            RETURNING *
-        `, [JSON.stringify(updatedSlots), id]);
-        res.json({ village: rows[0] });
+        village.housing_slots = [...currentSlots, family_id];
+        village.updated_at = new Date().toISOString();
+        
+        await storage.hset('village', id, JSON.stringify(village));
+        res.json({ village });
     } catch (err: unknown) {
         console.error('Error assigning family to village:', err);
         res.status(500).json({ error: 'Failed to assign family to village' });
     }
 });
 
-// DELETE /api/villages/:id - Delete a village
+// DELETE /api/villages/:id - Delete a village (Redis-only)
 router.delete('/:id', validateParams(VillageIdParamSchema), async (req, res) => {
     const { id } = req.params;
     try {
-        // Just delete the village, do not update tiles_lands
-        const { rowCount } = await pool.query(
-            'DELETE FROM villages WHERE id = $1',
-            [id]
-        );
-        if (rowCount === 0) {
+        if (!storage.isAvailable()) {
+            return res.status(503).json({ error: 'Storage not available' });
+        }
+
+        // Check if village exists
+        const villageJson = await storage.hget('village', id);
+        if (!villageJson) {
             return res.status(404).json({ error: 'Village not found' });
         }
+        
+        // Delete the village from Redis
+        await storage.hdel('village', id);
         res.json({ success: true, message: 'Village deleted successfully' });
     } catch (err: unknown) {
         console.error('Error deleting village:', err);

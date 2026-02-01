@@ -1,5 +1,5 @@
 // Diagnostic: inspect duplicate memberships across village sets
-const storage = require('../server/services/storage');
+import storage from '../server/services/storage';
 
 async function inspect() {
     try {

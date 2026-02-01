@@ -9,7 +9,7 @@
         "node_modules/",
         "*.test.ts"
     ],
-    "exec": "tsx server/index.ts",
+    "exec": "cross-env NODE_OPTIONS='--max-old-space-size=8192' tsx server/index.ts",
     "env": {
         "NODE_ENV": "development"
     },

@@ -71,9 +71,9 @@ async function seedIfNoVillages() {
         // Now seed villages using storage-first approach since people are in Redis
         const result = await seedVillagesStorageFirst();
 
-        // DEBUG: Check Redis state after seeding
-        const debugPersonCount = Object.keys(await storage.hgetall('person') || {}).length;
-        const debugVillageCount = Object.keys(await storage.hgetall('village') || {}).length;
+        // DEBUG: Check Redis state after seeding (use HLEN to avoid loading all data)
+        const debugPersonCount = await storage.hlen('person') || 0;
+        const debugVillageCount = await storage.hlen('village') || 0;
         console.log(`[DEBUG] After seeding - person hash: ${debugPersonCount}, village hash: ${debugVillageCount}`);
 
         console.log(`[villageSeeder] Seeded ${result.created} initial villages`);

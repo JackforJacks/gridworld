@@ -9,9 +9,13 @@
 
 import storage from '../storage';
 import pool from '../../config/database';
-import { acquireLock, releaseLock } from '../../utils/lock';
-import { logError, ErrorSeverity, safeExecute } from '../../utils/errorHandler';
+import { withSyncLock } from '../population/lockUtils';
 import { StoredPerson, PipelineResult, getErrorMessage } from './types';
+
+/** Check if sex value represents male (handles various data formats from Postgres/Redis) */
+function checkIsMale(sex: boolean | string | number | null | undefined): boolean {
+    return sex === true || sex === 'true' || sex === 1 || sex === 't' || sex === 'M';
+}
 
 /**
  * Full sync from Postgres: refill Redis person hash and village sets
@@ -19,20 +23,11 @@ import { StoredPerson, PipelineResult, getErrorMessage } from './types';
 export async function syncFromPostgres() {
     if (!storage.isAvailable()) return { skipped: true, reason: 'storage not available' };
 
-    const lockKey = 'population:sync:lock';
-    const token = await acquireLock(lockKey, 30000, 5000);
-    if (!token) {
-        console.warn('[PopulationSync] syncFromPostgres skipped: could not acquire sync lock');
-        return { skipped: true, reason: 'could not acquire sync lock' };
-    }
-
-    try {
+    return withSyncLock(async () => {
         console.log('[PopulationSync] Syncing population from Postgres to storage...');
 
         // Clear existing data
         try {
-            console.log('[PopulationSync.syncFromPostgres] About to delete person hash!');
-            console.trace('[PopulationSync.syncFromPostgres] Stack trace:');
             await storage.del('person');
 
             const stream = storage.scanStream({ match: 'village:*:*:people', count: 1000 });
@@ -73,11 +68,12 @@ export async function syncFromPostgres() {
                     family_id: p.family_id
                 };
                 pipeline.hset('person', id, JSON.stringify(personObj));
-                if (p.tile_id && p.residency !== null && p.residency !== undefined) {
+                // Only add to village sets if residency is a valid village ID (> 0)
+                if (p.tile_id && p.residency !== null && p.residency !== undefined && p.residency !== 0) {
                     pipeline.sadd(`village:${p.tile_id}:${p.residency}:people`, id);
                 }
-                if (p.sex === true) maleCount++;
-                else if (p.sex === false) femaleCount++;
+                if (checkIsMale(p.sex)) maleCount++;
+                else femaleCount++;
             }
             await pipeline.exec();
             total += res.rows.length;
@@ -91,16 +87,75 @@ export async function syncFromPostgres() {
 
         console.log(`[PopulationSync] Synced ${total} people to storage (${maleCount} male, ${femaleCount} female)`);
         return { success: true, total, male: maleCount, female: femaleCount };
-    } catch (err: unknown) {
-        console.error('[PopulationSync] syncFromPostgres failed:', getErrorMessage(err));
-        throw err;
-    } finally {
-        await safeExecute(
-            () => releaseLock(lockKey, token),
-            'PopulationSync:ReleaseLock:SyncFromPostgres',
-            null,
-            ErrorSeverity.LOW
-        );
+    });
+}
+
+/**
+ * Internal: Rebuild village membership sets (assumes lock is already held)
+ * Uses HSCAN for memory efficiency with large populations
+ */
+async function rebuildVillageMembershipsInternal(): Promise<{ success: true; total: number; withResidency: number } | { success: false; error: string }> {
+    try {
+        // Clear all village:*:*:people sets
+        const stream = storage.scanStream({ match: 'village:*:*:people', count: 1000 });
+        const keysToDelete: string[] = [];
+        for await (const ks of stream) {
+            for (const k of ks as string[]) keysToDelete.push(k);
+        }
+        if (keysToDelete.length > 0) {
+            // Delete in batches to avoid command too long
+            const BATCH_SIZE = 1000;
+            for (let i = 0; i < keysToDelete.length; i += BATCH_SIZE) {
+                const batch = keysToDelete.slice(i, i + BATCH_SIZE);
+                await storage.del(...batch);
+            }
+        }
+
+        // Use HSCAN to iterate over persons without loading all into memory
+        let total = 0;
+        let withResidency = 0;
+        let pipeline = storage.pipeline();
+        let pipelineCount = 0;
+        const PIPELINE_BATCH = 1000;
+
+        const personStream = storage.hscanStream('person', { count: 500 });
+        
+        for await (const result of personStream) {
+            // HSCAN returns [field, value, field, value, ...]
+            const entries = result as string[];
+            for (let i = 0; i < entries.length; i += 2) {
+                const id = entries[i];
+                const json = entries[i + 1];
+                if (!json) continue;
+                
+                total++;
+                let person: StoredPerson | null = null;
+                try { person = JSON.parse(json) as StoredPerson; } catch { continue; }
+                
+                // Only add to village sets if residency is a valid village ID (> 0)
+                if (person && person.tile_id && person.residency !== null && person.residency !== undefined && person.residency !== 0) {
+                    pipeline.sadd(`village:${person.tile_id}:${person.residency}:people`, id);
+                    withResidency++;
+                    pipelineCount++;
+                    
+                    // Execute pipeline in batches
+                    if (pipelineCount >= PIPELINE_BATCH) {
+                        await pipeline.exec();
+                        pipeline = storage.pipeline();
+                        pipelineCount = 0;
+                    }
+                }
+            }
+        }
+        
+        // Execute remaining pipeline commands
+        if (pipelineCount > 0) {
+            await pipeline.exec();
+        }
+        
+        return { success: true, total, withResidency };
+    } catch (e: unknown) {
+        return { success: false, error: getErrorMessage(e) };
     }
 }
 
@@ -110,53 +165,9 @@ export async function syncFromPostgres() {
 export async function rebuildVillageMemberships() {
     if (!storage.isAvailable()) return { skipped: true, reason: 'storage not available' };
 
-    const lockKey = 'population:sync:lock';
-    const token = await acquireLock(lockKey, 30000, 5000);
-    if (!token) {
-        // Lock contention is expected - silently skip
-        return { skipped: true, reason: 'could not acquire sync lock' };
-    }
-
-    try {
-        // Clear all village:*:*:people sets
-        const stream = storage.scanStream({ match: 'village:*:*:people', count: 1000 });
-        const keysToDelete: string[] = [];
-        for await (const ks of stream) {
-            for (const k of ks as string[]) keysToDelete.push(k);
-        }
-        if (keysToDelete.length > 0) await storage.del(...keysToDelete);
-
-        // Read all persons and repopulate sets
-        const peopleObj = await storage.hgetall('person');
-        const ids = Object.keys(peopleObj || {});
-        const pipeline = storage.pipeline();
-        let total = 0;
-
-        for (const id of ids) {
-            const json = peopleObj[id];
-            if (!json) continue;
-            let person: StoredPerson | null = null;
-            try { person = JSON.parse(json) as StoredPerson; } catch { continue; }
-            if (person && person.tile_id && person.residency !== null && person.residency !== undefined) {
-                pipeline.sadd(`village:${person.tile_id}:${person.residency}:people`, id);
-                total++;
-            }
-        }
-        await pipeline.exec();
-        return { success: true, total };
-    } catch (e: unknown) {
-        console.warn('[PopulationSync] rebuildVillageMemberships failed:', getErrorMessage(e));
-        return { success: false, error: getErrorMessage(e) };
-    } finally {
-        if (token) {
-            await safeExecute(
-                () => releaseLock(lockKey, token),
-                'PopulationSync:ReleaseLock:RebuildVillageMemberships',
-                null,
-                ErrorSeverity.LOW
-            );
-        }
-    }
+    return withSyncLock(async () => {
+        return rebuildVillageMembershipsInternal();
+    });
 }
 
 /**
@@ -165,14 +176,7 @@ export async function rebuildVillageMemberships() {
 export async function repairIfNeeded() {
     if (!storage.isAvailable()) return { skipped: true, reason: 'storage not available' };
 
-    const lockKey = 'population:sync:lock';
-    const token = await acquireLock(lockKey, 30000, 5000);
-    if (!token) {
-        // Lock contention is expected - silently skip
-        return { skipped: true, reason: 'could not acquire sync lock' };
-    }
-
-    try {
+    return withSyncLock(async () => {
         let totalScards = 0;
         const stream = storage.scanStream({ match: 'village:*:*:people', count: 100 });
         const keys: string[] = [];
@@ -197,22 +201,10 @@ export async function repairIfNeeded() {
         const totalUnique = personSet.size;
 
         if (totalScards > totalUnique) {
-            // Silently repair - this is expected occasionally with concurrent operations
-            const res = await rebuildVillageMemberships();
+            // Repair using the internal function (we already hold the lock)
+            const res = await rebuildVillageMembershipsInternal();
             return { repaired: true, before: { totalScards, totalUnique }, result: res };
         }
         return { ok: true };
-    } catch (e: unknown) {
-        // Silently ignore repair failures - they'll be retried
-        return { ok: false, error: getErrorMessage(e) };
-    } finally {
-        if (token) {
-            await safeExecute(
-                () => releaseLock(lockKey, token),
-                'PopulationSync:ReleaseLock:RepairIfNeeded',
-                null,
-                ErrorSeverity.LOW
-            );
-        }
-    }
+    });
 }

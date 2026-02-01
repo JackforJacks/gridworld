@@ -1,21 +1,70 @@
-// CalendarState DB Model/Helper
-import pool from '../config/database';
+// CalendarState Model - Redis-first with Postgres for persistence only
+import storage from '../services/storage';
 
-const TABLE = 'calendar_state';
+const REDIS_KEY = 'calendar:state';
 
-export async function getCalendarState() {
-    const res = await pool.query(`SELECT * FROM ${TABLE} LIMIT 1`);
-    return res.rows[0];
+interface CalendarStateData {
+    year: number;
+    month: number;
+    day: number;
+    last_updated?: string;
 }
 
-export async function setCalendarState({ year, month, day }) {
-    // Upsert: update if exists, else insert
-    const res = await pool.query(
-        `INSERT INTO ${TABLE} (current_year, current_month, current_day, last_updated)
-         VALUES ($1, $2, $3, NOW())
-         ON CONFLICT (id) DO UPDATE SET current_year = $1, current_month = $2, current_day = $3, last_updated = NOW()
-         RETURNING *`,
-        [year, month, day]
-    );
-    return res.rows[0];
+/**
+ * Get calendar state from Redis
+ * Returns null if not found (caller should use defaults)
+ */
+export async function getCalendarState(): Promise<CalendarStateData | null> {
+    if (!storage.isAvailable()) {
+        console.warn('[CalendarState] Redis not available, returning null');
+        return null;
+    }
+
+    try {
+        const data = await storage.get(REDIS_KEY);
+        if (!data) return null;
+        
+        const parsed = JSON.parse(data);
+        return {
+            year: parsed.current_year ?? parsed.year,
+            month: parsed.current_month ?? parsed.month,
+            day: parsed.current_day ?? parsed.day,
+            last_updated: parsed.last_updated
+        };
+    } catch (err) {
+        console.error('[CalendarState] Failed to get calendar state:', err);
+        return null;
+    }
 }
+
+/**
+ * Save calendar state to Redis
+ */
+export async function setCalendarState({ year, month, day }: CalendarStateData): Promise<CalendarStateData | null> {
+    if (!storage.isAvailable()) {
+        console.warn('[CalendarState] Redis not available, state not saved');
+        return null;
+    }
+
+    try {
+        const state = {
+            current_year: year,
+            current_month: month,
+            current_day: day,
+            last_updated: new Date().toISOString()
+        };
+        
+        await storage.set(REDIS_KEY, JSON.stringify(state));
+        
+        return {
+            year,
+            month,
+            day,
+            last_updated: state.last_updated
+        };
+    } catch (err) {
+        console.error('[CalendarState] Failed to save calendar state:', err);
+        return null;
+    }
+}
+

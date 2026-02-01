@@ -5,7 +5,7 @@ import * as deps from '../dependencyContainer';
 import { Pool } from 'pg';
 import { CalendarService } from './types';
 import { getCurrentDate } from './helpers';
-import { createFamily } from './familyCreation';
+import { createFamily, CreateFamilyResult } from './familyCreation';
 import { startPregnancy } from './pregnancy';
 
 /** Chance to start immediate pregnancy after marriage */
@@ -86,6 +86,8 @@ async function processTileMatchmaking(
         }
 
         let newFamiliesCount = 0;
+        let contentionCount = 0;
+        const MAX_CONTENTION = 3; // Stop after 3 lock contentions to avoid hammering
 
         for (let i = 0; i < pairs; i++) {
             const result = await attemptOnePairing(
@@ -101,8 +103,15 @@ async function processTileMatchmaking(
             );
             if (result === 'success') {
                 newFamiliesCount++;
+                contentionCount = 0; // Reset on success
             } else if (result === 'no_candidates') {
                 break;
+            } else if (result === 'contention') {
+                contentionCount++;
+                if (contentionCount >= MAX_CONTENTION) {
+                    // Too much contention on this tile, try again next tick
+                    break;
+                }
             }
         }
 
@@ -124,7 +133,7 @@ async function attemptOnePairing(
     year: number,
     month: number,
     day: number
-): Promise<'success' | 'failed' | 'no_candidates'> {
+): Promise<'success' | 'failed' | 'no_candidates' | 'contention'> {
     try {
         await storage.incr('stats:matchmaking:attempts');
     } catch { /* ignore */ }
@@ -154,17 +163,43 @@ async function attemptOnePairing(
     await storage.srem(femaleSetKey, femaleId);
 
     try {
-        const newFamily = await createFamily(pool, parseInt(maleId), parseInt(femaleId), parseInt(tileId));
+        const result = await createFamily(pool, parseInt(maleId), parseInt(femaleId), parseInt(tileId));
 
-        if (!newFamily) {
-            // Return candidates to sets
-            await returnToEligibleSets(maleSetKey, maleId, femaleSetKey, femaleId);
-            return 'failed';
+        if (!result.family) {
+            // Handle based on failure reason
+            switch (result.failureReason) {
+                case 'lock_contention':
+                    // Don't return to sets - break the contention cycle
+                    // They'll be re-added on next tick if still eligible
+                    return 'contention';
+                
+                case 'already_in_family':
+                    // Someone got married in a race - don't return
+                    return 'failed';
+                
+                case 'person_not_found':
+                    // Person died or was removed - don't return
+                    return 'failed';
+                
+                case 'invalid_sex':
+                    // Data corruption - don't return
+                    console.warn(`[attemptOnePairing] Invalid sex for ${maleId} or ${femaleId}`);
+                    return 'failed';
+                
+                case 'restarting':
+                    // World restart - don't return, will be rebuilt
+                    return 'failed';
+                
+                default:
+                    // Unknown error - return to sets
+                    await returnToEligibleSets(maleSetKey, maleId, femaleSetKey, femaleId);
+                    return 'failed';
+            }
         }
 
         // Add to fertile set
         try {
-            await PopulationState.addFertileFamily(newFamily.id, parseInt(tileId));
+            await PopulationState.addFertileFamily(result.family.id, parseInt(tileId));
         } catch (e) {
             console.warn('[attemptOnePairing] Failed to add to fertile set:', (e as Error)?.message);
         }
@@ -172,7 +207,7 @@ async function attemptOnePairing(
         // Chance to start immediate pregnancy
         if (Math.random() < IMMEDIATE_PREGNANCY_CHANCE) {
             try {
-                await startPregnancy(pool, calendarService, newFamily.id);
+                await startPregnancy(pool, calendarService, result.family.id);
             } catch { /* ignore */ }
         }
 

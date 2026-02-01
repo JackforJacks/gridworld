@@ -47,12 +47,12 @@ export function formatDate(year: number, month: number, day: number): string {
     return `${year}-${String(month).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
 }
 
-/** Check if person is male (handles various data formats) */
+/** Check if person is male (handles various data formats from Postgres/Redis) */
 export function isMale(sex: boolean | string | number): boolean {
-    return sex === true || sex === 'true' || sex === 1;
+    return sex === true || sex === 'true' || sex === 1 || sex === 't' || sex === 'M';
 }
 
-/** Check if person is female (handles various data formats) */
+/** Check if person is female (handles various data formats from Postgres/Redis) */
 export function isFemale(sex: boolean | string | number): boolean {
-    return sex === false || sex === 'false' || sex === 0;
+    return sex === false || sex === 'false' || sex === 0 || sex === 'f' || sex === 'F';
 }

@@ -92,8 +92,8 @@ async function addPersonToRedis(person) {
     try {
         const id = person.id.toString();
         await storage.hset('person', id, JSON.stringify(person));
-        // Index in village set if residency and tile_id present
-        if (person.tile_id && person.residency !== null && person.residency !== undefined) {
+        // Index in village set if residency is a valid village ID (> 0)
+        if (person.tile_id && person.residency !== null && person.residency !== undefined && person.residency !== 0) {
             await storage.sadd(`village:${person.tile_id}:${person.residency}:people`, id);
         }
         return true;

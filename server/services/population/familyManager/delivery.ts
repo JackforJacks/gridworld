@@ -48,12 +48,20 @@ async function deliverBabyInternal(
     const { getRandomSex } = deps.getCalculator();
     const babySex = getRandomSex();
 
-    // Get father's residency
-    let babyResidency = 0;
+    // Get father's residency - baby inherits father's village assignment
+    let babyResidency: number | null = null;
     if (family.husband_id) {
         const father = await PopulationState.getPerson(family.husband_id) as PersonRecord | null;
-        if (father) {
-            babyResidency = father.residency || 0;
+        if (father && father.residency !== null && father.residency !== undefined && father.residency !== 0) {
+            babyResidency = father.residency;
+        }
+    }
+    
+    // If father has no residency, try mother's residency
+    if (babyResidency === null && family.wife_id) {
+        const mother = await PopulationState.getPerson(family.wife_id) as PersonRecord | null;
+        if (mother && mother.residency !== null && mother.residency !== undefined && mother.residency !== 0) {
+            babyResidency = mother.residency;
         }
     }
 
@@ -129,13 +137,27 @@ export async function deliverBaby(
 }
 
 /**
- * Gets all families on a specific tile - from Redis
+ * Gets all families on a specific tile - from Redis using HSCAN streaming
  */
 export async function getFamiliesOnTile(pool: Pool | null, tileId: number): Promise<FamilyRecord[]> {
     try {
-        const PopulationState = deps.getPopulationState();
-        const allFamilies = await PopulationState.getAllFamilies() as FamilyRecord[];
-        return allFamilies.filter(f => f.tile_id === tileId);
+        const families: FamilyRecord[] = [];
+        const familyStream = storage.hscanStream('family', { count: 500 });
+        
+        for await (const result of familyStream) {
+            const entries = result as string[];
+            for (let i = 0; i < entries.length; i += 2) {
+                const json = entries[i + 1];
+                if (!json) continue;
+                try {
+                    const f = JSON.parse(json) as FamilyRecord;
+                    if (f.tile_id === tileId) {
+                        families.push(f);
+                    }
+                } catch { /* ignore */ }
+            }
+        }
+        return families;
     } catch (error) {
         console.error('Error getting families on tile:', error);
         return [];
@@ -197,22 +219,33 @@ export async function processDeliveries(
     }
 }
 
-/** Get families ready for delivery */
+/** Get families ready for delivery using HSCAN streaming for memory efficiency */
 async function getReadyFamilies(
     PopulationState: any,
     currentDateValue: number,
     retryCandidateIds: number[]
 ): Promise<FamilyRecord[]> {
-    let readyFamilies: FamilyRecord[] = [];
+    const readyFamilies: FamilyRecord[] = [];
 
-    // Always scan all families to find those ready for delivery
-    // The pregnant families with past delivery dates need to be processed
-    const allFamilies = await PopulationState.getAllFamilies() as FamilyRecord[];
-    readyFamilies = allFamilies.filter(f => {
-        if (!f.pregnancy || !f.delivery_date) return false;
-        const deliveryValue = new Date(f.delivery_date.split('T')[0]).getTime();
-        return deliveryValue <= currentDateValue;
-    });
+    // Use HSCAN streaming to avoid loading all families into memory
+    const familyStream = storage.hscanStream('family', { count: 500 });
+    
+    for await (const result of familyStream) {
+        const entries = result as string[];
+        for (let i = 0; i < entries.length; i += 2) {
+            const json = entries[i + 1];
+            if (!json) continue;
+            
+            try {
+                const f = JSON.parse(json) as FamilyRecord;
+                if (!f.pregnancy || !f.delivery_date) continue;
+                const deliveryValue = new Date(f.delivery_date.split('T')[0]).getTime();
+                if (deliveryValue <= currentDateValue) {
+                    readyFamilies.push(f);
+                }
+            } catch { /* ignore parse errors */ }
+        }
+    }
 
     // Add retry candidates
     for (const id of retryCandidateIds) {
@@ -371,16 +404,29 @@ async function processOneDelivery(
 }
 
 /**
- * Gets family statistics - from Redis
+ * Gets family statistics - from Redis using HSCAN streaming
  */
 export async function getFamilyStats(pool: Pool | null): Promise<FamilyStats> {
     try {
-        const PopulationState = deps.getPopulationState();
-        const allFamilies = await PopulationState.getAllFamilies() as FamilyRecord[];
+        let totalFamilies = 0;
+        let pregnantFamilies = 0;
+        let totalChildren = 0;
 
-        const totalFamilies = allFamilies.length;
-        const pregnantFamilies = allFamilies.filter(f => f.pregnancy).length;
-        const totalChildren = allFamilies.reduce((sum, f) => sum + (f.children_ids?.length || 0), 0);
+        const familyStream = storage.hscanStream('family', { count: 500 });
+        for await (const result of familyStream) {
+            const entries = result as string[];
+            for (let i = 0; i < entries.length; i += 2) {
+                const json = entries[i + 1];
+                if (!json) continue;
+                try {
+                    const f = JSON.parse(json) as FamilyRecord;
+                    totalFamilies++;
+                    if (f.pregnancy) pregnantFamilies++;
+                    totalChildren += f.children_ids?.length || 0;
+                } catch { /* ignore */ }
+            }
+        }
+
         const avgChildrenPerFamily = totalFamilies > 0 ? totalChildren / totalFamilies : 0;
 
         return { totalFamilies, pregnantFamilies, avgChildrenPerFamily };

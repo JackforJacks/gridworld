@@ -1,4 +1,3 @@
-import pool from '../config/database';
 import storage from './storage';
 import serverConfig from '../config/server';
 import StateManager from './stateManager';
@@ -301,8 +300,22 @@ class VillageService {
                 // (handles cases where `person.residency` wasn't set during storage-first seeding)
                 if (population === 0) {
                     try {
-                        const people = await StateManager.getAllPeople();
-                        population = people.filter((p: any) => parseInt(p.tile_id) === parseInt(village.tile_id)).length;
+                        // Use HSCAN streaming to avoid loading all people into memory
+                        const tileId = parseInt(village.tile_id as string);
+                        let count = 0;
+                        const peopleStream = storage.hscanStream('person', { count: 500 });
+                        for await (const result of peopleStream) {
+                            const entries = result as string[];
+                            for (let i = 0; i < entries.length; i += 2) {
+                                const json = entries[i + 1];
+                                if (!json) continue;
+                                try {
+                                    const p = JSON.parse(json);
+                                    if (parseInt(p.tile_id) === tileId) count++;
+                                } catch { /* skip */ }
+                            }
+                        }
+                        population = count;
                         if (serverConfig.verboseLogs) console.log(`[villageService] Fallback population count for village ${village.id} (tile ${village.tile_id}) => ${population}`);
                     } catch (e: unknown) {
                         const error = e instanceof Error ? e : new Error(String(e));

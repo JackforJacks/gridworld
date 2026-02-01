@@ -2,6 +2,7 @@
 import config from '../../config/server';
 import storage from '../storage';
 import * as deps from './dependencyContainer';
+import { checkIsMale } from '../populationState/types';
 import {
     DAYS_PER_YEAR,
     SENESCENCE_START_AGE,
@@ -217,8 +218,6 @@ async function applySenescence(
             console.warn('Using fallback calendar date for senescence due to error:', e);
         }
 
-        // Get all people from Redis
-        const allPeople = await PopulationState.getAllPeople();
         const calculator = deps.getCalculator() as CalculatorModule | null;
         if (!calculator) {
             console.warn('⚠️ Calculator not available - cannot process senescence');
@@ -226,56 +225,88 @@ async function applySenescence(
         }
 
         const deaths: number[] = [];
+        const deathFamilyIds: number[] = []; // Family IDs of deceased persons
 
-        for (const person of allPeople) {
-            if (!person.date_of_birth) continue;
+        // Use HSCAN streaming to avoid loading all people into memory
+        const personStream = storage.hscanStream('person', { count: 500 });
+        
+        for await (const result of personStream) {
+            const entries = result as string[];
+            for (let i = 0; i < entries.length; i += 2) {
+                const json = entries[i + 1];
+                if (!json) continue;
+                
+                let person: PersonData | null = null;
+                try { person = JSON.parse(json) as PersonData; } catch { continue; }
+                if (!person || !person.date_of_birth) continue;
 
-            const age = calculator.calculateAge(person.date_of_birth, currentYear, currentMonth, currentDay);
-            if (age >= SENESCENCE_START_AGE) {
-                // Annual death probability: starts at base rate, increases per year after senescence
-                const annualDeathChance = BASE_ANNUAL_DEATH_CHANCE + (age - SENESCENCE_START_AGE) * DEATH_CHANCE_INCREASE_PER_YEAR;
-                // Daily probability
-                const dailyDeathChance = annualDeathChance / DAYS_PER_YEAR;
-                // Probability of dying at least once in N days: 1 - (1 - p)^N
-                const multiDayDeathChance = 1 - Math.pow(1 - dailyDeathChance, daysAdvanced);
-                if (Math.random() < multiDayDeathChance) {
-                    deaths.push(person.id);
+                const age = calculator.calculateAge(person.date_of_birth, currentYear, currentMonth, currentDay);
+                if (age >= SENESCENCE_START_AGE) {
+                    // Annual death probability: starts at base rate, increases per year after senescence
+                    const annualDeathChance = BASE_ANNUAL_DEATH_CHANCE + (age - SENESCENCE_START_AGE) * DEATH_CHANCE_INCREASE_PER_YEAR;
+                    // Daily probability
+                    const dailyDeathChance = annualDeathChance / DAYS_PER_YEAR;
+                    // Probability of dying at least once in N days: 1 - (1 - p)^N
+                    const multiDayDeathChance = 1 - Math.pow(1 - dailyDeathChance, daysAdvanced);
+                    if (Math.random() < multiDayDeathChance) {
+                        deaths.push(person.id);
+                        // Track family_id for efficient lookup later
+                        if (person.family_id) {
+                            deathFamilyIds.push(person.family_id);
+                        }
+                    }
                 }
             }
         }
 
         if (deaths.length > 0) {
-            // Handle family cleanup using optimized batch operations
+            // Handle family cleanup - only fetch families of deceased persons
             const deathIds = new Set<number>(deaths);
-            const allFamilies = await PopulationState.getAllFamilies();
-
+            const uniqueFamilyIds = [...new Set(deathFamilyIds)];
+            
             // Collect all person IDs that need family_id cleared and families to delete
             const personIdsToClear: number[] = [];
             const familyIdsToDelete: number[] = [];
             // Track surviving spouses to re-add to eligible pool
             const survivingSpouses: { personId: number; isMale: boolean; tileId: number }[] = [];
 
-            for (const family of allFamilies) {
-                // Check if husband or wife died
-                const husbandDied = family.husband_id !== null && deathIds.has(family.husband_id);
-                const wifeDied = family.wife_id !== null && deathIds.has(family.wife_id);
+            // Batch fetch only the families we need (not ALL families)
+            if (uniqueFamilyIds.length > 0) {
+                const pipeline = storage.pipeline();
+                for (const fid of uniqueFamilyIds) {
+                    pipeline.hget('family', fid.toString());
+                }
+                const familyResults = await pipeline.exec() as [Error | null, string | null][];
+                
+                for (let i = 0; i < familyResults.length; i++) {
+                    const [err, familyJson] = familyResults[i];
+                    if (err || !familyJson) continue;
+                    
+                    let family: FamilyData | null = null;
+                    try { family = JSON.parse(familyJson) as FamilyData; } catch { continue; }
+                    if (!family) continue;
 
-                if (husbandDied || wifeDied) {
-                    // Track surviving spouse for re-adding to eligible pool
-                    if (husbandDied && !wifeDied && family.wife_id !== null) {
-                        survivingSpouses.push({ personId: family.wife_id, isMale: false, tileId: family.tile_id });
-                    }
-                    if (wifeDied && !husbandDied && family.husband_id !== null) {
-                        survivingSpouses.push({ personId: family.husband_id, isMale: true, tileId: family.tile_id });
-                    }
+                    // Check if husband or wife died
+                    const husbandDied = family.husband_id !== null && deathIds.has(family.husband_id);
+                    const wifeDied = family.wife_id !== null && deathIds.has(family.wife_id);
 
-                    // Collect all family members for batch update
-                    if (family.husband_id !== null) personIdsToClear.push(family.husband_id);
-                    if (family.wife_id !== null) personIdsToClear.push(family.wife_id);
-                    for (const childId of (family.children_ids || [])) {
-                        personIdsToClear.push(childId);
+                    if (husbandDied || wifeDied) {
+                        // Track surviving spouse for re-adding to eligible pool
+                        if (husbandDied && !wifeDied && family.wife_id !== null) {
+                            survivingSpouses.push({ personId: family.wife_id, isMale: false, tileId: family.tile_id });
+                        }
+                        if (wifeDied && !husbandDied && family.husband_id !== null) {
+                            survivingSpouses.push({ personId: family.husband_id, isMale: true, tileId: family.tile_id });
+                        }
+
+                        // Collect all family members for batch update
+                        if (family.husband_id !== null) personIdsToClear.push(family.husband_id);
+                        if (family.wife_id !== null) personIdsToClear.push(family.wife_id);
+                        for (const childId of (family.children_ids || [])) {
+                            personIdsToClear.push(childId);
+                        }
+                        familyIdsToDelete.push(family.id);
                     }
-                    familyIdsToDelete.push(family.id);
                 }
             }
 
@@ -399,11 +430,20 @@ async function processDailyFamilyEvents(
             }
         }
 
-        // Release children who reach adulthood (age >= 16) from their family - update Redis
-        const allPeople = await PopulationState.getAllPeople();
+        // Release children who reach adulthood (age >= 16) from their family - use HSCAN streaming
         let releasedAdults = 0;
-        for (const person of allPeople) {
-            if (person.family_id && person.date_of_birth) {
+        const personStream = storage.hscanStream('person', { count: 500 });
+        
+        for await (const result of personStream) {
+            const entries = result as string[];
+            for (let i = 0; i < entries.length; i += 2) {
+                const json = entries[i + 1];
+                if (!json) continue;
+                
+                let person: PersonData | null = null;
+                try { person = JSON.parse(json) as PersonData; } catch { continue; }
+                if (!person || !person.family_id || !person.date_of_birth) continue;
+
                 const age = calculator.calculateAge(person.date_of_birth, currentDate.year, currentDate.month, currentDate.day);
                 if (age >= 16) {
                     // Check if this person is a child (not the husband or wife) - use Redis
@@ -417,10 +457,10 @@ async function processDailyFamilyEvents(
 
                             // Add newly released adult to eligible matchmaking sets
                             try {
-                                // Support both string ('M'/'F') and boolean (true=male) formats
-                                const sexVal = person.sex as string | boolean;
-                                const isMale = sexVal === 'M' || sexVal === true;
-                                if (person.tile_id !== null) {
+                                // Use shared helper that handles all formats
+                                const isMale = checkIsMale(person.sex);
+                                const maxAge = isMale ? 45 : 33;
+                                if (person.tile_id !== null && age >= 16 && age <= maxAge) {
                                     await PopulationState.addEligiblePerson(person.id, isMale, person.tile_id);
                                 }
                             } catch (e: unknown) {

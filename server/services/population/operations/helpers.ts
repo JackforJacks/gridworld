@@ -7,6 +7,9 @@ import {
     PopulationStateModule
 } from './types';
 
+// Re-export centralized age calculation for backward compatibility
+export { getAge } from '../../../utils/ageCalculation';
+
 /** Helper function to format population data with proper typing */
 export function formatPopData(populations: TilePopulations | null = null): FormattedPopulationData {
     const pops = populations ?? {};
@@ -37,14 +40,4 @@ export async function loadPopData(_pool: Pool): Promise<TilePopulations> {
         console.error('Error loading population data:', error);
         return {};
     }
-}
-
-/** Calculate age from birth date */
-export function getAge(birthDate: string, currentYear: number, currentMonth: number, currentDay: number): number {
-    const [year, month, day] = birthDate.split('-').map(Number);
-    let age = currentYear - year;
-    if (currentMonth < month || (currentMonth === month && currentDay < day)) {
-        age--;
-    }
-    return age;
 }

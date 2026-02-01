@@ -27,9 +27,10 @@ export async function fetchPeople(villageLookup: Map<string, number>): Promise<P
         const sex = p.sex === true || p.sex === 'true' || p.sex === 1 ? true : false;
 
         // Compute village_id from tile_id and residency (land_chunk_index)
+        // Only assign villageKey for valid residency (> 0), residency 0 means unassigned
         let villageId: number | null = null;
         let villageKey: string | null = null;
-        if (p.tile_id !== null && p.residency !== null) {
+        if (p.tile_id !== null && p.residency !== null && p.residency !== 0) {
             const key = `${p.tile_id}:${p.residency}`;
             villageId = villageLookup.get(key) ?? null;
             villageKey = key;

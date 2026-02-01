@@ -85,7 +85,7 @@ export async function loadFromDatabase(context: LoadContext): Promise<LoadResult
     // These are now batched internally with Promise.all
     await Promise.all([
         populateFertileFamilies(familiesResult.families, peopleResult.people, context.calendarService),
-        populateEligibleSets(peopleResult.people, context.calendarService)
+        populateEligibleSets(peopleResult.people, context.calendarService, familiesResult.families)
     ]);
 
     const setsDuration = ((Date.now() - setsStart) / 1000).toFixed(2);

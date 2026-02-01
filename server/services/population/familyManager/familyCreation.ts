@@ -7,6 +7,13 @@ import { withLock, coupleLockConfig } from '../lockUtils';
 import { FamilyRecord, PersonRecord } from './types';
 import { isMale, isFemale } from './helpers';
 
+/** Result of family creation attempt */
+export interface CreateFamilyResult {
+    family: FamilyRecord | null;
+    /** Why the creation failed (if family is null) */
+    failureReason?: 'lock_contention' | 'person_not_found' | 'already_in_family' | 'invalid_sex' | 'error' | 'restarting';
+}
+
 /**
  * Creates a new family unit - storage-only, batched to Postgres on Save
  */
@@ -15,12 +22,12 @@ export async function createFamily(
     husbandId: number,
     wifeId: number,
     tileId: number
-): Promise<FamilyRecord | null> {
+): Promise<CreateFamilyResult> {
     const PopulationState = deps.getPopulationState();
 
     // Skip if restart is in progress
     if (PopulationState.isRestarting) {
-        return null;
+        return { family: null, failureReason: 'restarting' };
     }
 
     const lockConfig = coupleLockConfig(husbandId, wifeId);
@@ -30,18 +37,17 @@ export async function createFamily(
         const wife = await PopulationState.getPerson(wifeId) as PersonRecord | null;
 
         if (!husband || !wife) {
-            return null;
+            return { family: null, failureReason: 'person_not_found' as const };
         }
 
         // Ensure neither already belongs to a family
         if (husband.family_id || wife.family_id) {
-            // Silently skip - this can happen due to race conditions in matchmaking
-            return null;
+            return { family: null, failureReason: 'already_in_family' as const };
         }
 
         // Validate sex
         if (!isMale(husband.sex) || !isFemale(wife.sex)) {
-            throw new Error('Husband must be male and wife must be female');
+            return { family: null, failureReason: 'invalid_sex' as const };
         }
 
         // Get a real Postgres ID for the new family
@@ -76,24 +82,24 @@ export async function createFamily(
             console.warn('[createFamily] removeEligiblePerson failed for wife:', (e as Error)?.message);
         }
 
-        return family;
+        return { family, failureReason: undefined };
     });
 
     if (!result.acquired) {
+        // Lock contention - don't log every occurrence, just track stats
         await safeExecute(
             () => storage.incr('stats:matchmaking:contention'),
             'FamilyManager:MatchmakingContention',
             null,
             ErrorSeverity.LOW
         );
-        console.warn(`[createFamily] Could not acquire couple lock for ${husbandId} & ${wifeId} - skipping`);
-        return null;
+        return { family: null, failureReason: 'lock_contention' };
     }
 
     if (result.error) {
         console.error('Error creating family:', result.error);
-        throw result.error;
+        return { family: null, failureReason: 'error' };
     }
 
-    return result.result ?? null;
+    return result.result ?? { family: null, failureReason: 'error' };
 }

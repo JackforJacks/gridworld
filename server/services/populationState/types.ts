@@ -83,3 +83,11 @@ export function getErrorMessage(err: unknown): string {
     }
     return String(err);
 }
+
+/** 
+ * Check if sex value represents male (handles various data formats from Postgres/Redis)
+ * Supports: true, 'true', 1, 't', 'M'
+ */
+export function checkIsMale(sex: boolean | string | number | null | undefined): boolean {
+    return sex === true || sex === 'true' || sex === 1 || sex === 't' || sex === 'M';
+}

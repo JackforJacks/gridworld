@@ -1,4 +1,4 @@
-const PeopleState = require('../server/services/populationState/PeopleState');
+import PeopleState from '../server/services/populationState/PeopleState';
 
 async function runRepair() {
     try {

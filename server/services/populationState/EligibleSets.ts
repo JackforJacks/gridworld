@@ -9,6 +9,11 @@
 import storage from '../storage';
 import { StoredPerson, getErrorMessage } from './types';
 
+/** Check if sex value represents male (handles various data formats) */
+function checkIsMale(sex: boolean | string | number | null | undefined): boolean {
+    return sex === true || sex === 'true' || sex === 1 || sex === 't' || sex === 'M';
+}
+
 /**
  * Add person to eligible set (for matchmaking)
  */
@@ -53,7 +58,7 @@ export async function removeEligiblePerson(
         if (json) {
             const person = JSON.parse(json) as StoredPerson;
             if (person.tile_id) {
-                const setKey = person.sex === true
+                const setKey = checkIsMale(person.sex)
                     ? `eligible:males:tile:${person.tile_id}`
                     : `eligible:females:tile:${person.tile_id}`;
                 await storage.srem(setKey, personIdStr);

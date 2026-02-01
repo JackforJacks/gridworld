@@ -517,9 +517,9 @@ class CalendarService extends EventEmitter {
         let dbState = await getCalendarState();
         if (dbState) {
             this.currentDate = {
-                year: dbState.current_year,
-                month: dbState.current_month,
-                day: dbState.current_day
+                year: dbState.year,
+                month: dbState.month,
+                day: dbState.day
             };
         } else {
             // If DB is empty, initialize with config and persist to DB

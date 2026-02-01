@@ -148,3 +148,38 @@ export async function withFamilyLock<T>(
 
     return result.result as T;
 }
+
+/**
+ * Creates a lock config for sync operations (syncFromPostgres, rebuildVillageMemberships, etc.)
+ */
+export function syncLockConfig(options?: Partial<LockConfig>): LockConfig {
+    return {
+        key: options?.key ?? 'population:sync:lock',
+        ttlMs: options?.ttlMs ?? 30000,
+        acquireTimeoutMs: options?.acquireTimeoutMs ?? 5000,
+        retryDelayMs: options?.retryDelayMs ?? 100,
+        contentionStatsKey: options?.contentionStatsKey
+    };
+}
+
+/**
+ * Wrapper for sync operations that require exclusive lock
+ * Returns a result object with skipped=true if lock couldn't be acquired
+ */
+export async function withSyncLock<T>(
+    operation: () => Promise<T>,
+    options?: Partial<LockConfig>
+): Promise<{ skipped: true; reason: string } | T> {
+    const config = syncLockConfig(options);
+    const result = await withLock(config, operation);
+
+    if (!result.acquired) {
+        return { skipped: true, reason: 'could not acquire sync lock' };
+    }
+
+    if (result.error) {
+        throw result.error;
+    }
+
+    return result.result as T;
+}

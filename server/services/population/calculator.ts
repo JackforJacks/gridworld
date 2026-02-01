@@ -1,4 +1,6 @@
 // server/services/population/calculator.js
+// Re-export centralized age calculation
+import { calculateAge as centralizedCalculateAge } from '../../utils/ageCalculation';
 
 function getRandomSex() {
     return Math.random() < 0.51;
@@ -21,26 +23,8 @@ function getRandomAge() {
     }
 }
 
-function calculateAge(birthDate, currentYear, currentMonth, currentDay) {
-    let birthYear, birthMonth, birthDay;
-
-    if (typeof birthDate === 'string') {
-        [birthYear, birthMonth, birthDay] = birthDate.split('-').map(Number);
-    } else if (birthDate instanceof Date) {
-        birthYear = birthDate.getFullYear();
-        birthMonth = birthDate.getMonth() + 1; // JS months are 0-indexed
-        birthDay = birthDate.getDate();
-    } else {
-        console.error('Invalid birthDate format:', birthDate);
-        return 0;
-    }
-
-    let age = currentYear - birthYear;
-    if (currentMonth < birthMonth || (currentMonth === birthMonth && currentDay < birthDay)) {
-        age--;
-    }
-    return Math.max(0, age);
-}
+// Delegate to centralized age calculation utility
+const calculateAge = centralizedCalculateAge;
 
 function getRandomBirthDate(currentYear, currentMonth, currentDay, age) {
     let birthYear = currentYear - age;

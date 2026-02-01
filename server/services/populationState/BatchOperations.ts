@@ -18,6 +18,11 @@ import {
     getErrorMessage
 } from './types';
 
+/** Check if sex value represents male (handles various data formats) */
+function checkIsMale(sex: boolean | string | number | null | undefined): boolean {
+    return sex === true || sex === 'true' || sex === 1 || sex === 't' || sex === 'M';
+}
+
 /**
  * Batch clear family_id for multiple persons
  */
@@ -94,11 +99,11 @@ export async function batchRemovePersons(personIds: number[], markDeleted: boole
             }
 
             removePipeline.hincrby('counts:global', 'total', -1);
-            if (person.sex === true) removePipeline.hincrby('counts:global', 'male', -1);
-            else if (person.sex === false) removePipeline.hincrby('counts:global', 'female', -1);
+            if (checkIsMale(person.sex)) removePipeline.hincrby('counts:global', 'male', -1);
+            else removePipeline.hincrby('counts:global', 'female', -1);
 
             if (person.tile_id) {
-                const sex = person.sex === true ? 'male' : 'female';
+                const sex = checkIsMale(person.sex) ? 'male' : 'female';
                 removePipeline.srem(`eligible:${sex}:${person.tile_id}`, personIdStr);
             }
 
@@ -149,18 +154,45 @@ export async function batchDeleteFamilies(familyIds: number[], markDeleted: bool
 
 /**
  * Batch add persons to Redis
+ * @param persons - Array of persons to add
+ * @param isNew - Whether these are new records (for pending inserts tracking)
+ * @param skipExistingCheck - If true, assumes persons don't exist yet (faster for initial seeding)
  */
-export async function batchAddPersons(persons: PersonInput[], isNew: boolean = false): Promise<number> {
+export async function batchAddPersons(persons: PersonInput[], isNew: boolean = false, skipExistingCheck: boolean = true): Promise<number> {
     if (!storage.isAvailable() || !persons || persons.length === 0) return 0;
     try {
+        // If we need to check existing state, fetch all current person data first
+        let existingPersons: Map<string, StoredPerson> = new Map();
+        if (!skipExistingCheck) {
+            const ids = persons.map(p => p.id?.toString()).filter(Boolean) as string[];
+            if (ids.length > 0) {
+                const pipeline = storage.pipeline();
+                for (const id of ids) {
+                    pipeline.hget('person', id);
+                }
+                const results = await pipeline.exec() as [Error | null, string | null][];
+                for (let i = 0; i < ids.length; i++) {
+                    const [err, json] = results[i];
+                    if (!err && json) {
+                        try {
+                            existingPersons.set(ids[i], JSON.parse(json) as StoredPerson);
+                        } catch { /* ignore parse error */ }
+                    }
+                }
+            }
+        }
+
         const pipeline = storage.pipeline();
         let maleCount = 0;
         let femaleCount = 0;
+        let newCount = 0;
 
         for (const person of persons) {
             if (!person || person.id === undefined || person.id === null) continue;
 
             const id = person.id.toString();
+            const existing = existingPersons.get(id);
+            
             const p: StoredPerson = {
                 id: person.id,
                 tile_id: person.tile_id ?? null,
@@ -174,19 +206,39 @@ export async function batchAddPersons(persons: PersonInput[], isNew: boolean = f
 
             pipeline.hset('person', id, JSON.stringify(p));
 
-            if (p.tile_id && p.residency !== null && p.residency !== undefined) {
+            // Handle village set membership
+            if (existing) {
+                // Remove from old set if residency changed
+                const oldTileId = existing.tile_id;
+                const oldResidency = existing.residency;
+                if (oldTileId && oldResidency !== null && oldResidency !== undefined && oldResidency !== 0) {
+                    if (oldTileId !== p.tile_id || oldResidency !== p.residency) {
+                        pipeline.srem(`village:${oldTileId}:${oldResidency}:people`, id);
+                    }
+                }
+            } else {
+                newCount++;
+            }
+
+            // Add to new set if residency is valid
+            if (p.tile_id && p.residency !== null && p.residency !== undefined && p.residency !== 0) {
                 pipeline.sadd(`village:${p.tile_id}:${p.residency}:people`, id);
             }
 
-            if (p.sex === true) maleCount++;
-            else if (p.sex === false) femaleCount++;
+            if (checkIsMale(p.sex)) maleCount++;
+            else femaleCount++;
 
             if (isNew) {
                 pipeline.sadd('pending:person:inserts', id);
             }
         }
 
-        pipeline.hincrby('counts:global', 'total', persons.length);
+        // Only increment counts for truly new persons
+        if (skipExistingCheck) {
+            pipeline.hincrby('counts:global', 'total', persons.length);
+        } else if (newCount > 0) {
+            pipeline.hincrby('counts:global', 'total', newCount);
+        }
         if (maleCount > 0) pipeline.hincrby('counts:global', 'male', maleCount);
         if (femaleCount > 0) pipeline.hincrby('counts:global', 'female', femaleCount);
 
@@ -228,10 +280,12 @@ export async function batchUpdateResidency(updates: ResidencyUpdate[]): Promise<
             writePipeline.hset('person', personId.toString(), JSON.stringify(person));
 
             if (oldResidency !== newResidency) {
-                if (oldTileId && oldResidency !== null && oldResidency !== undefined) {
+                // Only remove from old set if residency was a valid village ID (> 0)
+                if (oldTileId && oldResidency !== null && oldResidency !== undefined && oldResidency !== 0) {
                     writePipeline.srem(`village:${oldTileId}:${oldResidency}:people`, personId.toString());
                 }
-                if (oldTileId && newResidency !== null && newResidency !== undefined) {
+                // Only add to new set if residency is a valid village ID (> 0)
+                if (oldTileId && newResidency !== null && newResidency !== undefined && newResidency !== 0) {
                     writePipeline.sadd(`village:${oldTileId}:${newResidency}:people`, personId.toString());
                 }
             }
@@ -275,12 +329,13 @@ export async function reassignIds(mappings: IdMapping[]): Promise<void> {
 
             writePipeline.hdel('person', tempId.toString());
 
-            if (person.tile_id && person.residency !== null && person.residency !== undefined) {
+            // Only manage village sets for valid village IDs (> 0)
+            if (person.tile_id && person.residency !== null && person.residency !== undefined && person.residency !== 0) {
                 writePipeline.srem(`village:${person.tile_id}:${person.residency}:people`, tempId.toString());
                 writePipeline.sadd(`village:${person.tile_id}:${person.residency}:people`, newId.toString());
             }
 
-            const sex = person.sex === true ? 'male' : 'female';
+            const sex = checkIsMale(person.sex) ? 'male' : 'female';
             if (person.tile_id) {
                 writePipeline.srem(`eligible:${sex}:${person.tile_id}`, tempId.toString());
                 if (!person.family_id) {

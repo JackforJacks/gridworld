@@ -4,6 +4,7 @@ import { trackBirths, trackDeaths } from './PopStats';
 import config from '../../config/server';
 import storage from '../storage';
 import PopulationState from '../populationState';
+import { checkIsMale } from '../populationState/types';
 
 /**
  * Add people to a tile - storage-only (Postgres writes happen on Save)
@@ -57,10 +58,25 @@ async function addPeopleToTile(pool, tileId, count, currentYear, currentMonth, c
     // Batch add all persons
     await PopulationState.batchAddPersons(persons, true);
 
-    // Add eligible persons to matchmaking sets (still need to check age individually)
+    // Add eligible persons to matchmaking sets (only those in eligible age range)
     for (const personObj of persons) {
         try {
-            await PopulationState.addEligiblePerson(personObj.id, personObj.sex === true, personObj.tile_id);
+            // Calculate age from birthDate
+            const birthParts = personObj.date_of_birth.split('-').map(Number);
+            const birthYear = birthParts[0];
+            let personAge = currentYear - birthYear;
+            // Adjust for birthday not yet passed
+            if (currentMonth < birthParts[1] || (currentMonth === birthParts[1] && currentDay < birthParts[2])) {
+                personAge--;
+            }
+            
+            const isMale = checkIsMale(personObj.sex);
+            const maxAge = isMale ? 45 : 33;
+            
+            // Only add to eligible sets if age is in range and they're unmarried
+            if (personAge >= 16 && personAge <= maxAge && personObj.family_id === null) {
+                await PopulationState.addEligiblePerson(personObj.id, isMale, personObj.tile_id);
+            }
         } catch (e: unknown) {
             console.warn('[addPeopleToTile] failed to add eligible person:', e instanceof Error ? e.message : String(e));
         }
@@ -73,7 +89,7 @@ async function addPeopleToTile(pool, tileId, count, currentYear, currentMonth, c
 
 /**
  * Remove people from a tile - storage-only (Postgres deletes happen on Save)
- * Optimized: Uses batch operations for better Redis performance
+ * Optimized: Uses HSCAN streaming to avoid loading all people into memory
  * @param {Pool} pool - Database pool (used for queries only)
  * @param {number} tileId - Tile ID
  * @param {number} count - Number of people to remove
@@ -89,9 +105,25 @@ async function removePeopleFromTile(pool, tileId, count, populationServiceInstan
         return;
     }
 
-    // Get all people from Redis and filter by tile
-    const allPeople = await PopulationState.getAllPeople();
-    const tilePopulation = allPeople.filter(p => p.tile_id === tileId);
+    // Collect people on this tile using HSCAN streaming (memory efficient)
+    const tilePopulation: Array<{ id: number; tile_id: number }> = [];
+    const peopleStream = storage.hscanStream('person', { count: 500 });
+    
+    for await (const result of peopleStream) {
+        const entries = result as string[];
+        for (let i = 0; i < entries.length; i += 2) {
+            const json = entries[i + 1];
+            if (!json) continue;
+            try {
+                const p = JSON.parse(json) as { id: number; tile_id: number };
+                if (p.tile_id === tileId) {
+                    tilePopulation.push(p);
+                }
+            } catch { /* skip invalid */ }
+        }
+        // Early exit if we have enough candidates (we need at least count)
+        if (tilePopulation.length >= count * 2) break;
+    }
 
     // Randomly select people to remove
     const shuffled = tilePopulation.sort(() => Math.random() - 0.5);

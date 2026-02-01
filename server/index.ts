@@ -237,10 +237,10 @@ class GridWorldServer {
         try {
             console.log('\n🛑 Shutting down server...');
 
-            // DEBUG: Check person hash at shutdown start
+            // DEBUG: Check person hash at shutdown start (use hlen for efficiency)
             const _storage = await import('./services/storage');
-            const personCheck = await _storage.default.hgetall('person');
-            console.log(`[DEBUG] At shutdown start: person hash has ${personCheck ? Object.keys(personCheck).length : 0} entries`);
+            const personCount = await _storage.default.hlen('person');
+            console.log(`[DEBUG] At shutdown start: person hash has ${personCount} entries`);
 
             // Stop food update timer
             try {

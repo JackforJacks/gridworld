@@ -40,13 +40,13 @@ test('createFamily creates one family when called concurrently for the same coup
     await storage.hset('person', husband.id.toString(), JSON.stringify(husband));
     await storage.hset('person', wife.id.toString(), JSON.stringify(wife));
 
-    // Call createFamily concurrently
+    // Call createFamily concurrently - now returns { family, failureReason }
     const [res1, res2] = await Promise.all([
         familyManager.createFamily(null, 1, 2, 7),
         familyManager.createFamily(null, 1, 2, 7)
     ]);
 
-    const results = [res1, res2].filter(r => r !== null);
+    const results = [res1?.family, res2?.family].filter(r => r !== null);
     expect(results.length).toBe(1); // only one should succeed
 
     // Verify family stored and persons updated

@@ -217,27 +217,34 @@ async function ensureVillagesForPopulatedTiles(options: EnsureVillagesOptions = 
 }
 
 /**
- * Get all people grouped by tile_id
+ * Get all people grouped by tile_id using HSCAN streaming for memory efficiency
  */
 async function getPeopleGroupedByTile(): Promise<PeopleByTile> {
-    const peopleRaw = await storage.hgetall('person') || {};
     const byTile: PeopleByTile = {};
     let totalPeople = 0;
     let noTileId = 0;
 
-    for (const [id, json] of Object.entries(peopleRaw)) {
-        try {
-            const person = JSON.parse(json as string) as Person;
-            totalPeople++;
-            if (person.tile_id !== undefined && person.tile_id !== null) {
-                const tid = String(person.tile_id);
-                if (!byTile[tid]) byTile[tid] = [];
-                byTile[tid].push(person);
-            } else {
-                noTileId++;
+    const personStream = storage.hscanStream('person', { count: 500 });
+    
+    for await (const result of personStream) {
+        const entries = result as string[];
+        for (let i = 0; i < entries.length; i += 2) {
+            const json = entries[i + 1];
+            if (!json) continue;
+            
+            try {
+                const person = JSON.parse(json as string) as Person;
+                totalPeople++;
+                if (person.tile_id !== undefined && person.tile_id !== null) {
+                    const tid = String(person.tile_id);
+                    if (!byTile[tid]) byTile[tid] = [];
+                    byTile[tid].push(person);
+                } else {
+                    noTileId++;
+                }
+            } catch (e: unknown) {
+                // Skip invalid JSON
             }
-        } catch (e: unknown) {
-            // Skip invalid JSON
         }
     }
 
@@ -247,7 +254,6 @@ async function getPeopleGroupedByTile(): Promise<PeopleByTile> {
 
     return byTile;
 }
-
 /**
  * Get all villages grouped by tile_id
  */
@@ -332,10 +338,41 @@ async function assignResidencyToAllPeople(populatedTileIds: string[], allVillage
         villagesByTile[v.tile_id].push(v);
     }
 
+    // Build a set of all village set keys we'll be populating
+    const newSetKeys = new Set<string>();
+    for (const tileIdStr of populatedTileIds) {
+        const tileId = parseInt(tileIdStr);
+        const villages = villagesByTile[tileId] || [];
+        for (const v of villages) {
+            newSetKeys.add(`village:${tileId}:${v.land_chunk_index}:people`);
+        }
+    }
+
+    // First, remove all people from their CURRENT sets (based on person hash data)
+    // This ensures no stale memberships remain
+    const removePipeline = storage.pipeline();
+    for (const tileIdStr of populatedTileIds) {
+        const people = peopleByTile[tileIdStr] || [];
+        for (const person of people) {
+            // Remove from current set if they have a valid residency
+            if (person.tile_id && person.residency !== null && person.residency !== undefined && person.residency !== 0) {
+                removePipeline.srem(`village:${person.tile_id}:${person.residency}:people`, person.id.toString());
+            }
+        }
+    }
+    await removePipeline.exec();
+
+    // Now clear the target sets to ensure they're empty before we populate
+    const clearPipeline = storage.pipeline();
+    for (const key of newSetKeys) {
+        clearPipeline.del(key);
+    }
+    await clearPipeline.exec();
+
     let totalAssigned = 0;
     const personPipeline = storage.pipeline();
     const villagePipeline = storage.pipeline();
-    const membershipOps: MembershipOp[] = []; // Track membership set operations
+    const membershipPipeline = storage.pipeline();
 
     for (const tileIdStr of populatedTileIds) {
         const tileId = parseInt(tileIdStr);
@@ -364,7 +401,6 @@ async function assignResidencyToAllPeople(populatedTileIds: string[], allVillage
             const village = villages[villageIndex % villages.length];
 
             // Update person's residency
-            const oldResidency = person.residency;
             const newResidency = village.land_chunk_index;
             person.residency = newResidency;
             person.village_id = village.id;  // Critical: link person to village
@@ -375,11 +411,10 @@ async function assignResidencyToAllPeople(populatedTileIds: string[], allVillage
             // Queue person update
             personPipeline.hset('person', person.id.toString(), JSON.stringify(person));
 
-            // Queue membership set updates
-            if (oldResidency !== undefined && oldResidency !== null && oldResidency !== newResidency) {
-                membershipOps.push({ op: 'srem', key: `village:${tileId}:${oldResidency}:people`, id: person.id.toString() });
+            // Queue membership set add
+            if (newResidency !== 0) {
+                membershipPipeline.sadd(`village:${tileId}:${newResidency}:people`, person.id.toString());
             }
-            membershipOps.push({ op: 'sadd', key: `village:${tileId}:${newResidency}:people`, id: person.id.toString() });
 
             totalAssigned++;
             villageIndex++;
@@ -394,19 +429,7 @@ async function assignResidencyToAllPeople(populatedTileIds: string[], allVillage
     // Execute all updates
     await personPipeline.exec();
     await villagePipeline.exec();
-
-    // Execute membership operations
-    if (membershipOps.length > 0) {
-        const memberPipeline = storage.pipeline();
-        for (const op of membershipOps) {
-            if (op.op === 'srem') {
-                memberPipeline.srem(op.key, op.id);
-            } else {
-                memberPipeline.sadd(op.key, op.id);
-            }
-        }
-        await memberPipeline.exec();
-    }
+    await membershipPipeline.exec();
 
     return totalAssigned;
 }

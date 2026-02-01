@@ -19,6 +19,11 @@ import {
 } from './types';
 import { removeEligiblePerson } from './EligibleSets';
 
+/** Check if sex value represents male (handles various data formats) */
+function checkIsMale(sex: boolean | string | number | null | undefined): boolean {
+    return sex === true || sex === 'true' || sex === 1 || sex === 't' || sex === 'M';
+}
+
 /**
  * Get the next real Postgres ID for a new person
  */
@@ -47,6 +52,19 @@ export async function addPerson(person: PersonInput, isNew: boolean = false): Pr
     }
     try {
         const id = person.id.toString();
+        
+        // Check if person already exists - if so, handle residency change properly
+        const existing = await storage.hget('person', id);
+        let oldTileId: number | null = null;
+        let oldResidency: number | null = null;
+        if (existing) {
+            try {
+                const existingPerson = JSON.parse(existing) as StoredPerson;
+                oldTileId = existingPerson.tile_id;
+                oldResidency = existingPerson.residency;
+            } catch { /* ignore parse error */ }
+        }
+        
         const p = {
             id: person.id,
             tile_id: person.tile_id,
@@ -59,15 +77,28 @@ export async function addPerson(person: PersonInput, isNew: boolean = false): Pr
         };
         await storage.hset('person', id, JSON.stringify(p));
 
-        // Add to tile's village population set
-        if (p.tile_id && p.residency !== null && p.residency !== undefined) {
-            await storage.sadd(`village:${p.tile_id}:${p.residency}:people`, id);
+        // Handle village set membership atomically
+        const newTileId = p.tile_id;
+        const newResidency = p.residency;
+        
+        // Remove from old set if it existed and was different
+        if (oldTileId && oldResidency !== null && oldResidency !== undefined && oldResidency !== 0) {
+            if (oldTileId !== newTileId || oldResidency !== newResidency) {
+                await storage.srem(`village:${oldTileId}:${oldResidency}:people`, id);
+            }
+        }
+        
+        // Add to new set if residency is valid
+        if (newTileId && newResidency !== null && newResidency !== undefined && newResidency !== 0) {
+            await storage.sadd(`village:${newTileId}:${newResidency}:people`, id);
         }
 
-        // Update global counts
-        await storage.hincrby('counts:global', 'total', 1);
-        if (p.sex === true) await storage.hincrby('counts:global', 'male', 1);
-        else if (p.sex === false) await storage.hincrby('counts:global', 'female', 1);
+        // Update global counts (only if truly new)
+        if (!existing) {
+            await storage.hincrby('counts:global', 'total', 1);
+            if (checkIsMale(p.sex)) await storage.hincrby('counts:global', 'male', 1);
+            else await storage.hincrby('counts:global', 'female', 1);
+        }
 
         if (isNew) {
             await storage.sadd('pending:person:inserts', id);
@@ -96,8 +127,8 @@ export async function removePerson(personId: number, markDeleted: boolean = fals
 
         // Decrement global counts
         await storage.hincrby('counts:global', 'total', -1);
-        if (p.sex === true) await storage.hincrby('counts:global', 'male', -1);
-        else if (p.sex === false) await storage.hincrby('counts:global', 'female', -1);
+        if (checkIsMale(p.sex)) await storage.hincrby('counts:global', 'male', -1);
+        else await storage.hincrby('counts:global', 'female', -1);
 
         // Remove from eligible sets if present
         await removeEligiblePerson(personId);
@@ -145,12 +176,14 @@ export async function updatePerson(personId: number, updates: PersonUpdates): Pr
         // Handle tile/residency change: update village sets
         if ((updates.tile_id !== undefined && updates.tile_id !== oldTileId) ||
             (updates.residency !== undefined && updates.residency !== oldResidency)) {
-            if (oldTileId && oldResidency !== null && oldResidency !== undefined) {
+            // Only remove from old set if residency was a valid village ID (> 0)
+            if (oldTileId && oldResidency !== null && oldResidency !== undefined && oldResidency !== 0) {
                 await storage.srem(`village:${oldTileId}:${oldResidency}:people`, personId.toString());
             }
             const newTile = updates.tile_id !== undefined ? updates.tile_id : oldTileId;
             const newRes = updates.residency !== undefined ? updates.residency : oldResidency;
-            if (newTile && newRes !== null && newRes !== undefined) {
+            // Only add to new set if residency is a valid village ID (> 0)
+            if (newTile && newRes !== null && newRes !== undefined && newRes !== 0) {
                 await storage.sadd(`village:${newTile}:${newRes}:people`, personId.toString());
             }
         }
@@ -168,11 +201,47 @@ export async function updatePerson(personId: number, updates: PersonUpdates): Pr
 
 /**
  * Get all people from Redis
+ * WARNING: This loads all people into memory. For large populations, use streamAllPeople() instead.
  */
 export async function getAllPeople(): Promise<StoredPerson[]> {
     if (!storage.isAvailable()) return [];
     const data = await storage.hgetall('person');
     return Object.values(data).map((json) => JSON.parse(json as string) as StoredPerson);
+}
+
+/**
+ * Stream all people from Redis using HSCAN - memory efficient for large populations
+ * @param callback Called for each batch of people
+ * @param batchSize Number of records per HSCAN iteration (default 500)
+ */
+export async function streamAllPeople(
+    callback: (people: StoredPerson[]) => Promise<void>,
+    batchSize = 500
+): Promise<{ total: number }> {
+    if (!storage.isAvailable()) return { total: 0 };
+    
+    let total = 0;
+    const personStream = storage.hscanStream('person', { count: batchSize });
+    
+    for await (const result of personStream) {
+        const entries = result as string[];
+        const batch: StoredPerson[] = [];
+        
+        for (let i = 0; i < entries.length; i += 2) {
+            const json = entries[i + 1];
+            if (!json) continue;
+            try {
+                batch.push(JSON.parse(json) as StoredPerson);
+            } catch { /* ignore parse errors */ }
+        }
+        
+        if (batch.length > 0) {
+            total += batch.length;
+            await callback(batch);
+        }
+    }
+    
+    return { total };
 }
 
 /**

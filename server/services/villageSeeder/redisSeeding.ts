@@ -116,30 +116,31 @@ async function seedVillagesStorageFirst(): Promise<SeedVillagesResult> {
         let tilePopulations: TilePopulations = await PopulationState.getAllTilePopulations();
         let populatedTileIds: string[] = Object.keys(tilePopulations).filter((id: string) => tilePopulations[id] > 0);
 
-        // If no per-village sets found, try a best-effort fallback: group people by tile_id
+        // If no per-village sets found, try a best-effort fallback: group people by tile_id using HSCAN
         if (populatedTileIds.length === 0) {
             console.log('[villageSeeder] No populated tiles found via sets; falling back to grouping people by tile_id');
-            let allPeople: Person[] = await PopulationState.getAllPeople();
-            console.log('[villageSeeder] getAllPeople returned:', allPeople.length, 'people');
             const byTile: TilePopulations = {};
-            if (!allPeople || allPeople.length === 0) {
-                // Last-resort: read raw person hash directly from storage
-                console.log('[villageSeeder] Trying raw storage.hgetall(person)...');
-                try {
-                    const peopleRaw: Record<string, string> = await storage.hgetall('person') || {};
-                    console.log('[villageSeeder] Raw person hash has', Object.keys(peopleRaw).length, 'entries');
-                    allPeople = Object.values(peopleRaw).map((j: string): Person | null => {
-                        try { return JSON.parse(j) as Person; } catch (_: unknown) { return null; }
-                    }).filter((p): p is Person => p !== null);
-                } catch (e: unknown) {
-                    allPeople = [];
+            
+            // Use HSCAN streaming to avoid memory issues with large populations
+            const personStream = storage.hscanStream('person', { count: 500 });
+            let personCount = 0;
+            
+            for await (const result of personStream) {
+                const entries = result as string[];
+                for (let i = 0; i < entries.length; i += 2) {
+                    const json = entries[i + 1];
+                    if (!json) continue;
+                    try {
+                        const p = JSON.parse(json) as Person;
+                        personCount++;
+                        if (!p || p.tile_id === undefined || p.tile_id === null) continue;
+                        const tid: string = String(p.tile_id);
+                        byTile[tid] = (byTile[tid] || 0) + 1;
+                    } catch { /* ignore parse errors */ }
                 }
             }
-            for (const p of allPeople) {
-                if (!p || p.tile_id === undefined || p.tile_id === null) continue;
-                const tid: string = String(p.tile_id);
-                byTile[tid] = (byTile[tid] || 0) + 1;
-            }
+            
+            console.log('[villageSeeder] HSCAN found', personCount, 'people');
             populatedTileIds = Object.keys(byTile).filter((id: string) => byTile[id] > 0);
             // Ensure tilePopulations reflects the fallback counts so downstream
             // logic can compute desired villages per tile.
@@ -267,6 +268,16 @@ async function assignResidencyStorage(populatedTileIds: string[], allVillages: V
             villagesByTile[v.tile_id].push(v);
         }
 
+        // Build a set of all village set keys we'll be populating
+        const newSetKeys = new Set<string>();
+        for (const tileIdStr of populatedTileIds) {
+            const tileId: number = parseInt(tileIdStr);
+            const villages: Village[] = villagesByTile[tileId] || [];
+            for (const v of villages) {
+                newSetKeys.add(`village:${tileId}:${v.land_chunk_index}:people`);
+            }
+        }
+
         // Get all people from storage
         const allPeople: Person[] = await PopulationState.getAllPeople();
 
@@ -278,6 +289,27 @@ async function assignResidencyStorage(populatedTileIds: string[], allVillages: V
                 peopleByTile[p.tile_id].push(p);
             }
         }
+
+        // First, remove all people from their CURRENT sets (based on person hash data)
+        // This ensures no stale memberships remain
+        const removePipeline = storage.pipeline();
+        for (const tileIdStr of populatedTileIds) {
+            const people: Person[] = peopleByTile[parseInt(tileIdStr)] || [];
+            for (const person of people) {
+                // Remove from current set if they have a valid residency
+                if (person.tile_id && person.residency !== null && person.residency !== undefined && person.residency !== 0) {
+                    removePipeline.srem(`village:${person.tile_id}:${person.residency}:people`, person.id.toString());
+                }
+            }
+        }
+        await removePipeline.exec();
+
+        // Now clear the target sets to ensure they're empty before we populate
+        const clearPipeline = storage.pipeline();
+        for (const key of newSetKeys) {
+            clearPipeline.del(key);
+        }
+        await clearPipeline.exec();
 
         // Collect all updates to batch at the end
         const personUpdates: Person[] = [];
@@ -304,12 +336,8 @@ async function assignResidencyStorage(populatedTileIds: string[], allVillages: V
                 const assignedPeople: Person[] = people.slice(peopleIndex, peopleIndex + toAssign);
 
                 for (const person of assignedPeople) {
-                    // record old residency so we can remove from the old set when writing
-                    const oldResidency: number | null = person.residency;
                     const newResidency: number = village.land_chunk_index;
                     person.residency = newResidency;
-                    // _oldResidency is used only for pipeline update; delete later to avoid persisting it
-                    person._oldResidency = oldResidency; // temporary marker for pipeline
                     personUpdates.push(person);
                     village.housing_slots.push(person.id);
                 }
@@ -323,17 +351,10 @@ async function assignResidencyStorage(populatedTileIds: string[], allVillages: V
         if (personUpdates.length > 0) {
             const personPipeline = storage.pipeline();
             for (const person of personUpdates) {
-                // If we recorded an old residency, remove person from that set first
-                if (person.tile_id && person._oldResidency !== undefined && person._oldResidency !== null && person._oldResidency !== person.residency) {
-                    personPipeline.srem(`village:${person.tile_id}:${person._oldResidency}:people`, person.id.toString());
-                }
-                // Clean up temporary marker before saving
-                const personToSave: Omit<Person, '_oldResidency'> = { ...person };
-                delete (personToSave as Person)._oldResidency;
                 // Write updated person
-                personPipeline.hset('person', person.id.toString(), JSON.stringify(personToSave));
-                // Add to new residency set
-                if (person.tile_id && person.residency !== null && person.residency !== undefined) {
+                personPipeline.hset('person', person.id.toString(), JSON.stringify(person));
+                // Add to new residency set only if residency is a valid village ID (> 0)
+                if (person.tile_id && person.residency !== null && person.residency !== undefined && person.residency !== 0) {
                     personPipeline.sadd(`village:${person.tile_id}:${person.residency}:people`, person.id.toString());
                 }
             }

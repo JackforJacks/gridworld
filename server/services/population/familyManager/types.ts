@@ -9,6 +9,7 @@ export interface CalendarService {
 /** Population service interface for birth tracking */
 export interface PopulationServiceInstance {
     trackBirths?(count: number): void;
+    trackDeaths?(count: number): void;
 }
 
 /** Person record type (from Redis/PopulationState) */

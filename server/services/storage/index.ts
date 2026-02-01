@@ -31,6 +31,7 @@ const storage = {
     // Direct Redis methods
     pipeline: () => redis.pipeline(),
     scanStream: (opts) => redis.scanStream(opts),
+    hscanStream: (k, opts?) => redis.hscanStream(k, opts),
 
     hgetall: (k) => redis.hgetall(k),
     hget: (k, f) => redis.hget(k, f),
@@ -43,6 +44,11 @@ const storage = {
     keys: (pattern) => redis.keys(pattern),
     flushdb: () => redis.flushdb(),
     incr: (k) => redis.incr(k),
+
+    // String operations (for counters, simple values)
+    get: (k) => redis.get(k),
+    set: (k, v) => redis.set(k, v),
+    incrby: (k, amt) => redis.incrby(k, amt),
 
     sadd: (k, ...members) => redis.sadd(k, ...members),
     srem: (k, ...members) => redis.srem(k, ...members),
@@ -80,6 +86,46 @@ const storage = {
         `;
         const res = await redis.eval(lua, 2, 'fertile:members', 'fertile:queue', String(now));
         return res || null;
+    },
+
+    /**
+     * Atomically set a person's village membership.
+     * Removes from old set (if provided) and adds to new set in one operation.
+     * @param personId - The person's ID
+     * @param tileId - The tile ID
+     * @param newResidency - The new residency (village land_chunk_index), or null to just remove
+     * @param oldTileId - The old tile ID (optional, for cross-tile moves)
+     * @param oldResidency - The old residency to remove from (optional)
+     */
+    atomicSetVillageMembership: async (
+        personId: string | number,
+        tileId: number | null,
+        newResidency: number | null,
+        oldTileId?: number | null,
+        oldResidency?: number | null
+    ): Promise<{ removed: boolean; added: boolean }> => {
+        const id = String(personId);
+        const removed = oldTileId && oldResidency !== null && oldResidency !== undefined && oldResidency !== 0;
+        const added = tileId && newResidency !== null && newResidency !== undefined && newResidency !== 0;
+        
+        if (removed && added) {
+            const oldKey = `village:${oldTileId}:${oldResidency}:people`;
+            const newKey = `village:${tileId}:${newResidency}:people`;
+            const lua = `
+                redis.call('srem', KEYS[1], ARGV[1])
+                redis.call('sadd', KEYS[2], ARGV[1])
+                return 1
+            `;
+            await redis.eval(lua, 2, oldKey, newKey, id);
+            return { removed: true, added: true };
+        } else if (removed) {
+            await redis.srem(`village:${oldTileId}:${oldResidency}:people`, id);
+            return { removed: true, added: false };
+        } else if (added) {
+            await redis.sadd(`village:${tileId}:${newResidency}:people`, id);
+            return { removed: false, added: true };
+        }
+        return { removed: false, added: false };
     }
 };
 

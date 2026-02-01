@@ -1,8 +1,11 @@
-// Population Family Operations - Enhanced with family table integration
+// Population Family Operations - Enhanced with family table integration (Redis-first)
 import { addPeopleToTile, removePeopleFromTile } from './manager';
 import * as deps from './dependencyContainer';
 import { Pool } from 'pg';
 import { FamilyData, CalendarDate } from '../../../types/global';
+import storage from '../storage';
+import PopulationState from '../populationState';
+import FamilyState from '../populationState/FamilyState';
 
 // Interface for calendar service dependency injection
 interface CalendarService {
@@ -31,7 +34,7 @@ interface PopulationStateModule {
 }
 
 /**
- * Enhanced Procreation function with family management
+ * Enhanced Procreation function with family management - Redis-first implementation
  */
 async function Procreation(
     pool: Pool,
@@ -40,9 +43,14 @@ async function Procreation(
     tileId: number,
     population: number
 ): Promise<void> {
+    void pool; // Unused - kept for API compatibility
     try {
-        const result = await pool.query('SELECT COUNT(*) FROM people WHERE tile_id = $1', [tileId]);
-        const currentCount = parseInt(result.rows[0].count, 10);
+        // Get current population from Redis
+        let currentCount = 0;
+        if (storage.isAvailable()) {
+            const tilePopulations = await PopulationState.getAllTilePopulations();
+            currentCount = tilePopulations[tileId] || 0;
+        }
 
         let calendarDateToUse;
         if (calendarService && typeof calendarService.getState === 'function') {
@@ -60,26 +68,27 @@ async function Procreation(
         const { year: currentYear, month: currentMonth, day: currentDay } = calendarDateToUse;
 
         if (population > currentCount) {
-            const birthCount = population - currentCount;
-
             // Try to handle births through existing families first
             const familyManager = deps.getFamilyManager() as unknown as FamilyManagerModule;
-            await familyManager.processDeliveries(pool, calendarService, populationServiceInstance);
+            await familyManager.processDeliveries(null, calendarService, populationServiceInstance);
 
-            // Check if we still need more people after deliveries
-            const updatedResult = await pool.query('SELECT COUNT(*) FROM people WHERE tile_id = $1', [tileId]);
-            const updatedCount = parseInt(updatedResult.rows[0].count, 10);
+            // Check if we still need more people after deliveries (from Redis)
+            let updatedCount = 0;
+            if (storage.isAvailable()) {
+                const updatedPopulations = await PopulationState.getAllTilePopulations();
+                updatedCount = updatedPopulations[tileId] || 0;
+            }
             const remainingNeeded = population - updatedCount;
 
             if (remainingNeeded > 0) {
-                await addPeopleToTile(pool, tileId, remainingNeeded, currentYear, currentMonth, currentDay, populationServiceInstance, true);
+                await addPeopleToTile(null, tileId, remainingNeeded, currentYear, currentMonth, currentDay, populationServiceInstance, true);
 
                 // Potentially create new families from new adults
-                await createRandomFamilies(pool, tileId);
+                await createRandomFamilies(null, tileId, calendarService);
             }
         } else if (population < currentCount) {
             const deathCount = currentCount - population;
-            await removePeopleFromTile(pool, tileId, deathCount, populationServiceInstance, true);
+            await removePeopleFromTile(null, tileId, deathCount, populationServiceInstance, true);
         }
 
         if (populationServiceInstance && typeof populationServiceInstance.broadcastUpdate === 'function') {
@@ -94,81 +103,60 @@ async function Procreation(
 }
 
 /**
- * Creates random families from available adults on a tile
+ * Creates random families from available adults on a tile - Redis-first implementation
  */
 async function createRandomFamilies(
-    pool: Pool,
+    _pool: Pool | null,
     tileId: number,
     calendarService: CalendarService | null = null
 ): Promise<void> {
+    void _pool; // Unused - kept for API compatibility
     try {
-        // Get current simulation date
-        let cutoffDate;
-        if (calendarService) {
-            const currentDate = calendarService.getCurrentDate();
-            const cutoffYear = currentDate.year - 18;
-            cutoffDate = `${cutoffYear}-${String(currentDate.month).padStart(2, '0')}-${String(currentDate.day).padStart(2, '0')}`;
-        } else {
-            // Fallback to real date (shouldn't be used in simulation)
-            const currentDate = new Date();
-            const eighteenYearsAgo = new Date(currentDate.getFullYear() - 18, currentDate.getMonth(), currentDate.getDate());
-            cutoffDate = eighteenYearsAgo.toISOString().split('T')[0];
+        if (!storage.isAvailable()) {
+            console.warn('[family.createRandomFamilies] Storage not available');
+            return;
         }
 
-        console.log(`[family.js] Looking for adults born before ${cutoffDate} on tile ${tileId}`);
+        // Get eligible people from Redis eligible sets
+        const eligibleMaleIds = await PopulationState.getEligiblePeople(true, tileId);
+        const eligibleFemaleIds = await PopulationState.getEligiblePeople(false, tileId);
 
-        const eligibleMales = await pool.query(`
-            SELECT p.id FROM people p
-            LEFT JOIN family f1 ON p.id = f1.husband_id
-            LEFT JOIN family f2 ON p.id = f2.wife_id
-            WHERE p.tile_id = $1 AND p.sex = TRUE AND p.date_of_birth <= $2
-            AND f1.husband_id IS NULL AND f2.wife_id IS NULL
-            ORDER BY RANDOM()
-        `, [tileId, cutoffDate]);
+        // Shuffle to get random pairing
+        const shuffledMales = [...eligibleMaleIds].sort(() => Math.random() - 0.5);
+        const shuffledFemales = [...eligibleFemaleIds].sort(() => Math.random() - 0.5);
 
-        const eligibleFemales = await pool.query(`
-            SELECT p.id FROM people p
-            LEFT JOIN family f1 ON p.id = f1.husband_id
-            LEFT JOIN family f2 ON p.id = f2.wife_id
-            WHERE p.tile_id = $1 AND p.sex = FALSE AND p.date_of_birth <= $2
-            AND f1.husband_id IS NULL AND f2.wife_id IS NULL
-            ORDER BY RANDOM()
-        `, [tileId, cutoffDate]);
+        const maxPairs = Math.min(shuffledMales.length, shuffledFemales.length);
 
-        const males = eligibleMales.rows;
-        const females = eligibleFemales.rows;
-        const maxPairs = Math.min(males.length, females.length);
+        console.log(`[family.js] Found ${shuffledMales.length} eligible males and ${shuffledFemales.length} eligible females on tile ${tileId}`);
 
         // Create families with random pairing
         for (let i = 0; i < maxPairs && i < 5; i++) { // Limit to 5 new families per tile per update
             try {
+                const husbandId = parseInt(shuffledMales[i], 10);
+                const wifeId = parseInt(shuffledFemales[i], 10);
+
                 const familyManager = deps.getFamilyManager() as unknown as FamilyManagerModule;
-                const newFamily = await familyManager.createFamily(pool, males[i].id, females[i].id, tileId);
+                const createResult = await familyManager.createFamily(null, husbandId, wifeId, tileId);
+                const newFamily = createResult?.family ?? null;
 
                 // Register the family as fertile candidate if applicable
                 try {
                     if (newFamily) {
-                        const PopulationState = deps.getPopulationState() as unknown as PopulationStateModule | null;
-                        if (PopulationState) {
-                            await PopulationState.addFertileFamily(newFamily.id, tileId);
+                        const PopulationStateModule = deps.getPopulationState() as unknown as PopulationStateModule | null;
+                        if (PopulationStateModule) {
+                            await PopulationStateModule.addFertileFamily(newFamily.id, tileId);
                         }
                     }
                 } catch (_: unknown) { /* ignore */ }
 
                 // 30% chance of immediate pregnancy for new families
-                if (Math.random() < 0.3) {
-                    const familyResult = await pool.query(
-                        'SELECT id FROM family WHERE husband_id = $1 AND wife_id = $2',
-                        [males[i].id, females[i].id]
-                    );
-                    if (familyResult.rows.length > 0) {
-                        try {
-                            const fmStartPregnancy = deps.getFamilyManager() as unknown as FamilyManagerModule;
-                            await fmStartPregnancy.startPregnancy(pool, null, familyResult.rows[0].id);
-                        } catch (err: unknown) {
-                            const errMessage = err instanceof Error ? err.message : String(err);
-                            console.warn(`[family.createRandomFamilies] startPregnancy failed for family ${familyResult.rows[0].id}: ${errMessage}`);
-                        }
+                if (newFamily && Math.random() < 0.3) {
+                    try {
+                        const fmStartPregnancy = deps.getFamilyManager() as unknown as FamilyManagerModule;
+                        await fmStartPregnancy.startPregnancy(null, calendarService, newFamily.id);
+                    } catch (err: unknown) {
+                        const errMessage = err instanceof Error ? err.message : String(err);
+                        console.warn(`[family.createRandomFamilies] startPregnancy failed for family ${newFamily.id}: ${errMessage}`);
                     }
                 }
             } catch (error: unknown) {
