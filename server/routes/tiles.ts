@@ -359,7 +359,7 @@ router.get('/', async (req: Request, res: Response): Promise<void> => {
         let allTileData: Record<string, string> = {};
         let allLandsData: Record<string, string> = {};
         let allVillageData: Record<string, string> = {};
-        
+
         try {
             const [tileDataResult, landsDataResult, villageDataResult] = await Promise.all([
                 storage.hgetall('tile'),
