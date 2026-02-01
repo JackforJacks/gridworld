@@ -229,6 +229,9 @@ async function getReadyFamilies(
     return readyFamilies;
 }
 
+/** Maternal mortality rate (1% chance during delivery) */
+const MATERNAL_MORTALITY_RATE = 0.01;
+
 /** Process a single delivery with retry logic */
 async function processOneDelivery(
     pool: Pool | null,
@@ -246,7 +249,7 @@ async function processOneDelivery(
         // Re-verify family still exists
         const currentFamily = await PopulationState.getFamily(family.id) as FamilyRecord | null;
         if (!currentFamily || !currentFamily.pregnancy || !currentFamily.delivery_date) {
-            return false;
+            return { delivered: false, maternalMortality: false };
         }
 
         // Clear pregnancy status before delivery
@@ -255,19 +258,89 @@ async function processOneDelivery(
         // Call internal version without nested lock
         const res = await deliverBabyInternal(calendarService, populationServiceInstance, family.id, PopulationState);
 
-        // Re-add to fertile set if still eligible
-        if (res?.family) {
-            try {
-                await PopulationState.addFertileFamily(res.family.id, res.family.tile_id);
-            } catch (e) {
-                console.warn('[processOneDelivery] Failed to re-add to fertile set:', (e as Error)?.message);
+        if (!res) {
+            return { delivered: false, maternalMortality: false };
+        }
+
+        // Check for maternal mortality (1% chance)
+        if (Math.random() < MATERNAL_MORTALITY_RATE) {
+            // Maternal mortality - both mother and baby die
+            const babyId = res.baby.id;
+            const motherId = currentFamily.wife_id;
+
+            // Remove baby from population
+            await PopulationState.removePerson(babyId, true);
+
+            // Remove mother from population
+            if (motherId !== null) {
+                await PopulationState.removePerson(motherId, true);
             }
+
+            // Clean up family - clear family_id for all members and delete family
+            const personIdsToClear: number[] = [];
+            if (currentFamily.husband_id !== null) personIdsToClear.push(currentFamily.husband_id);
+            if (currentFamily.wife_id !== null) personIdsToClear.push(currentFamily.wife_id);
+            for (const childId of (currentFamily.children_ids || [])) {
+                personIdsToClear.push(childId);
+            }
+
+            if (personIdsToClear.length > 0) {
+                await PopulationState.batchClearFamilyIds(personIdsToClear);
+            }
+
+            // Delete the family
+            await PopulationState.batchDeleteFamilies([family.id], true);
+
+            // Re-add surviving husband to eligible pool if he meets age criteria
+            if (currentFamily.husband_id !== null) {
+                try {
+                    const husband = await PopulationState.getPerson(currentFamily.husband_id);
+                    if (husband && husband.date_of_birth) {
+                        const currentDate = getCurrentDate(calendarService);
+                        const { calculateAge } = deps.getCalculator();
+                        const age = calculateAge(husband.date_of_birth, currentDate.year, currentDate.month, currentDate.day);
+                        // Males eligible 16-45
+                        if (age >= 16 && age <= 45) {
+                            await PopulationState.addEligiblePerson(currentFamily.husband_id, true, currentFamily.tile_id);
+                        }
+                    }
+                } catch (e) {
+                    console.warn('[processOneDelivery] Failed to re-add widower to eligible pool:', (e as Error)?.message);
+                }
+            }
+
+            // Track maternal mortality deaths (mother + baby = 2 deaths, but 1 birth was already tracked)
+            // We need to track 2 deaths and decrement births by 1
+            if (populationServiceInstance?.trackDeaths) {
+                populationServiceInstance.trackDeaths(2);
+            }
+            // Note: The birth was already tracked in deliverBabyInternal, so net is -1 population
+
+            // Track maternal mortality stat
+            await safeExecute(
+                () => storage.incr('stats:maternal_mortality:count'),
+                'FamilyManager:MaternalMortalityCount',
+                null,
+                ErrorSeverity.LOW
+            );
+
+            // Clear retry tracking
+            await clearRetryTracking(family.id, retryConfig);
+
+            return { delivered: true, maternalMortality: true };
+        }
+
+        // Normal delivery - re-add to fertile set if still eligible
+        try {
+            await PopulationState.addFertileFamily(res.family.id, res.family.tile_id);
+        } catch (e) {
+            console.warn('[processOneDelivery] Failed to re-add to fertile set:', (e as Error)?.message);
         }
 
         // Clear retry tracking on success
         await clearRetryTracking(family.id, retryConfig);
 
-        return true;
+        return { delivered: true, maternalMortality: false };
     });
 
     if (!result.acquired) {
@@ -289,7 +362,7 @@ async function processOneDelivery(
         return false;
     }
 
-    return result.result ?? false;
+    return result.result?.delivered ?? false;
 }
 
 /**

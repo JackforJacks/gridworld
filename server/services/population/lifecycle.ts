@@ -252,6 +252,8 @@ async function applySenescence(
             // Collect all person IDs that need family_id cleared and families to delete
             const personIdsToClear: number[] = [];
             const familyIdsToDelete: number[] = [];
+            // Track surviving spouses to re-add to eligible pool
+            const survivingSpouses: { personId: number; isMale: boolean; tileId: number }[] = [];
 
             for (const family of allFamilies) {
                 // Check if husband or wife died
@@ -259,6 +261,14 @@ async function applySenescence(
                 const wifeDied = family.wife_id !== null && deathIds.has(family.wife_id);
 
                 if (husbandDied || wifeDied) {
+                    // Track surviving spouse for re-adding to eligible pool
+                    if (husbandDied && !wifeDied && family.wife_id !== null) {
+                        survivingSpouses.push({ personId: family.wife_id, isMale: false, tileId: family.tile_id });
+                    }
+                    if (wifeDied && !husbandDied && family.husband_id !== null) {
+                        survivingSpouses.push({ personId: family.husband_id, isMale: true, tileId: family.tile_id });
+                    }
+
                     // Collect all family members for batch update
                     if (family.husband_id !== null) personIdsToClear.push(family.husband_id);
                     if (family.wife_id !== null) personIdsToClear.push(family.wife_id);
@@ -281,6 +291,23 @@ async function applySenescence(
 
             // Batch remove deceased persons from Redis
             await PopulationState.batchRemovePersons(deaths, true);
+
+            // Re-add surviving spouses to eligible pool if they meet age criteria
+            for (const spouse of survivingSpouses) {
+                try {
+                    const person = await PopulationState.getPerson(spouse.personId);
+                    if (!person || !person.date_of_birth) continue;
+                    
+                    const age = calculator.calculateAge(person.date_of_birth, currentYear, currentMonth, currentDay);
+                    // Check age eligibility: males 16-45, females 16-33
+                    const maxAge = spouse.isMale ? 45 : 33;
+                    if (age >= 16 && age <= maxAge) {
+                        await PopulationState.addEligiblePerson(spouse.personId, spouse.isMale, spouse.tileId);
+                    }
+                } catch (e) {
+                    console.warn('[lifecycle] Failed to re-add widower to eligible pool:', spouse.personId);
+                }
+            }
 
             if (populationServiceInstance && typeof populationServiceInstance.trackDeaths === 'function') {
                 populationServiceInstance.trackDeaths(deaths.length);
@@ -344,7 +371,6 @@ async function processDailyFamilyEvents(
                 if (!family) continue;
                 // Ensure family is still eligible
                 if (family.pregnancy) continue;
-                if ((family.children_ids || []).length >= 10) continue;
 
                 const wife = family.wife_id !== null ? await PopulationState.getPerson(family.wife_id) : null;
                 if (!wife || !wife.date_of_birth) continue;

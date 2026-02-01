@@ -39,8 +39,7 @@ export async function populateFertileFamilies(
 
         // Filter eligible families first
         const eligibleFamilies = families.filter(f => {
-            const childrenCount = (f.children_ids || []).length;
-            if (f.pregnancy || childrenCount >= 10) return false;
+            if (f.pregnancy) return false;
             if (f.wife_id === null) return false;
             const wife = peopleMap[f.wife_id];
             return wife && wife.date_of_birth;
