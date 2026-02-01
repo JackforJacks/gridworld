@@ -297,7 +297,7 @@ async function applySenescence(
                 try {
                     const person = await PopulationState.getPerson(spouse.personId);
                     if (!person || !person.date_of_birth) continue;
-                    
+
                     const age = calculator.calculateAge(person.date_of_birth, currentYear, currentMonth, currentDay);
                     // Check age eligibility: males 16-45, females 16-33
                     const maxAge = spouse.isMale ? 45 : 33;
