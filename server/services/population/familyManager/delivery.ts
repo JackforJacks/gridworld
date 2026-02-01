@@ -346,11 +346,16 @@ async function processOneDelivery(
     if (!result.acquired) {
         // Lock contention - schedule retry
         const retryResult = await scheduleRetry(family.id, retryConfig);
-        // Only log final failures, not intermediate retries
         if (retryResult.maxAttemptsReached) {
-            console.warn(`[processDeliveries] Family ${family.id} reached max retry attempts - skipping`);
+            // Clear retry tracking to prevent repeated attempts
+            await clearRetryTracking(family.id, retryConfig);
+            // Force clear pregnancy to prevent this family from being retried forever
+            try {
+                await PopulationState.updateFamily(family.id, { pregnancy: false, delivery_date: null });
+            } catch {
+                // Silently ignore - family may have been deleted
+            }
         }
-        // Don't log intermediate retries - they're expected with concurrent operations
         return false;
     }
 
