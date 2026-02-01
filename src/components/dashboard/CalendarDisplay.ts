@@ -48,9 +48,7 @@ class CalendarDisplay {
     private stateChangedHandler: StateChangeHandler | null;
     private tickHandler: StateChangeHandler | null;
     private stopButton: HTMLButtonElement | null;
-    private monthlyButton: HTMLButtonElement | null;
-    private isRunning: boolean;
-    private currentSpeed: string;
+    private calendarMode: 'stopped' | 'running' | 'fast';
 
     constructor(calendarManager: CalendarManager) {
         this.calendarManager = calendarManager;
@@ -69,9 +67,7 @@ class CalendarDisplay {
 
         // Control button references
         this.stopButton = null;
-        this.monthlyButton = null;
-        this.isRunning = true;
-        this.currentSpeed = '1_day';
+        this.calendarMode = 'stopped'; // 'stopped' | 'running' | 'fast'
 
         // Initialize the component
         this.init();
@@ -83,7 +79,6 @@ class CalendarDisplay {
     private async init(): Promise<void> {
         this.createDateDisplay();
         this.createDashboardElements();
-        this.createControlButtons();
         this.setupEventListeners();
         this.updateDisplay();
     }
@@ -144,6 +139,10 @@ class CalendarDisplay {
         // Create the right-aligned elements container
         const rightElements = this.createRightElementsContainer();
 
+        // Create control buttons container (to the left of year label)
+        const controlsContainer = this.createControlButtonsContainer();
+        rightElements.appendChild(controlsContainer);
+
         // Create year label
         const yearLabel = this.createYearLabel();
         rightElements.appendChild(yearLabel);
@@ -203,76 +202,82 @@ class CalendarDisplay {
     }
 
     /**
-     * Create calendar control buttons (Stop/Play and Monthly speed)
+     * Create control buttons container (single cycling button: stop/run/fast)
      */
-    private createControlButtons(): void {
-        const dashboard = document.getElementById('dashboard');
-        if (!dashboard) return;
+    private createControlButtonsContainer(): HTMLDivElement {
+        // Remove any existing container
+        const existingControls = document.getElementById('calendar-controls');
+        if (existingControls && existingControls.parentNode) {
+            existingControls.parentNode.removeChild(existingControls);
+        }
 
         // Create control buttons container
         const controlsContainer = document.createElement('div');
         controlsContainer.id = 'calendar-controls';
         controlsContainer.className = 'calendar-controls';
 
-        // Create Stop/Play button
+        // Create single cycling button (stop/run/fast)
         this.stopButton = document.createElement('button');
-        this.stopButton.id = 'calendar-stop-btn';
+        this.stopButton.id = 'calendar-control-btn';
         this.stopButton.className = 'calendar-control-btn';
-        this.stopButton.textContent = '⏸️';
-        this.stopButton.title = 'Stop/Resume Calendar';
-        this.stopButton.addEventListener('click', () => this.toggleCalendar());
+        this.stopButton.textContent = '⏹️';
+        this.stopButton.title = 'Calendar Stopped - Click to Run';
+        this.stopButton.addEventListener('click', () => this.cycleCalendarMode());
         controlsContainer.appendChild(this.stopButton);
 
-        // Create Monthly speed button
-        this.monthlyButton = document.createElement('button');
-        this.monthlyButton.id = 'calendar-monthly-btn';
-        this.monthlyButton.className = 'calendar-control-btn';
-        this.monthlyButton.textContent = '⏩';
-        this.monthlyButton.title = 'Toggle Monthly Speed (1 month/sec)';
-        this.monthlyButton.addEventListener('click', () => this.toggleMonthlySpeed());
-        controlsContainer.appendChild(this.monthlyButton);
+        return controlsContainer;
+    }
 
-        // Insert after the calendar display
-        if (this.dateElement && this.dateElement.parentNode) {
-            this.dateElement.parentNode.insertBefore(controlsContainer, this.dateElement.nextSibling);
-        } else {
-            dashboard.appendChild(controlsContainer);
+    /**
+     * Cycle through calendar modes: stopped -> running -> fast -> stopped
+     */
+    private async cycleCalendarMode(): Promise<void> {
+        if (!this.calendarManager) return;
+
+        try {
+            switch (this.calendarMode) {
+                case 'stopped':
+                    // Start at normal speed (1 day/sec)
+                    await this.calendarManager.setSpeed('1_day');
+                    await this.calendarManager.start();
+                    this.calendarMode = 'running';
+                    break;
+                case 'running':
+                    // Switch to fast mode (1 month/sec)
+                    await this.calendarManager.setSpeed('1_month');
+                    this.calendarMode = 'fast';
+                    break;
+                case 'fast':
+                    // Stop the calendar
+                    await this.calendarManager.stop();
+                    this.calendarMode = 'stopped';
+                    break;
+            }
+            this.updateModeButton();
+        } catch (error: unknown) {
+            console.error('Error cycling calendar mode:', error);
         }
     }
 
     /**
-     * Toggle calendar running state (stop/start)
+     * Update the mode button icon and title based on current mode
      */
-    private async toggleCalendar(): Promise<void> {
-        if (!this.calendarManager) return;
+    private updateModeButton(): void {
+        if (!this.stopButton) return;
 
-        try {
-            if (this.isRunning) {
-                await this.calendarManager.stop();
-            } else {
-                await this.calendarManager.start();
-            }
-        } catch (error: unknown) {
-            console.error('Error toggling calendar:', error);
-        }
-    }
-
-    /**
-     * Toggle between normal and monthly speed
-     */
-    private async toggleMonthlySpeed(): Promise<void> {
-        if (!this.calendarManager) return;
-
-        try {
-            if (this.currentSpeed === '1_month') {
-                // Switch back to normal speed (1 day/sec)
-                await this.calendarManager.setSpeed('1_day');
-            } else {
-                // Switch to monthly speed
-                await this.calendarManager.setSpeed('1_month');
-            }
-        } catch (error: unknown) {
-            console.error('Error toggling speed:', error);
+        switch (this.calendarMode) {
+            case 'stopped':
+                this.stopButton.textContent = '⏹️';
+                this.stopButton.title = 'Calendar Stopped - Click to Run';
+                break;
+            case 'running':
+                this.stopButton.textContent = '▶️';
+                this.stopButton.title = 'Running (1 day/sec) - Click for Fast';
+                break;
+            case 'fast':
+                this.stopButton.textContent = '⏩';
+                this.stopButton.title = 'Fast (1 month/sec) - Click to Stop';
+                break;
         }
     }
 
@@ -280,23 +285,19 @@ class CalendarDisplay {
      * Update control button states based on calendar state
      */
     private updateControlButtons(state: CalendarState): void {
-        // Update running state
-        this.isRunning = state.isRunning !== false && state.isPaused !== true;
-        this.currentSpeed = state.currentSpeed || '1_day';
+        const isRunning = state.isRunning !== false && state.isPaused !== true;
+        const currentSpeed = state.currentSpeed || '1_day';
 
-        // Update stop button
-        if (this.stopButton) {
-            this.stopButton.textContent = this.isRunning ? '⏸️' : '▶️';
-            this.stopButton.title = this.isRunning ? 'Pause Calendar' : 'Resume Calendar';
+        // Determine mode from state
+        if (!isRunning) {
+            this.calendarMode = 'stopped';
+        } else if (currentSpeed === '1_month' || currentSpeed === '1 Month/sec') {
+            this.calendarMode = 'fast';
+        } else {
+            this.calendarMode = 'running';
         }
 
-        // Update monthly button
-        if (this.monthlyButton) {
-            const isMonthly = this.currentSpeed === '1_month';
-            this.monthlyButton.textContent = isMonthly ? '⏩' : '📅';
-            this.monthlyButton.title = isMonthly ? 'Switch to Normal Speed' : 'Switch to Monthly Speed (1 month/sec)';
-            this.monthlyButton.classList.toggle('active', isMonthly);
-        }
+        this.updateModeButton();
     }
 
     /**
@@ -519,7 +520,6 @@ class CalendarDisplay {
         this.calendarManager = null;
         this.dateElement = null;
         this.stopButton = null;
-        this.monthlyButton = null;
     }
 }
 

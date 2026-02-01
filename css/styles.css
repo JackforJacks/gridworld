@@ -888,19 +888,12 @@ kbd {
     color: #4CAF50;
 }
 
-.calendar-controls {
-    margin-bottom: 16px;
-}
-
 /* Calendar Control Buttons (Stop/Play, Monthly Speed) */
 #calendar-controls.calendar-controls {
-    position: absolute;
-    left: 50%;
-    top: 120px;
-    transform: translateX(-50%);
     display: flex;
+    align-items: center;
     gap: 8px;
-    z-index: 15;
+    margin-right: 10px;
 }
 
 .calendar-control-btn {
