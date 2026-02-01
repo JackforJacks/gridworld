@@ -96,8 +96,8 @@ async function main() {
             let maxBirthYear = 0;
             for (const person of allPeople) {
                 if (person.date_of_birth) {
-                    const birthStr = typeof person.date_of_birth === 'string' 
-                        ? person.date_of_birth 
+                    const birthStr = typeof person.date_of_birth === 'string'
+                        ? person.date_of_birth
                         : person.date_of_birth.toISOString();
                     const birthYear = parseInt(birthStr.split('-')[0], 10);
                     if (!isNaN(birthYear) && birthYear > maxBirthYear) {
@@ -114,7 +114,7 @@ async function main() {
 
         // Get initial state using detected year
         const initialStats = await gatherStats(PopulationState, calculateAge, storage, detectedYear, 1, 1);
-        
+
         console.log('═══════════════════════════════════════════════════════════════');
         console.log('                    INITIAL STATE');
         console.log('═══════════════════════════════════════════════════════════════');
@@ -164,7 +164,7 @@ async function main() {
         // Main simulation loop - process in batches
         for (let batchNum = 0; batchNum < TOTAL_BATCHES; batchNum++) {
             const daysInThisBatch = Math.min(DAYS_PER_BATCH, TOTAL_DAYS - (batchNum * DAYS_PER_BATCH));
-            
+
             // Advance the date by batch size
             for (let d = 0; d < daysInThisBatch; d++) {
                 currentDay++;
@@ -184,8 +184,8 @@ async function main() {
                             totalBirths: yearBirths,
                             totalDeaths: yearDeaths,
                             newFamilies: yearNewFamilies,
-                            growthRate: yearStartPopulation > 0 
-                                ? ((endPopulation - yearStartPopulation) / yearStartPopulation * 100) 
+                            growthRate: yearStartPopulation > 0
+                                ? ((endPopulation - yearStartPopulation) / yearStartPopulation * 100)
                                 : 0
                         });
 
@@ -202,7 +202,7 @@ async function main() {
             try {
                 // 1. Apply senescence (aging deaths) - pass days as batch
                 await applySenescence(pool, mockCalendarService, mockPopulationService, daysInThisBatch);
-                
+
                 // 2. Form new families - only periodically in fast mode
                 daysSinceLastMatchmaking += daysInThisBatch;
                 if (daysSinceLastMatchmaking >= MATCHMAKING_FREQUENCY) {
@@ -213,7 +213,7 @@ async function main() {
 
                 // 3. Process pregnancies and births - pass days as batch
                 await processDailyFamilyEvents(pool, mockCalendarService, mockPopulationService, daysInThisBatch);
-                
+
             } catch (error) {
                 // Silently continue on errors
             }
@@ -222,10 +222,10 @@ async function main() {
             if (currentYear > lastReportYear && currentYear % REPORT_INTERVAL_YEARS === 0 && currentMonth === 1 && currentDay <= DAYS_PER_BATCH) {
                 lastReportYear = currentYear;
                 const stats = await gatherStats(PopulationState, calculateAge, storage, currentYear, currentMonth, currentDay);
-                
+
                 const elapsed = (Date.now() - startTime) / 1000;
                 const progress = (batchNum / TOTAL_BATCHES * 100).toFixed(1);
-                
+
                 console.log(`\n📅 Year ${currentYear} (${progress}% complete, ${elapsed.toFixed(1)}s elapsed)`);
                 console.log('───────────────────────────────────────────────────────────────');
                 printCompactStats(stats);
@@ -239,7 +239,7 @@ async function main() {
 
         // Final stats
         const finalStats = await gatherStats(PopulationState, calculateAge, storage, currentYear, currentMonth, currentDay);
-        
+
         console.log('\n\n═══════════════════════════════════════════════════════════════');
         console.log('                    FINAL STATE');
         console.log('═══════════════════════════════════════════════════════════════');
@@ -249,19 +249,19 @@ async function main() {
         console.log('\n═══════════════════════════════════════════════════════════════');
         console.log('                    SIMULATION SUMMARY');
         console.log('═══════════════════════════════════════════════════════════════');
-        
+
         const totalBirths = yearlyReports.reduce((sum, r) => sum + r.totalBirths, 0);
         const totalDeaths = yearlyReports.reduce((sum, r) => sum + r.totalDeaths, 0);
         const totalNewFamilies = yearlyReports.reduce((sum, r) => sum + r.newFamilies, 0);
-        const avgGrowthRate = yearlyReports.length > 0 
-            ? yearlyReports.reduce((sum, r) => sum + r.growthRate, 0) / yearlyReports.length 
+        const avgGrowthRate = yearlyReports.length > 0
+            ? yearlyReports.reduce((sum, r) => sum + r.growthRate, 0) / yearlyReports.length
             : 0;
 
         console.log(`\n📊 Population Change:`);
         console.log(`   Start: ${initialStats.totalPopulation.toLocaleString()}`);
         console.log(`   End:   ${finalStats.totalPopulation.toLocaleString()}`);
         console.log(`   Net:   ${(finalStats.totalPopulation - initialStats.totalPopulation).toLocaleString()} (${((finalStats.totalPopulation - initialStats.totalPopulation) / initialStats.totalPopulation * 100).toFixed(1)}%)`);
-        
+
         console.log(`\n👶 Births: ${totalBirths.toLocaleString()}`);
         console.log(`💀 Deaths: ${totalDeaths.toLocaleString()}`);
         console.log(`💒 New Families: ${totalNewFamilies.toLocaleString()}`);
@@ -273,7 +273,7 @@ async function main() {
         console.log('───────────────────────────────────────────────────────────────');
         console.log('Year  | Population | Births | Deaths | Families | Growth%');
         console.log('───────────────────────────────────────────────────────────────');
-        
+
         for (const report of yearlyReports.filter(r => r.year % 10 === 0)) {
             console.log(
                 `${String(report.year).padStart(5)} | ` +
@@ -293,33 +293,33 @@ async function main() {
         console.log('\n═══════════════════════════════════════════════════════════════');
         console.log('                    HEALTH CHECK');
         console.log('═══════════════════════════════════════════════════════════════');
-        
+
         const issues: string[] = [];
-        
+
         if (totalBirths === 0) {
             issues.push('❌ No births occurred - pregnancy/delivery system may be broken');
         } else {
             console.log('✅ Births are occurring');
         }
-        
+
         if (totalDeaths === 0) {
             issues.push('⚠️  No deaths occurred - senescence may not be working');
         } else {
             console.log('✅ Deaths from aging are occurring');
         }
-        
+
         if (totalNewFamilies === 0) {
             issues.push('❌ No new families formed - matchmaking may be broken');
         } else {
             console.log('✅ New families are forming');
         }
-        
+
         if (finalStats.eligibleMales === 0 && finalStats.eligibleFemales === 0) {
             issues.push('⚠️  No eligible singles - matchmaking pool may be empty');
         } else {
             console.log(`✅ Eligible singles: ${finalStats.eligibleMales} males, ${finalStats.eligibleFemales} females`);
         }
-        
+
         // Check for generational reproduction
         if (YEARS_TO_SIMULATE >= 20 && totalNewFamilies > 0) {
             // If we ran 20+ years and new families formed, generational reproduction is working
@@ -357,24 +357,24 @@ async function getPopulationCount(PopulationState: any): Promise<number> {
 }
 
 async function gatherStats(
-    PopulationState: any, 
+    PopulationState: any,
     calculateAge: any,
     storage: any,
-    year: number, 
-    month: number, 
+    year: number,
+    month: number,
     day: number
 ): Promise<SimulationStats> {
     const people = await PopulationState.getAllPeople();
     const families = await PopulationState.getAllFamilies();
-    
+
     let males = 0, females = 0;
     let minors = 0, adults = 0, elderly = 0;
-    
+
     for (const person of people) {
         // Handle both boolean and string sex formats
         const isMale = person.sex === true || person.sex === 'M';
         if (isMale) males++; else females++;
-        
+
         if (person.date_of_birth) {
             const age = calculateAge(person.date_of_birth, year, month, day);
             if (age < 16) minors++;
@@ -382,22 +382,22 @@ async function gatherStats(
             else elderly++;
         }
     }
-    
+
     const pregnantFamilies = families.filter((f: any) => f.pregnancy === true).length;
-    
+
     // Count eligible singles
     let eligibleMales = 0;
     let eligibleFemales = 0;
-    
+
     try {
         const maleTiles = await storage.smembers('tiles_with_eligible_males') || [];
         const femaleTiles = await storage.smembers('tiles_with_eligible_females') || [];
-        
+
         for (const tileId of maleTiles) {
             const count = await storage.scard(`eligible:males:tile:${tileId}`);
             eligibleMales += parseInt(count || '0', 10);
         }
-        
+
         for (const tileId of femaleTiles) {
             const count = await storage.scard(`eligible:females:tile:${tileId}`);
             eligibleFemales += parseInt(count || '0', 10);
@@ -405,7 +405,7 @@ async function gatherStats(
     } catch (e) {
         // Ignore errors counting eligible
     }
-    
+
     return {
         year,
         month,
@@ -444,9 +444,9 @@ function printStats(stats: SimulationStats): void {
 
 function printCompactStats(stats: SimulationStats): void {
     console.log(`Pop: ${stats.totalPopulation.toLocaleString()} (M:${stats.males}/F:${stats.females}) | ` +
-                `Ages: <16:${stats.minors} 16-59:${stats.adults} 60+:${stats.elderly} | ` +
-                `Families: ${stats.totalFamilies} (${stats.pregnantFamilies} pregnant) | ` +
-                `Singles: M:${stats.eligibleMales}/F:${stats.eligibleFemales}`);
+        `Ages: <16:${stats.minors} 16-59:${stats.adults} 60+:${stats.elderly} | ` +
+        `Families: ${stats.totalFamilies} (${stats.pregnantFamilies} pregnant) | ` +
+        `Singles: M:${stats.eligibleMales}/F:${stats.eligibleFemales}`);
 }
 
 // Run the simulation

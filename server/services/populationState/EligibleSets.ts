@@ -38,7 +38,7 @@ export async function removeEligiblePerson(
     if (!storage.isAvailable()) return false;
     try {
         const personIdStr = personId.toString();
-        
+
         // If tileId and sex provided, use them directly (more efficient)
         if (tileId !== undefined && sex !== undefined) {
             const setKey = sex === 'male'
@@ -47,7 +47,7 @@ export async function removeEligiblePerson(
             await storage.srem(setKey, personIdStr);
             return true;
         }
-        
+
         // Otherwise look up from person record
         const json = await storage.hget('person', personIdStr);
         if (json) {
