@@ -106,18 +106,18 @@ export async function populateEligibleSets(
         const eligiblePeople = people.filter(p => {
             // Must have valid tile_id
             if (p.tile_id === null) return false;
-            
+
             // Must not be married
             if (marriedPersonIds.has(p.id)) return false;
-            
+
             // Must have valid birth date
             if (!p.date_of_birth) return false;
-            
+
             // Calculate age and check eligibility range
             const age = calculateAge(p.date_of_birth, currentDate.year, currentDate.month, currentDate.day);
             const isMale = checkIsMale(p.sex);
             const maxAge = isMale ? 45 : 33;
-            
+
             return age >= 16 && age <= maxAge;
         });
 

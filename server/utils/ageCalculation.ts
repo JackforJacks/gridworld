@@ -59,13 +59,13 @@ export function calculateAge(
     }
 
     let age = currentYear - birth.year;
-    
+
     // Adjust if birthday hasn't occurred yet this year
-    if (currentMonth < birth.month || 
+    if (currentMonth < birth.month ||
         (currentMonth === birth.month && currentDay < birth.day)) {
         age--;
     }
-    
+
     return Math.max(0, age);
 }
 

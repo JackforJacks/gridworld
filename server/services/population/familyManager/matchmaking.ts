@@ -172,24 +172,24 @@ async function attemptOnePairing(
                     // Don't return to sets - break the contention cycle
                     // They'll be re-added on next tick if still eligible
                     return 'contention';
-                
+
                 case 'already_in_family':
                     // Someone got married in a race - don't return
                     return 'failed';
-                
+
                 case 'person_not_found':
                     // Person died or was removed - don't return
                     return 'failed';
-                
+
                 case 'invalid_sex':
                     // Data corruption - don't return
                     console.warn(`[attemptOnePairing] Invalid sex for ${maleId} or ${femaleId}`);
                     return 'failed';
-                
+
                 case 'restarting':
                     // World restart - don't return, will be rebuilt
                     return 'failed';
-                
+
                 default:
                     // Unknown error - return to sets
                     await returnToEligibleSets(maleSetKey, maleId, femaleSetKey, femaleId);

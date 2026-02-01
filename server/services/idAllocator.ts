@@ -51,7 +51,7 @@ class IdAllocator {
      */
     async initialize(): Promise<void> {
         if (this.initialized) return;
-        
+
         if (!storage.isAvailable()) {
             console.warn('[IdAllocator] Redis not available, using local counters only');
             // Initialize local counters to 1
@@ -135,7 +135,7 @@ class IdAllocator {
             // INCRBY returns the new value after increment
             const newMax = await storage.incrby(poolInfo.redisKey, blockSize);
             const firstId = newMax - blockSize + 1;
-            
+
             poolInfo.localNext = firstId;
             poolInfo.localMax = newMax + 1; // +1 because localMax is exclusive
 
@@ -145,7 +145,7 @@ class IdAllocator {
         } catch (err: unknown) {
             const error = err instanceof Error ? err : new Error(String(err));
             console.error(`[IdAllocator] Failed to reserve ${entityType} IDs:`, error.message);
-            
+
             // Fallback: use local counter
             const firstId = poolInfo.localMax > 0 ? poolInfo.localMax : 1;
             poolInfo.localNext = firstId;
@@ -287,7 +287,7 @@ class IdAllocator {
         for (const [entityType, poolInfo] of Object.entries(this.pools)) {
             poolInfo.localNext = 1;
             poolInfo.localMax = 1;
-            
+
             if (storage.isAvailable()) {
                 try {
                     await storage.del(poolInfo.redisKey);

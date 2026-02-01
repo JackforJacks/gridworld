@@ -229,13 +229,13 @@ async function applySenescence(
 
         // Use HSCAN streaming to avoid loading all people into memory
         const personStream = storage.hscanStream('person', { count: 500 });
-        
+
         for await (const result of personStream) {
             const entries = result as string[];
             for (let i = 0; i < entries.length; i += 2) {
                 const json = entries[i + 1];
                 if (!json) continue;
-                
+
                 let person: PersonData | null = null;
                 try { person = JSON.parse(json) as PersonData; } catch { continue; }
                 if (!person || !person.date_of_birth) continue;
@@ -263,7 +263,7 @@ async function applySenescence(
             // Handle family cleanup - only fetch families of deceased persons
             const deathIds = new Set<number>(deaths);
             const uniqueFamilyIds = [...new Set(deathFamilyIds)];
-            
+
             // Collect all person IDs that need family_id cleared and families to delete
             const personIdsToClear: number[] = [];
             const familyIdsToDelete: number[] = [];
@@ -277,11 +277,11 @@ async function applySenescence(
                     pipeline.hget('family', fid.toString());
                 }
                 const familyResults = await pipeline.exec() as [Error | null, string | null][];
-                
+
                 for (let i = 0; i < familyResults.length; i++) {
                     const [err, familyJson] = familyResults[i];
                     if (err || !familyJson) continue;
-                    
+
                     let family: FamilyData | null = null;
                     try { family = JSON.parse(familyJson) as FamilyData; } catch { continue; }
                     if (!family) continue;
@@ -433,13 +433,13 @@ async function processDailyFamilyEvents(
         // Release children who reach adulthood (age >= 16) from their family - use HSCAN streaming
         let releasedAdults = 0;
         const personStream = storage.hscanStream('person', { count: 500 });
-        
+
         for await (const result of personStream) {
             const entries = result as string[];
             for (let i = 0; i < entries.length; i += 2) {
                 const json = entries[i + 1];
                 if (!json) continue;
-                
+
                 let person: PersonData | null = null;
                 try { person = JSON.parse(json) as PersonData; } catch { continue; }
                 if (!person || !person.family_id || !person.date_of_birth) continue;

@@ -120,11 +120,11 @@ async function seedVillagesStorageFirst(): Promise<SeedVillagesResult> {
         if (populatedTileIds.length === 0) {
             console.log('[villageSeeder] No populated tiles found via sets; falling back to grouping people by tile_id');
             const byTile: TilePopulations = {};
-            
+
             // Use HSCAN streaming to avoid memory issues with large populations
             const personStream = storage.hscanStream('person', { count: 500 });
             let personCount = 0;
-            
+
             for await (const result of personStream) {
                 const entries = result as string[];
                 for (let i = 0; i < entries.length; i += 2) {
@@ -139,7 +139,7 @@ async function seedVillagesStorageFirst(): Promise<SeedVillagesResult> {
                     } catch { /* ignore parse errors */ }
                 }
             }
-            
+
             console.log('[villageSeeder] HSCAN found', personCount, 'people');
             populatedTileIds = Object.keys(byTile).filter((id: string) => byTile[id] > 0);
             // Ensure tilePopulations reflects the fallback counts so downstream

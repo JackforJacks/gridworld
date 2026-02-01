@@ -225,13 +225,13 @@ async function getPeopleGroupedByTile(): Promise<PeopleByTile> {
     let noTileId = 0;
 
     const personStream = storage.hscanStream('person', { count: 500 });
-    
+
     for await (const result of personStream) {
         const entries = result as string[];
         for (let i = 0; i < entries.length; i += 2) {
             const json = entries[i + 1];
             if (!json) continue;
-            
+
             try {
                 const person = JSON.parse(json as string) as Person;
                 totalPeople++;

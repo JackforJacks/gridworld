@@ -188,13 +188,13 @@ async function getAllPopulationData(pool, calendarService, populationServiceInst
         try {
             // Use HLEN to check count without loading all data
             const personCount = await storage.hlen('person');
-            
+
             if (personCount > 0) {
                 // Sample a few records using HSCAN to check for valid residency
                 // This avoids loading all people into memory
                 let hasValidResidency = false;
                 const sampleStream = storage.hscanStream('person', { count: 100 });
-                
+
                 sampleLoop:
                 for await (const result of sampleStream) {
                     const entries = result as string[];
@@ -212,7 +212,7 @@ async function getAllPopulationData(pool, calendarService, populationServiceInst
                     // Only check first batch to avoid memory issues
                     break;
                 }
-                
+
                 if (hasValidResidency) {
                     console.warn('[getAllPopulationData] Detected persons with residency but no per-tile data; attempting rebuild of village membership sets...');
                     try {
@@ -266,20 +266,20 @@ async function getPopulationDistribution(_pool: unknown) {
 
         // Aggregate by tile using HSCAN streaming to avoid loading all people into memory
         const tileStats: Record<number, { population: number; male: number; female: number }> = {};
-        
+
         const personStream = storage.hscanStream('person', { count: 500 });
-        
+
         for await (const result of personStream) {
             const entries = result as string[];
             for (let i = 0; i < entries.length; i += 2) {
                 const json = entries[i + 1];
                 if (!json) continue;
-                
+
                 try {
                     const person = JSON.parse(json);
                     const tileId = person.tile_id;
                     if (tileId === null || tileId === undefined) continue;
-                    
+
                     if (!tileStats[tileId]) {
                         tileStats[tileId] = { population: 0, male: 0, female: 0 };
                     }
@@ -373,10 +373,10 @@ async function printPeopleSample(_pool: unknown, limit = 10) {
             console.warn('[printPeopleSample] Storage not available');
             return;
         }
-        
+
         const sample: Array<{ id: unknown; sex: unknown; date_of_birth: unknown }> = [];
         const peopleStream = storage.hscanStream('person', { count: 100 });
-        
+
         outerLoop:
         for await (const result of peopleStream) {
             const entries = result as string[];
@@ -394,7 +394,7 @@ async function printPeopleSample(_pool: unknown, limit = 10) {
                 } catch { /* skip */ }
             }
         }
-        
+
         console.log('Sample people from Redis:');
         sample.forEach(person => console.log(person));
     } catch (err: unknown) {

@@ -125,7 +125,7 @@ export async function getDemographicStats(currentDate: CurrentDate): Promise<Dem
                 try {
                     const p = JSON.parse(json) as StoredPerson;
                     totalPopulation++;
-                    
+
                     if (checkIsMale(p.sex)) male++;
                     else female++;
 

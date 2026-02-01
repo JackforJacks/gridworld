@@ -56,7 +56,7 @@ async function deliverBabyInternal(
             babyResidency = father.residency;
         }
     }
-    
+
     // If father has no residency, try mother's residency
     if (babyResidency === null && family.wife_id) {
         const mother = await PopulationState.getPerson(family.wife_id) as PersonRecord | null;
@@ -143,7 +143,7 @@ export async function getFamiliesOnTile(pool: Pool | null, tileId: number): Prom
     try {
         const families: FamilyRecord[] = [];
         const familyStream = storage.hscanStream('family', { count: 500 });
-        
+
         for await (const result of familyStream) {
             const entries = result as string[];
             for (let i = 0; i < entries.length; i += 2) {
@@ -229,13 +229,13 @@ async function getReadyFamilies(
 
     // Use HSCAN streaming to avoid loading all families into memory
     const familyStream = storage.hscanStream('family', { count: 500 });
-    
+
     for await (const result of familyStream) {
         const entries = result as string[];
         for (let i = 0; i < entries.length; i += 2) {
             const json = entries[i + 1];
             if (!json) continue;
-            
+
             try {
                 const f = JSON.parse(json) as FamilyRecord;
                 if (!f.pregnancy || !f.delivery_date) continue;

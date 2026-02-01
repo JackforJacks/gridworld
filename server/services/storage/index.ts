@@ -107,7 +107,7 @@ const storage = {
         const id = String(personId);
         const removed = oldTileId && oldResidency !== null && oldResidency !== undefined && oldResidency !== 0;
         const added = tileId && newResidency !== null && newResidency !== undefined && newResidency !== 0;
-        
+
         if (removed && added) {
             const oldKey = `village:${oldTileId}:${oldResidency}:people`;
             const newKey = `village:${tileId}:${newResidency}:people`;

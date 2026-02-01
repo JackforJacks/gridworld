@@ -69,10 +69,10 @@ async function addPeopleToTile(pool, tileId, count, currentYear, currentMonth, c
             if (currentMonth < birthParts[1] || (currentMonth === birthParts[1] && currentDay < birthParts[2])) {
                 personAge--;
             }
-            
+
             const isMale = checkIsMale(personObj.sex);
             const maxAge = isMale ? 45 : 33;
-            
+
             // Only add to eligible sets if age is in range and they're unmarried
             if (personAge >= 16 && personAge <= maxAge && personObj.family_id === null) {
                 await PopulationState.addEligiblePerson(personObj.id, isMale, personObj.tile_id);
@@ -108,7 +108,7 @@ async function removePeopleFromTile(pool, tileId, count, populationServiceInstan
     // Collect people on this tile using HSCAN streaming (memory efficient)
     const tilePopulation: Array<{ id: number; tile_id: number }> = [];
     const peopleStream = storage.hscanStream('person', { count: 500 });
-    
+
     for await (const result of peopleStream) {
         const entries = result as string[];
         for (let i = 0; i < entries.length; i += 2) {

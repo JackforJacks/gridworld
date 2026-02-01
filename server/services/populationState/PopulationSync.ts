@@ -119,7 +119,7 @@ async function rebuildVillageMembershipsInternal(): Promise<{ success: true; tot
         const PIPELINE_BATCH = 1000;
 
         const personStream = storage.hscanStream('person', { count: 500 });
-        
+
         for await (const result of personStream) {
             // HSCAN returns [field, value, field, value, ...]
             const entries = result as string[];
@@ -127,17 +127,17 @@ async function rebuildVillageMembershipsInternal(): Promise<{ success: true; tot
                 const id = entries[i];
                 const json = entries[i + 1];
                 if (!json) continue;
-                
+
                 total++;
                 let person: StoredPerson | null = null;
                 try { person = JSON.parse(json) as StoredPerson; } catch { continue; }
-                
+
                 // Only add to village sets if residency is a valid village ID (> 0)
                 if (person && person.tile_id && person.residency !== null && person.residency !== undefined && person.residency !== 0) {
                     pipeline.sadd(`village:${person.tile_id}:${person.residency}:people`, id);
                     withResidency++;
                     pipelineCount++;
-                    
+
                     // Execute pipeline in batches
                     if (pipelineCount >= PIPELINE_BATCH) {
                         await pipeline.exec();
@@ -147,12 +147,12 @@ async function rebuildVillageMembershipsInternal(): Promise<{ success: true; tot
                 }
             }
         }
-        
+
         // Execute remaining pipeline commands
         if (pipelineCount > 0) {
             await pipeline.exec();
         }
-        
+
         return { success: true, total, withResidency };
     } catch (e: unknown) {
         return { success: false, error: getErrorMessage(e) };

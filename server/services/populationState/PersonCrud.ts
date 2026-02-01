@@ -52,7 +52,7 @@ export async function addPerson(person: PersonInput, isNew: boolean = false): Pr
     }
     try {
         const id = person.id.toString();
-        
+
         // Check if person already exists - if so, handle residency change properly
         const existing = await storage.hget('person', id);
         let oldTileId: number | null = null;
@@ -64,7 +64,7 @@ export async function addPerson(person: PersonInput, isNew: boolean = false): Pr
                 oldResidency = existingPerson.residency;
             } catch { /* ignore parse error */ }
         }
-        
+
         const p = {
             id: person.id,
             tile_id: person.tile_id,
@@ -80,14 +80,14 @@ export async function addPerson(person: PersonInput, isNew: boolean = false): Pr
         // Handle village set membership atomically
         const newTileId = p.tile_id;
         const newResidency = p.residency;
-        
+
         // Remove from old set if it existed and was different
         if (oldTileId && oldResidency !== null && oldResidency !== undefined && oldResidency !== 0) {
             if (oldTileId !== newTileId || oldResidency !== newResidency) {
                 await storage.srem(`village:${oldTileId}:${oldResidency}:people`, id);
             }
         }
-        
+
         // Add to new set if residency is valid
         if (newTileId && newResidency !== null && newResidency !== undefined && newResidency !== 0) {
             await storage.sadd(`village:${newTileId}:${newResidency}:people`, id);
@@ -219,14 +219,14 @@ export async function streamAllPeople(
     batchSize = 500
 ): Promise<{ total: number }> {
     if (!storage.isAvailable()) return { total: 0 };
-    
+
     let total = 0;
     const personStream = storage.hscanStream('person', { count: batchSize });
-    
+
     for await (const result of personStream) {
         const entries = result as string[];
         const batch: StoredPerson[] = [];
-        
+
         for (let i = 0; i < entries.length; i += 2) {
             const json = entries[i + 1];
             if (!json) continue;
@@ -234,13 +234,13 @@ export async function streamAllPeople(
                 batch.push(JSON.parse(json) as StoredPerson);
             } catch { /* ignore parse errors */ }
         }
-        
+
         if (batch.length > 0) {
             total += batch.length;
             await callback(batch);
         }
     }
-    
+
     return { total };
 }
 

@@ -58,7 +58,7 @@ export function calculateBackoffDelay(
 export function getRetryState(attempt: number, options: RetryOptions = {}): RetryState {
     const opts = { ...DEFAULT_OPTIONS, ...options };
     const canRetry = attempt < opts.maxAttempts;
-    
+
     return {
         attempt,
         nextDelayMs: canRetry ? calculateBackoffDelay(attempt, opts.baseDelayMs, opts.backoffMultiplier, opts.maxDelayMs) : 0,
@@ -81,35 +81,35 @@ export async function withRetry<T>(
 ): Promise<T> {
     const opts = { ...DEFAULT_OPTIONS, ...options };
     let lastError: Error | undefined;
-    
+
     for (let attempt = 0; attempt <= opts.maxAttempts; attempt++) {
         try {
             return await operation();
         } catch (err) {
             lastError = err instanceof Error ? err : new Error(String(err));
-            
+
             // Check if error is retryable
             if (opts.isRetryable && !opts.isRetryable(lastError)) {
                 throw lastError;
             }
-            
+
             // Check if we have more retries
             if (attempt >= opts.maxAttempts) {
                 break;
             }
-            
+
             // Calculate delay and wait
             const delay = calculateBackoffDelay(attempt, opts.baseDelayMs, opts.backoffMultiplier, opts.maxDelayMs);
-            
+
             // Notify about retry
             if (opts.onRetry) {
                 opts.onRetry(attempt + 1, delay, lastError);
             }
-            
+
             await sleep(delay);
         }
     }
-    
+
     throw lastError ?? new Error('Retry failed with no error');
 }
 
@@ -119,24 +119,24 @@ export async function withRetry<T>(
 export function createRetryTracker(options: RetryOptions = {}) {
     const opts = { ...DEFAULT_OPTIONS, ...options };
     let attempt = 0;
-    
+
     return {
         /** Get current state */
         getState(): RetryState {
             return getRetryState(attempt, opts);
         },
-        
+
         /** Record a failed attempt and get next delay */
         recordFailure(): RetryState {
             attempt++;
             return getRetryState(attempt - 1, opts);
         },
-        
+
         /** Reset the tracker after a successful operation */
         reset(): void {
             attempt = 0;
         },
-        
+
         /** Get current attempt number */
         getAttempt(): number {
             return attempt;

@@ -181,7 +181,7 @@ router.put('/:id/assign-family', validateParams(VillageIdParamSchema), validateB
         }
         const village = JSON.parse(villageJson);
         const currentSlots = village.housing_slots || [];
-        
+
         // Check if village is full using the capacity column
         const capacity = village.housing_capacity || 100;
         if (currentSlots.length >= capacity) {
@@ -191,11 +191,11 @@ router.put('/:id/assign-family', validateParams(VillageIdParamSchema), validateB
         if (currentSlots.includes(family_id)) {
             return res.status(400).json({ error: 'Family already assigned to this village' });
         }
-        
+
         // Add family to housing slots
         village.housing_slots = [...currentSlots, family_id];
         village.updated_at = new Date().toISOString();
-        
+
         await storage.hset('village', id, JSON.stringify(village));
         res.json({ village });
     } catch (err: unknown) {
@@ -217,7 +217,7 @@ router.delete('/:id', validateParams(VillageIdParamSchema), async (req, res) => 
         if (!villageJson) {
             return res.status(404).json({ error: 'Village not found' });
         }
-        
+
         // Delete the village from Redis
         await storage.hdel('village', id);
         res.json({ success: true, message: 'Village deleted successfully' });

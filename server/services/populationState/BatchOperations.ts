@@ -192,7 +192,7 @@ export async function batchAddPersons(persons: PersonInput[], isNew: boolean = f
 
             const id = person.id.toString();
             const existing = existingPersons.get(id);
-            
+
             const p: StoredPerson = {
                 id: person.id,
                 tile_id: person.tile_id ?? null,

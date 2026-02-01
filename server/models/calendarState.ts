@@ -23,7 +23,7 @@ export async function getCalendarState(): Promise<CalendarStateData | null> {
     try {
         const data = await storage.get(REDIS_KEY);
         if (!data) return null;
-        
+
         const parsed = JSON.parse(data);
         return {
             year: parsed.current_year ?? parsed.year,
@@ -53,9 +53,9 @@ export async function setCalendarState({ year, month, day }: CalendarStateData):
             current_day: day,
             last_updated: new Date().toISOString()
         };
-        
+
         await storage.set(REDIS_KEY, JSON.stringify(state));
-        
+
         return {
             year,
             month,
