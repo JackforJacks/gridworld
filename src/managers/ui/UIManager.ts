@@ -30,6 +30,8 @@ interface PopulationApiStats {
     deathRate?: number;
     birthCount?: number;
     deathCount?: number;
+    totalBirthCount?: number;
+    totalDeathCount?: number;
     totalFamilies?: number;
     pregnantFamilies?: number;
     familiesWithChildren?: number;
@@ -51,6 +53,8 @@ interface StatsData {
     deathRate?: number;
     birthCount?: number;
     deathCount?: number;
+    totalBirthCount?: number;
+    totalDeathCount?: number;
     totalFamilies?: number;
     pregnantFamilies?: number;
     familiesWithChildren?: number;
@@ -116,6 +120,7 @@ function mergeApiStats(stats: StatsData, popData: PopulationApiStats): void {
     const keys: (keyof PopulationApiStats)[] = [
         'male', 'female', 'minors', 'working_age', 'elderly', 'bachelors',
         'birthRate', 'deathRate', 'birthCount', 'deathCount',
+        'totalBirthCount', 'totalDeathCount',
         'totalFamilies', 'pregnantFamilies', 'familiesWithChildren',
         'avgChildrenPerFamily', 'totalPopulation', 'villagesCount'
     ];
@@ -538,8 +543,8 @@ class UIManager {
                     ${SEP}
                     ${statRow('Birth Rate', fmtPct(stats.birthRate) + ' %', 'stats-modal-birth-rate')}
                     ${statRow('Death Rate', fmtPct(stats.deathRate) + ' %', 'stats-modal-death-rate')}
-                    ${statRow('Total Births', fmt(stats.birthCount, '0'), 'stats-modal-birth-count')}
-                    ${statRow('Total Deaths', fmt(stats.deathCount, '0'), 'stats-modal-death-count')}
+                    ${statRow('Total Births', fmt(stats.totalBirthCount, '0'), 'stats-modal-birth-count')}
+                    ${statRow('Total Deaths', fmt(stats.totalDeathCount, '0'), 'stats-modal-death-count')}
                     ${SEP}
                     ${statRow('Total Tiles', String(stats.totalTiles ?? 'N/A'))}
                     ${statRow('Total Villages', fmt(stats.villagesCount, '0'), 'stats-modal-total-villages')}

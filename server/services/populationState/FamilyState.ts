@@ -212,6 +212,8 @@ class FamilyState {
     static async addFertileFamily(familyId: number, tileId: number): Promise<boolean> {
         if (!storage.isAvailable()) return false;
         try {
+            // Add to the eligible:pregnancy:families set (used by processDailyFamilyEvents)
+            await storage.sadd('eligible:pregnancy:families', familyId.toString());
             // Keep legacy per-tile fertile set for compatibility
             await storage.sadd(`fertile:${tileId}`, familyId.toString());
             // Also enqueue into the global fertile queue so consumers can pop due families without scanning
@@ -239,11 +241,25 @@ class FamilyState {
     static async removeFertileFamily(familyId: number): Promise<boolean> {
         if (!storage.isAvailable()) return false;
         try {
-            // Scan for fertile:* keys and remove from all
+            // Remove from eligible:pregnancy:families
+            await storage.srem('eligible:pregnancy:families', familyId.toString());
+            // Remove from fertile:members set
+            await storage.srem('fertile:members', familyId.toString());
+            // Remove from fertile:queue sorted set (uses zrem, not srem)
+            if (typeof storage.zrem === 'function') {
+                await storage.zrem('fertile:queue', familyId.toString());
+            }
+            // Scan for fertile:* keys and remove from regular sets only
             const stream = storage.scanStream({ match: 'fertile:*', count: 100 });
             for await (const keys of stream) {
                 for (const key of keys as string[]) {
-                    await storage.srem(key, familyId.toString());
+                    // Skip known non-set keys
+                    if (key === 'fertile:queue' || key === 'fertile:members') continue;
+                    try {
+                        await storage.srem(key, familyId.toString());
+                    } catch {
+                        // Ignore errors for individual keys (might be wrong type)
+                    }
                 }
             }
             return true;

@@ -23,7 +23,79 @@ import {
 import { getCurrentDate, formatDate } from './helpers';
 
 /**
+ * Internal baby delivery logic (no lock) - called when already holding a lock
+ */
+async function deliverBabyInternal(
+    calendarService: CalendarService | null,
+    populationServiceInstance: PopulationServiceInstance | null,
+    familyId: number,
+    PopulationState: any
+): Promise<DeliveryResult | null> {
+    if (!storage.isAvailable()) {
+        throw new Error('Storage not available - cannot deliver baby');
+    }
+
+    // Get family record from Redis
+    const family = await PopulationState.getFamily(familyId) as FamilyRecord | null;
+    if (!family) {
+        throw new Error('Family not found');
+    }
+
+    const currentDate = getCurrentDate(calendarService);
+    const birthDate = formatDate(currentDate.year, currentDate.month, currentDate.day);
+
+    // Create baby
+    const { getRandomSex } = deps.getCalculator();
+    const babySex = getRandomSex();
+
+    // Get father's residency
+    let babyResidency = 0;
+    if (family.husband_id) {
+        const father = await PopulationState.getPerson(family.husband_id) as PersonRecord | null;
+        if (father) {
+            babyResidency = father.residency || 0;
+        }
+    }
+
+    const babyId = await PopulationState.getNextId();
+
+    const personObj = {
+        id: babyId,
+        tile_id: family.tile_id,
+        residency: babyResidency,
+        sex: babySex,
+        date_of_birth: birthDate,
+        health: 100,
+        family_id: familyId
+    };
+
+    await PopulationState.addPerson(personObj, true);
+
+    // Update family with new child
+    const updatedChildrenIds = [...(family.children_ids || []), babyId];
+    await PopulationState.updateFamily(familyId, { children_ids: updatedChildrenIds });
+
+    // Track birth
+    if (populationServiceInstance?.trackBirths) {
+        populationServiceInstance.trackBirths(1);
+    }
+
+    await safeExecute(
+        () => storage.incr('stats:deliveries:count'),
+        'FamilyManager:DeliveriesCount',
+        null,
+        ErrorSeverity.LOW
+    );
+
+    return {
+        baby: { id: babyId, sex: babySex, birthDate },
+        family: { ...family, children_ids: updatedChildrenIds }
+    };
+}
+
+/**
  * Delivers a baby and adds to family - storage-only
+ * This version acquires its own lock, for standalone use
  */
 export async function deliverBaby(
     pool: Pool | null,
@@ -38,69 +110,10 @@ export async function deliverBaby(
         contentionStatsKey: 'stats:deliveries:contention'
     });
 
+    const PopulationState = deps.getPopulationState();
+
     const result = await withLock(lockConfig, async () => {
-        const PopulationState = deps.getPopulationState();
-
-        if (!storage.isAvailable()) {
-            throw new Error('Storage not available - cannot deliver baby');
-        }
-
-        // Get family record from Redis
-        const family = await PopulationState.getFamily(familyId) as FamilyRecord | null;
-        if (!family) {
-            throw new Error('Family not found');
-        }
-
-        const currentDate = getCurrentDate(calendarService);
-        const birthDate = formatDate(currentDate.year, currentDate.month, currentDate.day);
-
-        // Create baby
-        const { getRandomSex } = deps.getCalculator();
-        const babySex = getRandomSex();
-
-        // Get father's residency
-        let babyResidency = 0;
-        if (family.husband_id) {
-            const father = await PopulationState.getPerson(family.husband_id) as PersonRecord | null;
-            if (father) {
-                babyResidency = father.residency || 0;
-            }
-        }
-
-        const babyId = await PopulationState.getNextId();
-
-        const personObj = {
-            id: babyId,
-            tile_id: family.tile_id,
-            residency: babyResidency,
-            sex: babySex,
-            date_of_birth: birthDate,
-            health: 100,
-            family_id: familyId
-        };
-
-        await PopulationState.addPerson(personObj, true);
-
-        // Update family with new child
-        const updatedChildrenIds = [...(family.children_ids || []), babyId];
-        await PopulationState.updateFamily(familyId, { children_ids: updatedChildrenIds });
-
-        // Track birth
-        if (populationServiceInstance?.trackBirths) {
-            populationServiceInstance.trackBirths(1);
-        }
-
-        await safeExecute(
-            () => storage.incr('stats:deliveries:count'),
-            'FamilyManager:DeliveriesCount',
-            null,
-            ErrorSeverity.LOW
-        );
-
-        return {
-            baby: { id: babyId, sex: babySex, birthDate },
-            family: { ...family, children_ids: updatedChildrenIds }
-        };
+        return await deliverBabyInternal(calendarService, populationServiceInstance, familyId, PopulationState);
     });
 
     if (!result.acquired) {
@@ -192,25 +205,14 @@ async function getReadyFamilies(
 ): Promise<FamilyRecord[]> {
     let readyFamilies: FamilyRecord[] = [];
 
-    if (storage.isAvailable() && typeof storage.atomicPopDueFertile === 'function') {
-        // Use atomic pop from global queue
-        while (true) {
-            const id = await storage.atomicPopDueFertile(Date.now());
-            if (!id) break;
-            try {
-                const f = await PopulationState.getFamily(parseInt(id, 10)) as FamilyRecord | null;
-                if (f) readyFamilies.push(f);
-            } catch { /* ignore */ }
-        }
-    } else {
-        // Fallback: scan all families
-        const allFamilies = await PopulationState.getAllFamilies() as FamilyRecord[];
-        readyFamilies = allFamilies.filter(f => {
-            if (!f.pregnancy || !f.delivery_date) return false;
-            const deliveryValue = new Date(f.delivery_date.split('T')[0]).getTime();
-            return deliveryValue <= currentDateValue;
-        });
-    }
+    // Always scan all families to find those ready for delivery
+    // The pregnant families with past delivery dates need to be processed
+    const allFamilies = await PopulationState.getAllFamilies() as FamilyRecord[];
+    readyFamilies = allFamilies.filter(f => {
+        if (!f.pregnancy || !f.delivery_date) return false;
+        const deliveryValue = new Date(f.delivery_date.split('T')[0]).getTime();
+        return deliveryValue <= currentDateValue;
+    });
 
     // Add retry candidates
     for (const id of retryCandidateIds) {
@@ -250,13 +252,13 @@ async function processOneDelivery(
         // Clear pregnancy status before delivery
         await PopulationState.updateFamily(family.id, { pregnancy: false, delivery_date: null });
 
-        const res = await deliverBaby(pool, calendarService, populationServiceInstance, family.id);
+        // Call internal version without nested lock
+        const res = await deliverBabyInternal(calendarService, populationServiceInstance, family.id, PopulationState);
 
         // Re-add to fertile set if still eligible
         if (res?.family) {
             try {
-                const currentDate = getCurrentDate(calendarService);
-                await PopulationState.addFertileFamily(res.family.id, currentDate.year, currentDate.month, currentDate.day);
+                await PopulationState.addFertileFamily(res.family.id, res.family.tile_id);
             } catch (e) {
                 console.warn('[processOneDelivery] Failed to re-add to fertile set:', (e as Error)?.message);
             }

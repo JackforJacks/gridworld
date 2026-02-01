@@ -164,7 +164,7 @@ async function attemptOnePairing(
 
         // Add to fertile set
         try {
-            await PopulationState.addFertileFamily(newFamily.id, year, month, day);
+            await PopulationState.addFertileFamily(newFamily.id, parseInt(tileId));
         } catch (e) {
             console.warn('[attemptOnePairing] Failed to add to fertile set:', (e as Error)?.message);
         }

@@ -122,6 +122,8 @@ class PopulationService {
     rateTrackingInterval: number;
     birthCount: number;
     deathCount: number;
+    totalBirthCount: number;
+    totalDeathCount: number;
     lastRateReset: number;
     eventLog: EventLogEntry[];
     statisticsService: StatisticsService;
@@ -157,6 +159,8 @@ class PopulationService {
         this.rateTrackingInterval = 60000; // 60 seconds default
         this.birthCount = 0;
         this.deathCount = 0;
+        this.totalBirthCount = 0;
+        this.totalDeathCount = 0;
         this.lastRateReset = Date.now();
 
         // In-memory event log for births and deaths
@@ -395,6 +399,11 @@ class PopulationService {
         if (!this.calendarService) return;
         const date = this.calendarService.getCurrentDate();
 
+        // Increment birth counter for rate calculations (resets periodically)
+        this.birthCount += count;
+        // Increment cumulative birth counter (never resets)
+        this.totalBirthCount += count;
+
         for (let i = 0; i < count; i++) {
             this.eventLog.push({ type: 'birth', date: { ...date } });
             // Emit birth event instead of direct socket call
@@ -425,6 +434,11 @@ class PopulationService {
     trackDeaths(count: number) {
         if (!this.calendarService) return;
         const date = this.calendarService.getCurrentDate();
+
+        // Increment death counter for rate calculations (resets periodically)
+        this.deathCount += count;
+        // Increment cumulative death counter (never resets)
+        this.totalDeathCount += count;
 
         for (let i = 0; i < count; i++) {
             this.eventLog.push({ type: 'death', date: { ...date } });

@@ -383,7 +383,7 @@ function calculateRatesInGame(context, calendarService, mode = 'year') {
  * Legacy real-time rate calculation (used for backward compatibility)
  */
 function calculateRates(context) {
-    if (!context) return { birthRate: 0, deathRate: 0, birthCount: 0, deathCount: 0, timeElapsed: 0 };
+    if (!context) return { birthRate: 0, deathRate: 0, birthCount: 0, deathCount: 0, totalBirthCount: 0, totalDeathCount: 0, timeElapsed: 0 };
     const now = Date.now();
     const timeElapsed = now - context.lastRateReset;
     const minutesElapsed = timeElapsed / 60000;
@@ -393,6 +393,8 @@ function calculateRates(context) {
             deathRate: 0,
             birthCount: context.birthCount,
             deathCount: context.deathCount,
+            totalBirthCount: context.totalBirthCount || 0,
+            totalDeathCount: context.totalDeathCount || 0,
             timeElapsed: timeElapsed
         };
     }
@@ -403,6 +405,8 @@ function calculateRates(context) {
         deathRate: Math.round(deathRate * 100) / 100,
         birthCount: context.birthCount,
         deathCount: context.deathCount,
+        totalBirthCount: context.totalBirthCount || 0,
+        totalDeathCount: context.totalDeathCount || 0,
         timeElapsed: timeElapsed
     };
 }

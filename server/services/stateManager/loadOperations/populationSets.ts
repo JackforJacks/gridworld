@@ -35,13 +35,12 @@ export async function populateFertileFamilies(
             peopleMap[p.id] = p;
         }
 
-        const currentDate = getCurrentDate(calendarService);
         const PopulationState = require('../../populationState').default;
 
         // Filter eligible families first
         const eligibleFamilies = families.filter(f => {
             const childrenCount = (f.children_ids || []).length;
-            if (f.pregnancy || childrenCount >= 5) return false;
+            if (f.pregnancy || childrenCount >= 10) return false;
             if (f.wife_id === null) return false;
             const wife = peopleMap[f.wife_id];
             return wife && wife.date_of_birth;
@@ -54,9 +53,7 @@ export async function populateFertileFamilies(
                 try {
                     await PopulationState.addFertileFamily(
                         f.id,
-                        currentDate.year,
-                        currentDate.month,
-                        currentDate.day
+                        f.tile_id
                     );
                 } catch (e: unknown) {
                     // Ignore individual failures

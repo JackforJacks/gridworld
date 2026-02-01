@@ -27,7 +27,7 @@ interface FamilyManagerModule {
 
 // Interface for population state module
 interface PopulationStateModule {
-    addFertileFamily: (familyId: number, year: number, month: number, day: number) => Promise<void>;
+    addFertileFamily: (familyId: number, tileId: number) => Promise<boolean>;
 }
 
 /**
@@ -145,13 +145,12 @@ async function createRandomFamilies(
                 const familyManager = deps.getFamilyManager() as unknown as FamilyManagerModule;
                 const newFamily = await familyManager.createFamily(pool, males[i].id, females[i].id, tileId);
 
-                // If calendarService available, register the family as fertile candidate if applicable
+                // Register the family as fertile candidate if applicable
                 try {
-                    if (newFamily && calendarService && typeof calendarService.getCurrentDate === 'function') {
-                        const cd = calendarService.getCurrentDate();
+                    if (newFamily) {
                         const PopulationState = deps.getPopulationState() as unknown as PopulationStateModule | null;
                         if (PopulationState) {
-                            await PopulationState.addFertileFamily(newFamily.id, cd.year, cd.month, cd.day);
+                            await PopulationState.addFertileFamily(newFamily.id, tileId);
                         }
                     }
                 } catch (_: unknown) { /* ignore */ }

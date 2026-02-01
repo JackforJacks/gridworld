@@ -344,7 +344,7 @@ async function processDailyFamilyEvents(
                 if (!family) continue;
                 // Ensure family is still eligible
                 if (family.pregnancy) continue;
-                if ((family.children_ids || []).length >= 5) continue;
+                if ((family.children_ids || []).length >= 10) continue;
 
                 const wife = family.wife_id !== null ? await PopulationState.getPerson(family.wife_id) : null;
                 if (!wife || !wife.date_of_birth) continue;

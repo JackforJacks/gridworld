@@ -130,7 +130,7 @@ kbd {
     backdrop-filter: blur(15px);
     display: flex;
     flex-direction: column;
-    overflow: hidden;
+    overflow: visible;
 }
 
 .tile-info-panel.visible {
