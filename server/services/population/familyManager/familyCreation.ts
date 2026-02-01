@@ -35,7 +35,7 @@ export async function createFamily(
 
         // Ensure neither already belongs to a family
         if (husband.family_id || wife.family_id) {
-            console.warn(`[createFamily] Husband ${husbandId} or wife ${wifeId} already in a family - skipping`);
+            // Silently skip - this can happen due to race conditions in matchmaking
             return null;
         }
 

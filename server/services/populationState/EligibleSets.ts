@@ -28,12 +28,27 @@ export async function addEligiblePerson(personId: number, isMale: boolean, tileI
 
 /**
  * Remove person from eligible sets
- * Optimized: Uses person's tile_id and sex to target specific key instead of scanning
+ * Can be called with just personId (looks up tile_id/sex) or with tileId and sex directly
  */
-export async function removeEligiblePerson(personId: number): Promise<boolean> {
+export async function removeEligiblePerson(
+    personId: number,
+    tileId?: number,
+    sex?: 'male' | 'female'
+): Promise<boolean> {
     if (!storage.isAvailable()) return false;
     try {
         const personIdStr = personId.toString();
+        
+        // If tileId and sex provided, use them directly (more efficient)
+        if (tileId !== undefined && sex !== undefined) {
+            const setKey = sex === 'male'
+                ? `eligible:males:tile:${tileId}`
+                : `eligible:females:tile:${tileId}`;
+            await storage.srem(setKey, personIdStr);
+            return true;
+        }
+        
+        // Otherwise look up from person record
         const json = await storage.hget('person', personIdStr);
         if (json) {
             const person = JSON.parse(json) as StoredPerson;

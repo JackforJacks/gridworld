@@ -125,7 +125,7 @@ class PopulationState {
     static async getGlobalCounts(): Promise<GlobalCounts> { return PeopleState.getGlobalCounts(); }
     static async getTotalPopulation(): Promise<number> { return PeopleState.getTotalPopulation(); }
     static async addEligiblePerson(personId: number | string, isMale: boolean, tileId: number | string): Promise<boolean> { return PeopleState.addEligiblePerson(Number(personId), isMale, Number(tileId)); }
-    static async removeEligiblePerson(personId: number | string): Promise<boolean> { return PeopleState.removeEligiblePerson(Number(personId)); }
+    static async removeEligiblePerson(personId: number | string, tileId?: number | string, sex?: 'male' | 'female'): Promise<boolean> { return PeopleState.removeEligiblePerson(Number(personId), tileId !== undefined ? Number(tileId) : undefined, sex); }
     static async getEligiblePeople(isMale: boolean, tileId?: number | string): Promise<string[]> { return PeopleState.getEligiblePeople(isMale, tileId !== undefined ? Number(tileId) : 0); }
     static async getPendingInserts(): Promise<StoredPerson[]> { return PeopleState.getPendingInserts(); }
     static async getPendingUpdates(): Promise<StoredPerson[]> { return PeopleState.getPendingUpdates(); }
