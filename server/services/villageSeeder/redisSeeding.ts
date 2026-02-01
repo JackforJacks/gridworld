@@ -51,8 +51,8 @@ interface VillageSpec {
 interface Person {
     id: number;
     tile_id: number | null;
-    sex: 'M' | 'F';
-    date_of_birth: string;
+    sex: boolean; // true = male, false = female
+    date_of_birth: string | Date;
     residency: number | null;
     family_id: number | null;
     health?: number;
@@ -481,7 +481,7 @@ async function createInitialPopulationRedisFirst(tileId: number): Promise<number
     const people: Person[] = [];
 
     for (let i = 0; i < peopleCount; i++) {
-        const sex: 'M' | 'F' = getRandomSex();
+        const sex: boolean = getRandomSex(); // true = male, false = female
         const age: number = getRandomAge();
         const birthDate: string = getRandomBirthDate(1, 1, 1, age);
         const tempId: number = await PopulationState.getNextId();

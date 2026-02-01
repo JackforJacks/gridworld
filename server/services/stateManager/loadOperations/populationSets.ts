@@ -89,10 +89,9 @@ export async function populateEligibleSets(
             await Promise.all(batch.map(async p => {
                 try {
                     await PopulationState.addEligiblePerson(
-                        p,
-                        currentDate.year,
-                        currentDate.month,
-                        currentDate.day
+                        p.id,
+                        p.sex === true,
+                        p.tile_id
                     );
                     processed++;
                 } catch (e: unknown) {

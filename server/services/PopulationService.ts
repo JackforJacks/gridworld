@@ -91,10 +91,11 @@ interface PopulationData {
 }
 
 interface IntegrityDetail {
+    tileId: number;
     duplicatesCount?: number;
     missingCount?: number;
     mismatchedCount?: number;
-    [key: string]: unknown;
+    error?: string;
 }
 
 interface EventLogEntry {
@@ -267,7 +268,12 @@ class PopulationService {
         return await initializeTilePopulations(this.#pool, this.calendarService, this, tileIds, options);
     }
     async updateTilePopulations(tilePopulations: Array<{ tileId: number; population: number }>) {
-        return await updateMultipleTilePopulations(this.#pool, this.calendarService, this, tilePopulations);
+        // Convert array to object format expected by updateMultipleTilePopulations
+        const tilePopulationsObj: Record<string, number> = {};
+        for (const { tileId, population } of tilePopulations) {
+            tilePopulationsObj[String(tileId)] = population;
+        }
+        return await updateMultipleTilePopulations(this.#pool, this.calendarService, this, tilePopulationsObj);
     }
     async regeneratePopulationWithNewAgeDistribution(): Promise<unknown> {
         return await regeneratePopulationWithNewAgeDistribution(this.#pool, this.calendarService, this);
@@ -287,7 +293,8 @@ class PopulationService {
             if (metrics && metrics.auditDuration) metrics.auditDuration.observe(durationSec);
             if (!res.ok) {
                 if (metrics && metrics.auditFailures) metrics.auditFailures.inc();
-                const issuesCount = Array.isArray(res.details) ? res.details.reduce((sum: number, d: IntegrityDetail) => sum + (d.duplicatesCount || d.missingCount || d.mismatchedCount || 0), 0) : 0;
+                const details = res.details as IntegrityDetail[];
+                const issuesCount = Array.isArray(details) ? details.reduce((sum: number, d: IntegrityDetail) => sum + (d.duplicatesCount || d.missingCount || d.mismatchedCount || 0), 0) : 0;
                 if (metrics && metrics.issuesGauge) metrics.issuesGauge.set(issuesCount);
             } else {
                 if (metrics && metrics.issuesGauge) metrics.issuesGauge.set(0);

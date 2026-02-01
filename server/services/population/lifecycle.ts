@@ -72,7 +72,7 @@ interface PopulationStateModule {
     batchRemovePersons(personIds: number[], markForDeletion: boolean): Promise<void>;
     batchUpdateResidency(updates: ResidencyUpdate[]): Promise<void>;
     removeFertileFamily(familyId: number): Promise<void>;
-    addEligiblePerson(person: PersonData, year: number, month: number, day: number): Promise<void>;
+    addEligiblePerson(personId: number, isMale: boolean, tileId: number): Promise<boolean>;
 }
 
 /** StateManager module interface */
@@ -364,13 +364,12 @@ async function processDailyFamilyEvents(
                         const started = await familyManager.startPregnancy(pool, calendarService as CalendarService, familyId);
                         if (started) newPregnancies++;
                     } catch (error: unknown) {
-                        const errorMessage = error instanceof Error ? error.message : String(error);
-                        console.warn(`[lifecycle.processDailyFamilyEvents] Could not start pregnancy for family ${familyId}: ${errorMessage}`);
+                        // Silently ignore expected errors (wife too old, lock contention)
+                        // The family will be removed from the set or retried automatically
                     }
                 }
             } catch (err: unknown) {
-                const errMessage = err instanceof Error ? err.message : String(err);
-                console.warn('[processDailyFamilyEvents] error processing candidate family:', fid, errMessage);
+                // Silently ignore processing errors - they'll be retried next tick
             }
         }
 
@@ -392,7 +391,12 @@ async function processDailyFamilyEvents(
 
                             // Add newly released adult to eligible matchmaking sets
                             try {
-                                await PopulationState.addEligiblePerson(person, currentDate.year, currentDate.month, currentDate.day);
+                                // Support both string ('M'/'F') and boolean (true=male) formats
+                                const sexVal = person.sex as string | boolean;
+                                const isMale = sexVal === 'M' || sexVal === true;
+                                if (person.tile_id !== null) {
+                                    await PopulationState.addEligiblePerson(person.id, isMale, person.tile_id);
+                                }
                             } catch (e: unknown) {
                                 const eMessage = e instanceof Error ? e.message : String(e);
                                 console.warn('[lifecycle] addEligiblePerson failed for released adult:', eMessage);

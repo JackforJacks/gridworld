@@ -60,7 +60,7 @@ async function addPeopleToTile(pool, tileId, count, currentYear, currentMonth, c
     // Add eligible persons to matchmaking sets (still need to check age individually)
     for (const personObj of persons) {
         try {
-            await PopulationState.addEligiblePerson(personObj, currentYear, currentMonth, currentDay);
+            await PopulationState.addEligiblePerson(personObj.id, personObj.sex === true, personObj.tile_id);
         } catch (e: unknown) {
             console.warn('[addPeopleToTile] failed to add eligible person:', e instanceof Error ? e.message : String(e));
         }

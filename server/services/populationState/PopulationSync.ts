@@ -113,7 +113,7 @@ export async function rebuildVillageMemberships() {
     const lockKey = 'population:sync:lock';
     const token = await acquireLock(lockKey, 30000, 5000);
     if (!token) {
-        console.warn('[PopulationSync] rebuildVillageMemberships skipped: could not acquire sync lock');
+        // Lock contention is expected - silently skip
         return { skipped: true, reason: 'could not acquire sync lock' };
     }
 
@@ -168,7 +168,7 @@ export async function repairIfNeeded() {
     const lockKey = 'population:sync:lock';
     const token = await acquireLock(lockKey, 30000, 5000);
     if (!token) {
-        console.warn('[PopulationSync] repairIfNeeded skipped: could not acquire sync lock');
+        // Lock contention is expected - silently skip
         return { skipped: true, reason: 'could not acquire sync lock' };
     }
 
@@ -197,13 +197,13 @@ export async function repairIfNeeded() {
         const totalUnique = personSet.size;
 
         if (totalScards > totalUnique) {
-            console.warn('[PopulationSync] repairIfNeeded detected duplicate memberships: total=', totalScards, 'unique=', totalUnique);
+            // Silently repair - this is expected occasionally with concurrent operations
             const res = await rebuildVillageMemberships();
             return { repaired: true, before: { totalScards, totalUnique }, result: res };
         }
         return { ok: true };
     } catch (e: unknown) {
-        console.warn('[PopulationSync] repairIfNeeded failed:', getErrorMessage(e));
+        // Silently ignore repair failures - they'll be retried
         return { ok: false, error: getErrorMessage(e) };
     } finally {
         if (token) {

@@ -48,7 +48,8 @@ export async function startPregnancy(
 
         // Check if already pregnant
         if (family.pregnancy) {
-            console.warn(`Family ${familyId} is already pregnant - skipping startPregnancy`);
+            // Expected race condition - family was sampled before becoming pregnant
+            // Just return null silently, no need to warn
             return null;
         }
 
@@ -62,9 +63,16 @@ export async function startPregnancy(
         const birthDateParts = parseBirthDate(wife.date_of_birth);
         const wifeAge = calculateAgeFromDates(birthDateParts, currentDate);
 
-        // Check if wife is too old for pregnancy
+        // Check if wife is too old for pregnancy - remove from fertile set silently
         if (wifeAge > MAX_PREGNANCY_AGE) {
-            throw new Error(`Wife too old for pregnancy: age ${wifeAge} (limit ${MAX_PREGNANCY_AGE})`);
+            // Remove aged-out family from fertile set to prevent repeated attempts
+            await safeExecute(
+                () => PopulationState.removeFertileFamily(familyId),
+                'FamilyManager:RemoveAgedOutFamily',
+                null,
+                ErrorSeverity.LOW
+            );
+            return null;
         }
 
         // Calculate delivery date (~9 months later)
@@ -94,11 +102,12 @@ export async function startPregnancy(
     });
 
     if (!result.acquired) {
-        console.warn(`[startPregnancy] Could not acquire lock for family ${familyId}`);
+        // Lock contention is expected with concurrent operations - don't log
         return null;
     }
 
     if (result.error) {
+        // Only log unexpected errors, not expected conditions
         console.error(`Error starting pregnancy for family ${familyId}:`, result.error.message);
         throw result.error;
     }

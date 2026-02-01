@@ -464,9 +464,9 @@ class GridWorldApp {
             const tiles = hexasphere.tiles || [];
             const tile = tiles.find((t: TileWithLands) => t.id === tileId);
             if (tile) {
-                // Cast tile and create a minimal MouseEvent-like object
+                // Cast tile and call selectTile with one argument
                 const tileAny = tile as unknown as Parameters<typeof this.tileSelector.selectTile>[0];
-                this.tileSelector.selectTile(tileAny, undefined);
+                this.tileSelector.selectTile(tileAny);
             }
         }
     }

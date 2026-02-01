@@ -7,6 +7,7 @@ import { getAppContext } from '../../core/AppContext';
 // Interface for SceneManager to avoid circular dependencies
 interface SceneManagerLike {
     getPopulationStats(): Record<string, unknown>;
+    regenerateTiles(): Promise<void>;
 }
 
 // Interface for growth stats from PopulationManager

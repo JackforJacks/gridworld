@@ -30,7 +30,7 @@ class StatisticsService {
     /**
      * Initialize the statistics service
      */
-    initialize(calendarService = null) {
+    initialize(calendarService: any = null) {
         if (calendarService) {
             this.calendarService = calendarService;
         }

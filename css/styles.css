@@ -892,6 +892,47 @@ kbd {
     margin-bottom: 16px;
 }
 
+/* Calendar Control Buttons (Stop/Play, Monthly Speed) */
+#calendar-controls.calendar-controls {
+    position: absolute;
+    left: 50%;
+    top: 120px;
+    transform: translateX(-50%);
+    display: flex;
+    gap: 8px;
+    z-index: 15;
+}
+
+.calendar-control-btn {
+    width: 36px;
+    height: 36px;
+    border: none;
+    border-radius: 50%;
+    background: rgba(40, 40, 80, 0.9);
+    color: #fff;
+    font-size: 16px;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    transition: background 0.2s, transform 0.1s;
+    box-shadow: 0 2px 4px rgba(0, 0, 0, 0.3);
+}
+
+.calendar-control-btn:hover {
+    background: rgba(60, 60, 100, 0.95);
+    transform: scale(1.1);
+}
+
+.calendar-control-btn:active {
+    transform: scale(0.95);
+}
+
+.calendar-control-btn.active {
+    background: rgba(76, 175, 80, 0.8);
+    box-shadow: 0 0 8px rgba(76, 175, 80, 0.5);
+}
+
 .speed-selector {
     width: 100%;
     padding: 8px;

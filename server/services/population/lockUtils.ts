@@ -66,7 +66,7 @@ export async function withLock<T>(
         );
 
         if (!lockToken) {
-            // Track contention
+            // Track contention silently - only increment stats
             if (config.contentionStatsKey) {
                 await safeExecute(
                     () => storage.incr(config.contentionStatsKey!),
@@ -76,9 +76,7 @@ export async function withLock<T>(
                 );
             }
 
-            const holder = await getLockHolder(config.key);
-            console.warn(`[withLock] Could not acquire lock ${config.key} - holder=${holder}`);
-
+            // Don't log every contention - it's expected with concurrent operations
             return { acquired: false };
         }
 

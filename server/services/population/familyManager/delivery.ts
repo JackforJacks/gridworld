@@ -273,11 +273,11 @@ async function processOneDelivery(
     if (!result.acquired) {
         // Lock contention - schedule retry
         const retryResult = await scheduleRetry(family.id, retryConfig);
+        // Only log final failures, not intermediate retries
         if (retryResult.maxAttemptsReached) {
-            console.warn(`[processDeliveries] Family ${family.id} reached max retry attempts - skipping permanently`);
-        } else if (retryResult.shouldRetry) {
-            console.warn(`[processDeliveries] Family ${family.id} requeued for retry (attempt ${retryResult.attemptNumber}, delay ${retryResult.nextDelayMs}ms)`);
+            console.warn(`[processDeliveries] Family ${family.id} reached max retry attempts - skipping`);
         }
+        // Don't log intermediate retries - they're expected with concurrent operations
         return false;
     }
 

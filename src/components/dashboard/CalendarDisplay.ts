@@ -18,12 +18,14 @@ interface CalendarState {
     day?: number;
     currentDate?: CalendarDateInfo;
     isRunning?: boolean;
+    isPaused?: boolean;
     totalDays?: number;
     totalTicks?: number;
     startTime?: string | null;
     lastTickTime?: string | null;
     config?: Record<string, unknown>;
     formatted?: Record<string, string | undefined>;
+    currentSpeed?: string;
 }
 
 /**
@@ -45,6 +47,10 @@ class CalendarDisplay {
     private readonly monthDotSize: number;
     private stateChangedHandler: StateChangeHandler | null;
     private tickHandler: StateChangeHandler | null;
+    private stopButton: HTMLButtonElement | null;
+    private monthlyButton: HTMLButtonElement | null;
+    private isRunning: boolean;
+    private currentSpeed: string;
 
     constructor(calendarManager: CalendarManager) {
         this.calendarManager = calendarManager;
@@ -61,6 +67,12 @@ class CalendarDisplay {
         this.stateChangedHandler = null;
         this.tickHandler = null;
 
+        // Control button references
+        this.stopButton = null;
+        this.monthlyButton = null;
+        this.isRunning = true;
+        this.currentSpeed = '1_day';
+
         // Initialize the component
         this.init();
     }
@@ -71,6 +83,7 @@ class CalendarDisplay {
     private async init(): Promise<void> {
         this.createDateDisplay();
         this.createDashboardElements();
+        this.createControlButtons();
         this.setupEventListeners();
         this.updateDisplay();
     }
@@ -186,6 +199,103 @@ class CalendarDisplay {
         if (helpBtn && helpBtn.parentNode) {
             helpBtn.parentNode.removeChild(helpBtn);
             container.appendChild(helpBtn);
+        }
+    }
+
+    /**
+     * Create calendar control buttons (Stop/Play and Monthly speed)
+     */
+    private createControlButtons(): void {
+        const dashboard = document.getElementById('dashboard');
+        if (!dashboard) return;
+
+        // Create control buttons container
+        const controlsContainer = document.createElement('div');
+        controlsContainer.id = 'calendar-controls';
+        controlsContainer.className = 'calendar-controls';
+
+        // Create Stop/Play button
+        this.stopButton = document.createElement('button');
+        this.stopButton.id = 'calendar-stop-btn';
+        this.stopButton.className = 'calendar-control-btn';
+        this.stopButton.textContent = '⏸️';
+        this.stopButton.title = 'Stop/Resume Calendar';
+        this.stopButton.addEventListener('click', () => this.toggleCalendar());
+        controlsContainer.appendChild(this.stopButton);
+
+        // Create Monthly speed button
+        this.monthlyButton = document.createElement('button');
+        this.monthlyButton.id = 'calendar-monthly-btn';
+        this.monthlyButton.className = 'calendar-control-btn';
+        this.monthlyButton.textContent = '⏩';
+        this.monthlyButton.title = 'Toggle Monthly Speed (1 month/sec)';
+        this.monthlyButton.addEventListener('click', () => this.toggleMonthlySpeed());
+        controlsContainer.appendChild(this.monthlyButton);
+
+        // Insert after the calendar display
+        if (this.dateElement && this.dateElement.parentNode) {
+            this.dateElement.parentNode.insertBefore(controlsContainer, this.dateElement.nextSibling);
+        } else {
+            dashboard.appendChild(controlsContainer);
+        }
+    }
+
+    /**
+     * Toggle calendar running state (stop/start)
+     */
+    private async toggleCalendar(): Promise<void> {
+        if (!this.calendarManager) return;
+
+        try {
+            if (this.isRunning) {
+                await this.calendarManager.stop();
+            } else {
+                await this.calendarManager.start();
+            }
+        } catch (error: unknown) {
+            console.error('Error toggling calendar:', error);
+        }
+    }
+
+    /**
+     * Toggle between normal and monthly speed
+     */
+    private async toggleMonthlySpeed(): Promise<void> {
+        if (!this.calendarManager) return;
+
+        try {
+            if (this.currentSpeed === '1_month') {
+                // Switch back to normal speed (1 day/sec)
+                await this.calendarManager.setSpeed('1_day');
+            } else {
+                // Switch to monthly speed
+                await this.calendarManager.setSpeed('1_month');
+            }
+        } catch (error: unknown) {
+            console.error('Error toggling speed:', error);
+        }
+    }
+
+    /**
+     * Update control button states based on calendar state
+     */
+    private updateControlButtons(state: CalendarState): void {
+        // Update running state
+        this.isRunning = state.isRunning !== false && state.isPaused !== true;
+        this.currentSpeed = state.currentSpeed || '1_day';
+
+        // Update stop button
+        if (this.stopButton) {
+            this.stopButton.textContent = this.isRunning ? '⏸️' : '▶️';
+            this.stopButton.title = this.isRunning ? 'Pause Calendar' : 'Resume Calendar';
+        }
+
+        // Update monthly button
+        if (this.monthlyButton) {
+            const isMonthly = this.currentSpeed === '1_month';
+            this.monthlyButton.textContent = isMonthly ? '⏩' : '📅';
+            this.monthlyButton.title = isMonthly ? 'Switch to Normal Speed' : 'Switch to Monthly Speed (1 month/sec)';
+            this.monthlyButton.classList.toggle('active', isMonthly);
         }
     }
 
@@ -322,6 +432,9 @@ class CalendarDisplay {
         this.updateMoonPhase(moonEmoji);
         this.updateYearLabel(year, month);
         this.drawMonthSteps(month, day, year);
+
+        // Update control buttons state
+        this.updateControlButtons(state);
     }
 
     /**
@@ -396,9 +509,17 @@ class CalendarDisplay {
             this.dateElement.parentNode.removeChild(this.dateElement);
         }
 
+        // Remove control buttons container
+        const controlsContainer = document.getElementById('calendar-controls');
+        if (controlsContainer && controlsContainer.parentNode) {
+            controlsContainer.parentNode.removeChild(controlsContainer);
+        }
+
         // Clear references
         this.calendarManager = null;
         this.dateElement = null;
+        this.stopButton = null;
+        this.monthlyButton = null;
     }
 }
 

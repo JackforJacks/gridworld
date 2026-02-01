@@ -21,7 +21,7 @@ import { clearStoragePopulation } from './storageReset';
  */
 export async function updateTilePopulation(
     pool: Pool,
-    calendarService: CalendarService,
+    calendarService: CalendarService | null,
     serviceInstance: PopulationServiceInstance,
     tileId: string | number,
     population: number
@@ -39,7 +39,7 @@ export async function updateTilePopulation(
  */
 export async function updateMultipleTilePopulations(
     pool: Pool,
-    calendarService: CalendarService,
+    calendarService: CalendarService | null,
     serviceInstance: PopulationServiceInstance,
     tilePopulations: TilePopulations
 ): Promise<FormattedPopulationData> {

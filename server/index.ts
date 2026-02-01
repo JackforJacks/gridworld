@@ -147,10 +147,8 @@ class GridWorldServer {
                 // Run every 30s while server is running
                 setInterval(async () => {
                     try {
-                        const r = await PopulationState.repairIfNeeded();
-                        if (r && r.repaired) {
-                            console.log('✅ PeopleState repaired duplicate memberships at runtime:', r);
-                        }
+                        await PopulationState.repairIfNeeded();
+                        // Silently repair - no need to log successful repairs
                     } catch (e: unknown) { /* ignore */ }
                 }, 30000);
             } catch (e: unknown) {
