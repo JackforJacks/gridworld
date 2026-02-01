@@ -38,8 +38,8 @@ export async function removeEligiblePerson(personId: number): Promise<boolean> {
         if (json) {
             const person = JSON.parse(json) as StoredPerson;
             if (person.tile_id) {
-                const setKey = person.sex === true 
-                    ? `eligible:males:tile:${person.tile_id}` 
+                const setKey = person.sex === true
+                    ? `eligible:males:tile:${person.tile_id}`
                     : `eligible:females:tile:${person.tile_id}`;
                 await storage.srem(setKey, personIdStr);
             }
