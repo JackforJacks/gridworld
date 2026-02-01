@@ -319,16 +319,32 @@ class PopulationService {
             const tilePopulations = await this.#repository.getTilePopulations();
             const tileIds = tilePopulations.map(tp => tp.tile_id);
 
+            // Batch fetch: Get all families once upfront to avoid N+1 queries
+            const allFamiliesBefore = await this.#repository.getAllFamilies({});
+            const beforeCountByTile = new Map<number, number>();
+            for (const family of allFamiliesBefore) {
+                const tileId = family.tile_id;
+                beforeCountByTile.set(tileId, (beforeCountByTile.get(tileId) || 0) + 1);
+            }
+
+            // Process all tiles in parallel for family creation
+            await Promise.all(
+                tileIds.map(tileId => createRandomFamilies(this.#pool, tileId, this.calendarService))
+            );
+
+            // Batch fetch: Get all families once after to compute delta
+            const allFamiliesAfter = await this.#repository.getAllFamilies({});
+            const afterCountByTile = new Map<number, number>();
+            for (const family of allFamiliesAfter) {
+                const tileId = family.tile_id;
+                afterCountByTile.set(tileId, (afterCountByTile.get(tileId) || 0) + 1);
+            }
+
+            // Calculate totals and emit events
             let totalFamiliesCreated = 0;
             for (const tileId of tileIds) {
-                const beforeFamilies = await this.#repository.getAllFamilies({ tileId });
-                const beforeCount = beforeFamilies.length;
-
-                await createRandomFamilies(this.#pool, tileId, this.calendarService);
-
-                const afterFamilies = await this.#repository.getAllFamilies({ tileId });
-                const afterCount = afterFamilies.length;
-
+                const beforeCount = beforeCountByTile.get(tileId) || 0;
+                const afterCount = afterCountByTile.get(tileId) || 0;
                 const newFamilies = afterCount - beforeCount;
                 totalFamiliesCreated += newFamilies;
 

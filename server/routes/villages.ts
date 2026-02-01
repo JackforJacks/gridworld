@@ -4,6 +4,14 @@ import * as villageSeeder from '../services/villageSeeder';
 import StateManager from '../services/stateManager';
 import { logError, ErrorSeverity } from '../utils/errorHandler';
 import storage from '../services/storage';
+import { validateBody, validateParams } from '../middleware/validate';
+import {
+    CreateVillageSchema,
+    SeedRandomVillagesSchema,
+    AssignFamilySchema,
+    TileIdParamSchema,
+    VillageIdParamSchema
+} from '../schemas';
 
 const router: Router = express.Router();
 
@@ -74,7 +82,7 @@ router.get('/', async (req, res) => {
 });
 
 // GET /api/villages/tile/:tileId - Get villages for a specific tile
-router.get('/tile/:tileId', async (req, res) => {
+router.get('/tile/:tileId', validateParams(TileIdParamSchema), async (req, res) => {
     const { tileId } = req.params;
     try {
         const redisVillages = await getVillagesFromRedis(tileId);
@@ -99,7 +107,7 @@ router.get('/tile/:tileId', async (req, res) => {
 });
 
 // POST /api/villages - Create a new village
-router.post('/', async (req, res) => {
+router.post('/', validateBody(CreateVillageSchema), async (req, res) => {
     const { tile_id, land_chunk_index, name } = req.body;
     try {
         // Check if the land chunk is cleared and available (no need to check village_id)
@@ -125,7 +133,7 @@ router.post('/', async (req, res) => {
             INSERT INTO villages (tile_id, land_chunk_index, name, housing_slots, housing_capacity)
             VALUES ($1, $2, $3, $4, $5)
             RETURNING *
-        `, [tile_id, land_chunk_index, name || 'Village', housingSlots, housingCapacity]);
+        `, [tile_id, land_chunk_index, name, housingSlots, housingCapacity]);
         const village = rows[0];
         res.json({ village });
     } catch (err: unknown) {
@@ -135,8 +143,8 @@ router.post('/', async (req, res) => {
 });
 
 // POST /api/villages/seed-random - Seed a random number of villages (3..30)
-router.post('/seed-random', async (req, res) => {
-    const requestedCount = req.body && req.body.count ? parseInt(req.body.count, 10) : null;
+router.post('/seed-random', validateBody(SeedRandomVillagesSchema), async (req, res) => {
+    const requestedCount = req.body.count ?? null;
     try {
         const result = await villageSeeder.seedRandomVillages(requestedCount);
         if (!result || result.created === 0) {
@@ -150,9 +158,8 @@ router.post('/seed-random', async (req, res) => {
 });
 
 // POST /api/villages/seed-tile/:tileId - Seed villages for a single tile using population + random buffer
-router.post('/seed-tile/:tileId', async (req, res) => {
+router.post('/seed-tile/:tileId', validateParams(TileIdParamSchema), async (req, res) => {
     const tileId = parseInt(req.params.tileId, 10);
-    if (isNaN(tileId)) return res.status(400).json({ error: 'Invalid tileId' });
     try {
         const result = await villageSeeder.seedVillagesForTile(tileId);
         if (!result || result.created === 0) {
@@ -166,7 +173,7 @@ router.post('/seed-tile/:tileId', async (req, res) => {
 });
 
 // PUT /api/villages/:id/assign-family - Assign a family to a village
-router.put('/:id/assign-family', async (req, res) => {
+router.put('/:id/assign-family', validateParams(VillageIdParamSchema), validateBody(AssignFamilySchema), async (req, res) => {
     const { id } = req.params;
     const { family_id } = req.body;
     try {
@@ -205,7 +212,7 @@ router.put('/:id/assign-family', async (req, res) => {
 });
 
 // DELETE /api/villages/:id - Delete a village
-router.delete('/:id', async (req, res) => {
+router.delete('/:id', validateParams(VillageIdParamSchema), async (req, res) => {
     const { id } = req.params;
     try {
         // Just delete the village, do not update tiles_lands

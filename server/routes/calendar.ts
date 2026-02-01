@@ -1,4 +1,7 @@
 import express, { Router } from 'express';
+import { validateBody } from '../middleware/validate';
+import { SetDateSchema, SetIntervalSchema, SetSpeedSchema } from '../schemas';
+
 const router: Router = express.Router();
 
 /**
@@ -101,23 +104,11 @@ router.post('/reset', (req, res) => {
 });
 
 // POST /api/calendar/date - Set specific date
-router.post('/date', (req, res) => {
+router.post('/date', validateBody(SetDateSchema), (req, res) => {
     try {
         const { year, month, day } = req.body;
 
-        // Validate required fields
-        if (!year || !month || !day) {
-            return res.status(400).json({
-                success: false,
-                error: 'Year, month, and day are required'
-            });
-        }
-
-        const result = req.app.locals.calendarService.setDate(
-            parseInt(year),
-            parseInt(month),
-            parseInt(day)
-        );
+        const result = req.app.locals.calendarService.setDate(year, month, day);
 
         res.json({
             success: true,
@@ -136,24 +127,17 @@ router.post('/date', (req, res) => {
 });
 
 // POST /api/calendar/interval - Change tick interval
-router.post('/interval', (req, res) => {
+router.post('/interval', validateBody(SetIntervalSchema), (req, res) => {
     try {
         const { intervalMs } = req.body;
 
-        if (!intervalMs) {
-            return res.status(400).json({
-                success: false,
-                error: 'intervalMs is required'
-            });
-        }
-
-        const result = req.app.locals.calendarService.setTickInterval(parseInt(intervalMs));
+        const result = req.app.locals.calendarService.setTickInterval(intervalMs);
 
         res.json({
             success: true,
             data: {
                 intervalSet: result,
-                newInterval: parseInt(intervalMs),
+                newInterval: intervalMs,
                 state: req.app.locals.calendarService.getState()
             }
         });
@@ -184,16 +168,9 @@ router.get('/speeds', (req, res) => {
 });
 
 // POST /api/calendar/speed - Change calendar speed
-router.post('/speed', (req, res) => {
+router.post('/speed', validateBody(SetSpeedSchema), (req, res) => {
     try {
         const { speed } = req.body;
-
-        if (!speed) {
-            return res.status(400).json({
-                success: false,
-                error: 'Speed is required'
-            });
-        }
 
         const result = req.app.locals.calendarService.setSpeed(speed);
 

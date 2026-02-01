@@ -1,6 +1,12 @@
 // Population API Routes
 import express, { Router } from 'express';
 import StateManager from '../services/stateManager';
+import { validateBody } from '../middleware/validate';
+import {
+    UpdatePopulationSchema,
+    InitializePopulationSchema,
+    IntegrityCheckSchema
+} from '../schemas';
 
 const router: Router = express.Router();
 
@@ -28,26 +34,18 @@ router.get('/', async (req, res, next) => {
 });
 
 // Update population data (growth rate or tile populations)
-router.post('/', async (req, res, next) => {
+router.post('/', validateBody(UpdatePopulationSchema), async (req, res, next) => {
     try {
         const populationService = req.app.locals.populationService;
         const { rate, tilePopulations } = req.body;
         let responseData;
 
-        if (typeof rate === 'number' && rate >= 0) {
+        if (rate !== undefined) {
             responseData = await populationService.updateGrowthRate(rate);
         }
 
-        if (tilePopulations && typeof tilePopulations === 'object') {
+        if (tilePopulations) {
             responseData = await populationService.updateTilePopulations(tilePopulations);
-        }
-
-        if (!responseData) {
-            return res.status(400).json({
-                success: false,
-                error: 'No valid data provided',
-                message: 'Please provide either "rate" (number) or "tilePopulations" (object)'
-            });
         }
 
         res.json(responseData);
@@ -57,18 +55,10 @@ router.post('/', async (req, res, next) => {
 });
 
 // Initialize tile populations
-router.post('/initialize', async (req, res, next) => {
+router.post('/initialize', validateBody(InitializePopulationSchema), async (req, res, next) => {
     try {
         const populationService = req.app.locals.populationService;
-        const { habitableTiles, preserveDatabase = false } = req.body || {};
-
-        if (!habitableTiles || !Array.isArray(habitableTiles)) {
-            return res.status(400).json({
-                success: false,
-                error: 'Bad Request',
-                message: 'habitableTiles array is required'
-            });
-        }
+        const { habitableTiles, preserveDatabase } = req.body;
 
         const responseData = await populationService.initializeTilePopulations(habitableTiles, { preserveDatabase });
 
@@ -147,12 +137,11 @@ router.post('/senescence', async (req, res, next) => {
 });
 
 // Run integrity check (optionally repair) - ADMIN
-router.post('/integrity', async (req, res, next) => {
+router.post('/integrity', validateBody(IntegrityCheckSchema), async (req, res, next) => {
     try {
         const populationService = req.app.locals.populationService;
-        const { tiles, repair = false } = req.body || {};
-        // Expect tiles to be an array of tile IDs (optional)
-        const options = { tiles: Array.isArray(tiles) ? tiles : null, repair: Boolean(repair) };
+        const { tiles, repair } = req.body;
+        const options = { tiles: tiles || null, repair };
         const result = await populationService.runIntegrityCheck(options);
         res.json({ success: result.success, details: result.details });
     } catch (error: unknown) {

@@ -353,7 +353,42 @@ router.get('/', async (req: Request, res: Response): Promise<void> => {
             return;
         }
 
-        const tiles = await Promise.all(hexasphere.tiles.map(async tile => {
+        // ===== OPTIMIZED: Batch fetch all Redis data upfront =====
+        // Previously: each tile made 2+ Redis calls (N+1 problem)
+        // Now: fetch all data in 3 calls, then process synchronously
+        let allTileData: Record<string, string> = {};
+        let allLandsData: Record<string, string> = {};
+        let allVillageData: Record<string, string> = {};
+        
+        try {
+            const [tileDataResult, landsDataResult, villageDataResult] = await Promise.all([
+                storage.hgetall('tile'),
+                storage.hgetall('tile:lands'),
+                storage.hgetall('village')
+            ]);
+            allTileData = tileDataResult || {};
+            allLandsData = landsDataResult || {};
+            allVillageData = villageDataResult || {};
+        } catch (e: unknown) {
+            console.error('[ERROR] Failed to batch fetch Redis data:', (e as Error).message);
+        }
+
+        // Build village lookup by tile_id:chunk_index for O(1) access
+        const villageLookup = new Map<string, VillageData>();
+        for (const [villageId, villageJson] of Object.entries(allVillageData)) {
+            try {
+                const village: VillageData = JSON.parse(villageJson as string);
+                const key = `${village.tile_id}:${village.land_chunk_index}`;
+                villageLookup.set(key, village);
+            } catch (e: unknown) {
+                console.warn('[tiles] Failed to parse village JSON:', villageId, (e as Error)?.message ?? e);
+            }
+        }
+
+        // Collect all village IDs that need food updates
+        const villageIdsToUpdate = new Set<number>();
+
+        const tiles = hexasphere.tiles.map(tile => {
             const props = tile.getProperties ? tile.getProperties() : tile;
             // Add boundary as array of {x, y, z}
             props.boundary = tile.boundary ? tile.boundary.map(p => ({ x: p.x, y: p.y, z: p.z })) : [];
@@ -364,54 +399,45 @@ router.get('/', async (req: Request, res: Response): Promise<void> => {
                 props.centerPoint = undefined;
             }
 
-            // --- Fetch persisted tile data from Redis (only source of truth) ---
+            // --- Use pre-fetched tile data from Redis ---
             try {
-                const tileDataJson = await storage.hget('tile', props.id.toString());
+                const tileDataJson = allTileData[props.id.toString()];
                 if (tileDataJson) {
                     const tileData = JSON.parse(tileDataJson);
-                    // Use persisted data from Redis (only source of truth)
                     props.terrainType = tileData.terrain_type;
                     props.isLand = tileData.is_land;
                     props.biome = tileData.biome;
                     props.fertility = tileData.fertility;
                     props.Habitable = tileData.is_habitable ? 'yes' : 'no';
                 }
-                // If not in Redis, use calculated values from HexaSphere
             } catch (e: unknown) {
-                const error = e as Error;
-                console.error(`[ERROR] Failed to fetch tile data for tile ${props.id}:`, error.message);
+                console.error(`[ERROR] Failed to parse tile data for tile ${props.id}:`, (e as Error).message);
             }
 
-            // --- Fetch tiles_lands for this tile from Redis (only source of truth) ---
+            // --- Use pre-fetched lands data from Redis ---
             try {
-                const landsDataJson = await storage.hget('tile:lands', props.id.toString());
+                const landsDataJson = allLandsData[props.id.toString()];
                 if (landsDataJson) {
                     const landsData = JSON.parse(landsDataJson);
-                    // Add village information by joining with village data
-                    const villageData = await storage.hgetall('village');
+                    // Add village information using pre-built lookup (O(1) per land)
                     const landsWithVillages = landsData.map((land: LandData) => {
-                        // Find village for this tile/chunk
-                        if (villageData) {
-                            for (const [villageId, villageJson] of Object.entries(villageData)) {
-                                try {
-                                    const village: VillageData = JSON.parse(villageJson as string);
-                                    if (village.tile_id === land.tile_id && village.land_chunk_index === land.chunk_index) {
-                                        return {
-                                            ...land,
-                                            village_id: village.id,
-                                            village_name: village.name,
-                                            housing_slots: village.housing_slots,
-                                            housing_capacity: village.housing_capacity,
-                                            food_stores: village.food_stores,
-                                            food_capacity: village.food_capacity,
-                                            food_production_rate: village.food_production_rate,
-                                            last_food_update: village.last_food_update
-                                        };
-                                    }
-                                } catch (e: unknown) { console.warn('[tiles] Failed to parse village JSON:', villageId, (e as Error)?.message ?? e); }
-                            }
+                        const lookupKey = `${land.tile_id}:${land.chunk_index}`;
+                        const village = villageLookup.get(lookupKey);
+                        if (village) {
+                            villageIdsToUpdate.add(village.id);
+                            return {
+                                ...land,
+                                village_id: village.id,
+                                village_name: village.name,
+                                housing_slots: village.housing_slots,
+                                housing_capacity: village.housing_capacity,
+                                food_stores: village.food_stores,
+                                food_capacity: village.food_capacity,
+                                food_production_rate: village.food_production_rate,
+                                last_food_update: village.last_food_update
+                            };
                         }
-                        // No matching village found - clear any stale village_id
+                        // No matching village found - return clean land without stale village data
                         const { village_id, village_name, housing_slots, housing_capacity, food_stores, food_capacity, food_production_rate, last_food_update, ...cleanLand } = land;
                         return cleanLand;
                     });
@@ -419,30 +445,25 @@ router.get('/', async (req: Request, res: Response): Promise<void> => {
                 } else {
                     props.lands = [];
                 }
-
-                // Update food production for villages on this tile
-                const villageIds = props.lands
-                    .filter(land => land.village_id)
-                    .map(land => land.village_id)
-                    .filter((id, index, arr) => arr.indexOf(id) === index); // Remove duplicates
-
-                for (const villageId of villageIds) {
-                    try {
-                        await villageService.updateVillageFoodProduction(villageId);
-                        await villageService.updateVillageFoodStores(villageId);
-                    } catch (err: unknown) {
-                        const error = err as Error;
-                        console.error(`[ERROR] Failed to update food for village ${villageId}:`, error.message);
-                    }
-                }
             } catch (e: unknown) {
-                const error = e as Error;
-                console.error(`[ERROR] Failed to fetch lands for tile ${props.id}:`, error.message);
+                console.error(`[ERROR] Failed to parse lands for tile ${props.id}:`, (e as Error).message);
                 props.lands = [];
             }
-            // --- End tiles_lands fetch ---
             return props;
-        }));
+        });
+
+        // Update food production for all villages in parallel (batched)
+        if (villageIdsToUpdate.size > 0) {
+            const updatePromises = Array.from(villageIdsToUpdate).map(async villageId => {
+                try {
+                    await villageService.updateVillageFoodProduction(villageId);
+                    await villageService.updateVillageFoodStores(villageId);
+                } catch (err: unknown) {
+                    console.error(`[ERROR] Failed to update food for village ${villageId}:`, (err as Error).message);
+                }
+            });
+            await Promise.all(updatePromises);
+        }
 
         // Debug: Check Y coordinate range
         let minY = Infinity, maxY = -Infinity;

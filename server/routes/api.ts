@@ -13,6 +13,8 @@ import pool from '../config/database';
 import StateManager from '../services/stateManager';
 import storage from '../services/storage';
 import serverConfig from '../config/server';
+import { validateBody } from '../middleware/validate';
+import { WorldRestartSchema } from '../schemas';
 
 // Helper to safely extract error message
 function getErrorMessage(error: unknown): string {
@@ -171,19 +173,8 @@ router.get('/', (req: Request, res: Response) => {
 
 // POST /api/worldrestart - Unified restart endpoint (tiles + population + villages + calendar reset)
 // REQUIRES explicit confirmation to prevent accidental data loss
-router.post('/worldrestart', async (req: Request, res: Response) => {
+router.post('/worldrestart', validateBody(WorldRestartSchema), async (req: Request, res: Response) => {
     const startTime = Date.now();
-
-    // SAFEGUARD: Require explicit confirmation to prevent accidental restarts
-    const { confirm } = req.body || {};
-    if (confirm !== 'DELETE_ALL_DATA') {
-        console.warn('⚠️ [worldrestart] Blocked restart attempt without confirmation');
-        return res.status(400).json({
-            success: false,
-            message: 'World restart requires explicit confirmation. Send { "confirm": "DELETE_ALL_DATA" } in request body.',
-            warning: 'This will DELETE all population data permanently!'
-        });
-    }
 
     if (serverConfig.verboseLogs) console.log('🔴 [worldrestart] CONFIRMED - Starting world restart (all data will be wiped)...');
 
