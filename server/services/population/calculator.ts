@@ -1,4 +1,4 @@
-// server/services/population/calculator.js
+// server/services/population/calculator.ts
 // Re-export centralized age calculation
 import { calculateAge as centralizedCalculateAge } from '../../utils/ageCalculation';
 
@@ -43,7 +43,7 @@ function getRandomBirthDate(currentYear, currentMonth, currentDay, age) {
 }
 
 // --- Rate Tracking Functions ---
-// (Moved to PopStats.js)
+// (Moved to PopStats.ts)
 
 export {
     getRandomSex,

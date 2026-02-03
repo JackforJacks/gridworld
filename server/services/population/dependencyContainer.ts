@@ -49,7 +49,7 @@ let _lock: LockModule | null = null;
  */
 function getFamilyManager(): unknown {
     if (!_familyManager) {
-        _familyManager = require('./familyManager.js');
+        _familyManager = require('./familyManager');
     }
     return _familyManager;
 }
@@ -59,7 +59,7 @@ function getFamilyManager(): unknown {
  */
 function getLifecycle(): unknown {
     if (!_lifecycle) {
-        _lifecycle = require('./lifecycle.js');
+        _lifecycle = require('./lifecycle');
     }
     return _lifecycle;
 }
@@ -89,7 +89,7 @@ function getStateManager(): unknown {
  */
 function getCalculator(): CalculatorModule {
     if (!_calculator) {
-        _calculator = require('./calculator.js') as CalculatorModule;
+        _calculator = require('./calculator') as CalculatorModule;
     }
     return _calculator;
 }

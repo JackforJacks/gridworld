@@ -8,6 +8,13 @@ import { getAppContext } from '../../core/AppContext';
 interface SceneManagerLike {
     getPopulationStats(): Record<string, unknown>;
     regenerateTiles(): Promise<void>;
+    toggleTileLabels(): boolean;
+    searchTile(tileId: number | string): { x: number; y: number; z: number } | null;
+}
+
+// Interface for CameraController to avoid circular dependencies
+interface CameraControllerLike {
+    lookAtPoint(point: { x: number; y: number; z: number }): void;
 }
 
 // Interface for growth stats from PopulationManager
@@ -123,12 +130,17 @@ function mergeApiStats(stats: StatsData, popData: PopulationApiStats): void {
         'birthRate', 'deathRate', 'birthCount', 'deathCount',
         'totalBirthCount', 'totalDeathCount',
         'totalFamilies', 'pregnantFamilies', 'familiesWithChildren',
-        'avgChildrenPerFamily', 'totalPopulation', 'villagesCount'
+        'avgChildrenPerFamily', 'totalPopulation', 'villagesCount',
+        'totalTiles'  // Use server's tile count (more accurate after world restart)
     ];
     for (const key of keys) {
         if (popData[key] !== undefined) {
             (stats as Record<string, number>)[key] = Number(popData[key]);
         }
+    }
+    // Also update populatedTiles from server data if available
+    if (popData.totalTiles !== undefined) {
+        stats.populatedTiles = Number(popData.totalTiles);
     }
 }
 
@@ -138,6 +150,7 @@ class UIManager {
     private isInitialized: boolean;
     private populationUnsubscribe: (() => void) | null;
     private sceneManager: SceneManagerLike | null;
+    private cameraController: CameraControllerLike | null;
     private currentTotalPopulation: number;
     private isConnected: boolean;
     private loadingIndicator: HTMLElement | null;
@@ -149,10 +162,16 @@ class UIManager {
         this.isInitialized = false;
         this.populationUnsubscribe = null;
         this.sceneManager = sceneManager; // Store sceneManager instance
+        this.cameraController = null;
         this.currentTotalPopulation = 0; // Store current total population
         this.isConnected = false; // Store connection status
         this.loadingIndicator = null; // Store loading indicator element
         this.messageTimeout = null; // Store message timeout
+    }
+
+    /** Set the camera controller for tile search functionality */
+    setCameraController(controller: CameraControllerLike): void {
+        this.cameraController = controller;
     }
 
     initialize(): void { // sceneManager parameter removed
@@ -282,6 +301,9 @@ class UIManager {
         const showStatsButton = document.getElementById('show-stats');
         const saveGameButton = document.getElementById('save-game');
         const loadGameButton = document.getElementById('load-game');
+        const toggleTileLabelsButton = document.getElementById('toggle-tile-labels');
+        const tileSearchInput = document.getElementById('tile-search-input') as HTMLInputElement | null;
+        const tileSearchBtn = document.getElementById('tile-search-btn');
 
         if (resetDataButton) {
             resetDataButton.addEventListener('click', () => {
@@ -304,6 +326,34 @@ class UIManager {
         if (loadGameButton) {
             loadGameButton.addEventListener('click', () => {
                 this.handleLoadGame();
+            });
+        }
+
+        if (toggleTileLabelsButton) {
+            toggleTileLabelsButton.addEventListener('click', () => {
+                this.handleToggleTileLabels();
+            });
+        }
+
+        // Tile search functionality
+        const handleTileSearch = () => {
+            if (tileSearchInput) {
+                const tileId = tileSearchInput.value.trim();
+                if (tileId) {
+                    this.handleSearchTile(tileId);
+                }
+            }
+        };
+
+        if (tileSearchBtn) {
+            tileSearchBtn.addEventListener('click', handleTileSearch);
+        }
+
+        if (tileSearchInput) {
+            tileSearchInput.addEventListener('keydown', (e) => {
+                if (e.key === 'Enter') {
+                    handleTileSearch();
+                }
             });
         }
 
@@ -436,6 +486,46 @@ class UIManager {
             await this.sceneManager.regenerateTiles();
         } catch (error: unknown) {
             console.error("❌ Error during world restart:", error);
+        }
+    }
+
+    handleToggleTileLabels(): void {
+        if (!this.sceneManager) {
+            console.error("SceneManager not available for tile labels toggle.");
+            return;
+        }
+
+        const button = document.getElementById('toggle-tile-labels');
+        const visible = this.sceneManager.toggleTileLabels();
+        
+        if (button) {
+            button.textContent = visible ? '🏷️ Hide IDs' : '🏷️ IDs';
+            button.classList.toggle('active', visible);
+        }
+    }
+
+    handleSearchTile(tileId: string): void {
+        if (!this.sceneManager) {
+            console.error("SceneManager not available for tile search.");
+            return;
+        }
+
+        const id = parseInt(tileId, 10);
+        if (isNaN(id) || id < 0) {
+            console.warn('Invalid tile ID:', tileId);
+            return;
+        }
+
+        const tileCenter = this.sceneManager.searchTile(id);
+        
+        if (!tileCenter) {
+            console.warn(`Tile ${id} not found`);
+            return;
+        }
+        
+        // Point camera at the tile
+        if (this.cameraController) {
+            this.cameraController.lookAtPoint(tileCenter);
         }
     }
 

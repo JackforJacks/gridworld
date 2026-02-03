@@ -178,6 +178,15 @@ class PopulationManager {
                 this.notifyCallbacks('populationUpdate', data);
             });
 
+            // Handle all population-related events that carry updated data
+            const populationEvents = ['populationReset', 'senescenceApplied', 'familiesCreated', 'familyEvents', 'populationRegenerated'];
+            for (const eventName of populationEvents) {
+                this.socket.on(eventName, (data: PopulationData) => {
+                    this.updatePopulationData(data);
+                    this.notifyCallbacks('populationUpdate', data);
+                });
+            }
+
             this.socket.on('connect_error', (error) => {
                 console.error('🔌 Connection error:', error.message);
                 this.isConnected = false;

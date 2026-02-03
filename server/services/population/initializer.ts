@@ -1,4 +1,4 @@
-// server/services/population/initializer.js
+// server/services/population/initializer.ts
 import { applySenescence } from './lifecycle';
 import { startRateTracking } from './PopStats';
 import config from '../../config/server'; // Added for autoSaveInterval
@@ -114,10 +114,10 @@ function startAutoSave(serviceInstance) {
                 } else if (serviceInstance.saveData && typeof serviceInstance.saveData === 'function') {
                     saveResult = await serviceInstance.saveData();
                 } else {
-                    console.warn('[initializer.js] serviceInstance.saveData is not a function or not available.');
+                    console.warn('[initializer] serviceInstance.saveData is not a function or not available.');
                 }
             } catch (err: unknown) {
-                console.warn('[initializer.js] Error checking pending changes for autosave:', (err as Error).message);
+                console.warn('[initializer] Error checking pending changes for autosave:', (err as Error).message);
             }
 
             // Save calendar state to database during autosave
@@ -126,7 +126,7 @@ function startAutoSave(serviceInstance) {
                     await calendarService.saveStateToDB();
                     if (config.verboseLogs) console.log('📅 Calendar state saved during autosave');
                 } catch (err: unknown) {
-                    console.warn('[initializer.js] Failed to save calendar state during autosave:', (err as Error).message);
+                    console.warn('[initializer] Failed to save calendar state during autosave:', (err as Error).message);
                 }
             }
 
@@ -213,7 +213,7 @@ async function initializePopulationService(serviceInstance, io, calendarService)
         if (serviceInstance.startGrowth && typeof serviceInstance.startGrowth === 'function') {
             serviceInstance.startGrowth();
         } else {
-            console.warn('[initializer.js] serviceInstance.startGrowth is not a function or not available.');
+            console.warn('[initializer] serviceInstance.startGrowth is not a function or not available.');
         }
     }
     // Auto-save controlled by config flag
@@ -227,7 +227,7 @@ async function initializePopulationService(serviceInstance, io, calendarService)
         if (config.verboseLogs) console.log('💤 Auto-save is disabled by configuration (AUTO_SAVE_ENABLED=false).');
     }
     startRateTracking(serviceInstance); // Pass serviceInstance as context
-    if (config.verboseLogs) console.log('🌱 Population service initialized (from initializer.js)');
+    if (config.verboseLogs) console.log('🌱 Population service initialized');
 
     // Start scheduled integrity audit if enabled
     if (config.integrityAuditEnabled) {

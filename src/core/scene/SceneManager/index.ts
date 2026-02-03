@@ -11,6 +11,7 @@ import type { HexTile, HexasphereData, TileColorInfo, TileDataResponse, Populati
 import { initializeColorCaches, getBiomeColor, getBiomeColorCached, getTerrainColor } from './colorUtils';
 import { buildTilesFromData, createHexasphereMesh, calculateTileProperties, validateTileBoundary, sanitizeBoundaryPoint, createBufferGeometry } from './geometryBuilder';
 import { TileOverlayManager } from './tileOverlays';
+import { TileLabelManager } from './tileLabels';
 import { updateTilePopulations, checkPopulationThresholds, getPopulationStats, resetTileColors, initializeTilePopulations, reinitializePopulation } from './populationDisplay';
 import { addLighting, updateCameraLight, disposeLighting, createLightingState, LightingState } from './lighting';
 
@@ -35,6 +36,7 @@ class SceneManager {
     // State tracking
     private tileColorIndices: Map<string, TileColorInfo>;
     private overlayManager: TileOverlayManager | null;
+    private labelManager: TileLabelManager | null;
     private populationUnsubscribe: (() => void) | null;
 
     constructor() {
@@ -49,6 +51,7 @@ class SceneManager {
         this.habitableTileIds = [];
         this.sphereRadius = 30;
         this.overlayManager = null;
+        this.labelManager = null;
 
         // Pre-cache all biome and terrain colors
         initializeColorCaches();
@@ -60,6 +63,7 @@ class SceneManager {
         this.renderer.setClearColor(0x000000, 0);
         this.scene = new THREE.Scene();
         this.overlayManager = new TileOverlayManager(this.scene);
+        this.labelManager = new TileLabelManager(this.scene);
 
         this.populationUnsubscribe = populationManager.subscribe((eventType: PopulationEventType, _data: unknown) => {
             if (eventType === 'populationUpdate') {
@@ -125,6 +129,12 @@ class SceneManager {
         this.scene!.add(mesh);
         getAppContext().currentTiles = this.currentTiles;
 
+        // Add tile labels (hidden by default)
+        if (this.labelManager && this.hexasphere?.tiles) {
+            this.labelManager.clear();
+            this.labelManager.addAll(this.hexasphere.tiles);
+        }
+
         // Apply population data
         updateTilePopulations(this.hexasphere);
         if (this.overlayManager) {
@@ -157,6 +167,58 @@ class SceneManager {
 
     clearTileOverlays(): void {
         this.overlayManager?.clear();
+    }
+
+    /** Toggle tile ID labels visibility */
+    toggleTileLabels(): boolean {
+        if (!this.labelManager) return false;
+        return this.labelManager.toggle();
+    }
+
+    /** Set tile labels visibility */
+    setTileLabelsVisible(visible: boolean): void {
+        this.labelManager?.setVisible(visible);
+    }
+
+    /** Check if tile labels are visible */
+    areTileLabelsVisible(): boolean {
+        return this.labelManager?.visible ?? false;
+    }
+
+    /** 
+     * Search for a tile by ID and flash it in bright red 
+     * Returns the tile's center point if found, null otherwise
+     */
+    searchTile(tileId: number | string): { x: number; y: number; z: number } | null {
+        if (!this.hexasphere || !this.overlayManager) {
+            console.warn('Cannot search tile: hexasphere or overlayManager not ready');
+            return null;
+        }
+        
+        const id = typeof tileId === 'string' ? parseInt(tileId, 10) : tileId;
+        
+        if (isNaN(id)) {
+            console.warn('Invalid tile ID:', tileId);
+            return null;
+        }
+        
+        // Find the tile
+        const tile = this.hexasphere.tiles.find((t: HexTile) => t.id === id);
+        
+        if (!tile) {
+            console.warn(`Tile ${id} not found in hexasphere`);
+            return null;
+        }
+        
+        // Flash the tile
+        this.overlayManager.flashTile(tile);
+        
+        // Return the center point for camera targeting
+        return {
+            x: tile.centerPoint.x,
+            y: tile.centerPoint.y,
+            z: tile.centerPoint.z
+        };
     }
 
     resetTileColors(): void {
@@ -225,8 +287,8 @@ class SceneManager {
 
             this.clearTileOverlays();
 
-            // Fetch and rebuild
-            const response = await fetch(`/api/tiles?radius=${radius}&subdivisions=${subdivisions}&tileWidthRatio=${tileWidthRatio}&regenerate=true`);
+            // Fetch tiles from Redis (worldrestart already generated them)
+            const response = await fetch(`/api/tiles?radius=${radius}&subdivisions=${subdivisions}&tileWidthRatio=${tileWidthRatio}`);
             if (!response.ok) throw new Error(`Failed to fetch tiles: ${response.status}`);
             const tileData = await response.json();
 

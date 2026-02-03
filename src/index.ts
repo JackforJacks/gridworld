@@ -165,6 +165,9 @@ class GridWorldApp {
             // Initialize camera controller
             this.cameraController = new CameraController(this.camera);
 
+            // Pass camera controller to UI manager for tile search feature
+            this.uiManager.setCameraController(this.cameraController);
+
             // Initialize tile selector with scene, camera, and sceneManager
             this.tileSelector = new TileSelector(this.scene, this.camera, this.sceneManager);
 

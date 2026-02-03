@@ -1,4 +1,4 @@
-// server/services/population/manager.js
+// server/services/population/manager.ts
 import { getRandomSex, getRandomAge, getRandomBirthDate } from './calculator';
 import { trackBirths, trackDeaths } from './PopStats';
 import config from '../../config/server';

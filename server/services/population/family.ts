@@ -58,11 +58,11 @@ async function Procreation(
             if (calendarState && calendarState.currentDate) {
                 calendarDateToUse = calendarState.currentDate;
             } else {
-                console.warn('[family.js.Procreation] CalendarService.getState() did not return a valid currentDate. Using an absolute fallback (Year 1, Month 1, Day 1).');
+                console.warn('[family.Procreation] CalendarService.getState() did not return a valid currentDate. Using an absolute fallback (Year 1, Month 1, Day 1).');
                 calendarDateToUse = { year: 1, month: 1, day: 1 };
             }
         } else {
-            console.warn('[family.js.Procreation] CalendarService not available or getState is not a function. Using an absolute fallback (Year 1, Month 1, Day 1).');
+            console.warn('[family.Procreation] CalendarService not available or getState is not a function. Using an absolute fallback (Year 1, Month 1, Day 1).');
             calendarDateToUse = { year: 1, month: 1, day: 1 };
         }
         const { year: currentYear, month: currentMonth, day: currentDay } = calendarDateToUse;
@@ -94,10 +94,10 @@ async function Procreation(
         if (populationServiceInstance && typeof populationServiceInstance.broadcastUpdate === 'function') {
             await populationServiceInstance.broadcastUpdate('populationUpdate');
         } else {
-            console.warn('[family.js.Procreation] populationServiceInstance.broadcastUpdate is not a function. Update not broadcasted.');
+            console.warn('[family.Procreation] populationServiceInstance.broadcastUpdate is not a function. Update not broadcasted.');
         }
     } catch (error: unknown) {
-        console.error(`[family.js.Procreation] Error updating population for tile ${tileId}:`, error);
+        console.error(`[family.Procreation] Error updating population for tile ${tileId}:`, error);
         throw error;
     }
 }
@@ -127,7 +127,7 @@ async function createRandomFamilies(
 
         const maxPairs = Math.min(shuffledMales.length, shuffledFemales.length);
 
-        console.log(`[family.js] Found ${shuffledMales.length} eligible males and ${shuffledFemales.length} eligible females on tile ${tileId}`);
+        console.log(`[family] Found ${shuffledMales.length} eligible males and ${shuffledFemales.length} eligible females on tile ${tileId}`);
 
         // Create families with random pairing
         for (let i = 0; i < maxPairs && i < 5; i++) { // Limit to 5 new families per tile per update

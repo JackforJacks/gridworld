@@ -33,7 +33,7 @@ async function updateDataAndBroadcast(io, saveDataFn, getAllDataFn, eventType = 
 function setupRealtimeListeners(io, serviceInstance) {
     if (!io) return;
 
-    const config = require('../../config/server.js');
+    const config = require('../../config/server');
 
     // Listen for client requests for population data
     io.on('connection', (socket) => {

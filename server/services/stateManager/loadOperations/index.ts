@@ -1,7 +1,9 @@
 // Load Operations - Main Orchestrator Module
-// OPTIMIZED: Parallel DB queries, chunked pipeline execution, batched population sets
+// Redis-first: Uses unified WorldRestart service for initialization
+// Postgres is only used for explicit save/load/autosave operations
 
 import storage from '../../storage';
+import { restartWorld } from '../../worldRestart';
 import { LoadContext, LoadResult, SeedWorldResult, Pipeline } from './types';
 import { clearExistingStorageState } from './storageClear';
 import { fetchTiles, fetchTilesLands, TileLoadResult, LandLoadResult } from './tileLoader';
@@ -20,8 +22,9 @@ import { loadFamilies } from './familyLoader';
 const PIPELINE_CHUNK_SIZE = 2000;
 
 /**
- * Load all data from PostgreSQL into storage on server start
- * OPTIMIZED: Uses parallel DB queries and chunked pipeline execution
+ * Initialize state on server startup (Redis-only, no Postgres)
+ * Uses unified WorldRestart service for clean, optimized initialization
+ * Postgres is only used for explicit save/load/autosave operations
  * @param context - StateManager context with calendarService, io
  * @returns Load results
  */
@@ -31,100 +34,29 @@ export async function loadFromDatabase(context: LoadContext): Promise<LoadResult
         return { villages: 0, people: 0, families: 0, skipped: true };
     }
 
-    // Redis-first mode: do not touch Postgres or flush Redis
-    if (process.env.REDIS_FIRST === 'true') {
-        return handleRedisFirstMode(context);
-    }
+    // Use unified WorldRestart service for initialization
+    const result = await restartWorld({
+        skipCalendarReset: false,
+        context: {
+            calendarService: context.calendarService,
+            io: context.io
+        }
+    });
 
-    // Pause calendar during loading
-    const calendarWasRunning = pauseCalendar(context);
-
-    // Reload calendar state from database
-    await reloadCalendarState(context);
-
-    // Clear existing storage state
-    await clearExistingStorageState();
-
-    const startTime = Date.now();
-
-    // ===== PHASE 1: Parallel Database Queries =====
-    // Run all independent queries concurrently for ~40-60% faster loading
-    console.log('🔄 Loading data from PostgreSQL (parallel queries)...');
-
-    const [tilesResult, landsResult, villagesResult, familiesResult, landCountsResult] = await Promise.all([
-        fetchTiles(),
-        fetchTilesLands(),
-        fetchVillages(),
-        fetchFamilies(),
-        fetchClearedLandCounts()
-    ]);
-
-    // People query depends on village lookup, but we already have it
-    const peopleResult = await fetchPeople(villagesResult.villageLookup);
-
-    const queryDuration = ((Date.now() - startTime) / 1000).toFixed(2);
-    console.log(`📊 DB queries complete in ${queryDuration}s: ${peopleResult.people.length} people, ${villagesResult.villages.length} villages, ${familiesResult.families.length} families`);
-
-    // ===== PHASE 2: Chunked Pipeline Execution =====
-    // Execute Redis writes in chunks to avoid memory pressure
-    const pipelineStart = Date.now();
-    await executeChunkedPipeline(
-        tilesResult,
-        landsResult,
-        villagesResult,
-        peopleResult,
-        familiesResult,
-        landCountsResult
-    );
-    const pipelineDuration = ((Date.now() - pipelineStart) / 1000).toFixed(2);
-    console.log(`📦 Redis pipeline complete in ${pipelineDuration}s`);
-
-    // ===== PHASE 3: Population Sets (Batched) =====
-    const setsStart = Date.now();
-
-    // These are now batched internally with Promise.all
-    await Promise.all([
-        populateFertileFamilies(familiesResult.families, peopleResult.people, context.calendarService),
-        populateEligibleSets(peopleResult.people, context.calendarService, familiesResult.families)
-    ]);
-
-    const setsDuration = ((Date.now() - setsStart) / 1000).toFixed(2);
-    console.log(`💑 Population sets complete in ${setsDuration}s`);
-
-    // ===== PHASE 4: Validation & Repair =====
-    await validateAndRepairVillages(peopleResult.people);
-
-    // Seed world if empty
-    const seedResult = await seedWorldIfEmpty(peopleResult.people);
-
-    // Resume calendar if it was running
-    resumeCalendar(context, calendarWasRunning);
-
-    const totalDuration = ((Date.now() - startTime) / 1000).toFixed(2);
-    console.log(`✅ Total load time: ${totalDuration}s`);
-
-    // Return results
-    if (seedResult?.seeded) {
-        return {
-            villages: seedResult.villages,
-            people: seedResult.people,
-            families: 0,
-            male: 0,
-            female: 0,
-            tiles: seedResult.tiles,
-            tilesLands: 0,
-            seeded: true
-        };
+    if (!result.success) {
+        console.error('❌ World restart failed:', result.error);
+        return { villages: 0, people: 0, families: 0, skipped: true };
     }
 
     return {
-        villages: villagesResult.villages.length,
-        people: peopleResult.people.length,
-        families: familiesResult.families.length,
-        male: peopleResult.maleCount,
-        female: peopleResult.femaleCount,
-        tiles: tilesResult.tiles.length,
-        tilesLands: landsResult.count
+        villages: result.villages,
+        people: result.people,
+        families: 0,
+        male: 0,
+        female: 0,
+        tiles: result.tiles,
+        tilesLands: 0,
+        seeded: true
     };
 }
 

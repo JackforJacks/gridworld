@@ -489,6 +489,43 @@ kbd {
     background: #4CAF50;
 }
 
+/* Tile Search */
+.tile-search-container {
+    display: inline-flex;
+    align-items: center;
+    margin-left: 8px;
+    gap: 4px;
+}
+
+.tile-search-input {
+    width: 70px;
+    padding: 8px 10px;
+    border: none;
+    border-radius: 8px;
+    font-size: 14px;
+    background: rgba(255, 255, 255, 0.9);
+    color: #333;
+    box-shadow: 0 2px 6px rgba(0, 0, 0, 0.2);
+}
+
+.tile-search-input:focus {
+    outline: 2px solid #FF5722;
+    background: white;
+}
+
+.tile-search-input::placeholder {
+    color: #999;
+}
+
+.search-button {
+    background: #FF5722;
+    padding: 8px 12px;
+}
+
+.search-button:hover {
+    background: #E64A19;
+}
+
 .load-button {
     background: #2196F3;
 }

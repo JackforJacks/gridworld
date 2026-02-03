@@ -385,7 +385,7 @@ class PopulationService {
         }
     }
 
-    // Statistics and reporting: delegate directly to PopStats.js
+    // Statistics and reporting: delegate directly to PopStats
     async getPopulationStats() {
         return await getPopulationStats(this.#pool, this.calendarService, this);
     }

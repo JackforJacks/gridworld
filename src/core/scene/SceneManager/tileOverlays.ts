@@ -5,9 +5,20 @@ import { BoundaryPoint, HexTile } from './types';
 
 /** Overlay configuration */
 const OVERLAY_CONFIG = {
-    color: 0xff0000,
-    opacity: 0.15,
+    color: 0xffff00,  // Bright yellow for populated tiles
+    opacity: 0.4,
     renderOrder: 10
+};
+
+/** Flash overlay configuration */
+const FLASH_CONFIG = {
+    color: 0xff0000,  // Bright red for flashing
+    opacity: 1.0,     // Fully opaque to cover entire tile
+    renderOrder: 100, // High render order to be on top
+    duration: 5000,   // 5 seconds
+    blinkInterval: 200, // Blink every 200ms
+    scale: 1,      // Scale outward for thick visible border
+    heightOffset: 1 // Raise slightly above tile surface for visibility
 };
 
 /**
@@ -23,12 +34,12 @@ export function createTileOverlay(tile: HexTile): THREE.Mesh | null {
         const z = center.z + (p.z - center.z) * scale;
         return new THREE.Vector3(x, y, z);
     });
-    
+
     if (boundaryPoints.length < 3) return null;
-    
+
     const geometry = new THREE.BufferGeometry();
     const vertices: number[] = [];
-    
+
     // Triangle fan triangulation
     for (let i = 1; i < boundaryPoints.length - 1; i++) {
         const p0 = boundaryPoints[0];
@@ -38,29 +49,67 @@ export function createTileOverlay(tile: HexTile): THREE.Mesh | null {
         vertices.push(p1.x, p1.y, p1.z);
         vertices.push(p2.x, p2.y, p2.z);
     }
-    
+
     geometry.setAttribute('position', new THREE.Float32BufferAttribute(vertices, 3));
     geometry.computeVertexNormals();
-    
+
     const material = new THREE.MeshBasicMaterial({
         color: OVERLAY_CONFIG.color,
         transparent: true,
         opacity: OVERLAY_CONFIG.opacity,
         depthWrite: true
     });
-    
+
     const overlayMesh = new THREE.Mesh(geometry, material);
     overlayMesh.renderOrder = OVERLAY_CONFIG.renderOrder;
-    
+
     return overlayMesh;
 }
 
 /**
- * Dispose of an overlay mesh properly
+ * Dispose of an overlay (mesh or line) properly
  */
-export function disposeOverlay(overlay: THREE.Mesh): void {
+export function disposeOverlay(overlay: THREE.Mesh | THREE.Line): void {
     overlay.geometry.dispose();
     (overlay.material as THREE.Material).dispose();
+}
+
+/**
+ * Create a flash overlay for a tile (bright red border outline only)
+ */
+export function createFlashOverlay(tile: HexTile): THREE.Line | null {
+    // Build border line from tile boundary - scaled inward to stay inside tile
+    // Then offset outward from center (radially) to raise above surface
+    const boundaryPoints = tile.boundary.map((p: BoundaryPoint) => {
+        const center = tile.centerPoint;
+        const scale = FLASH_CONFIG.scale;
+        // First scale inward from center
+        const sx = center.x + (p.x - center.x) * scale;
+        const sy = center.y + (p.y - center.y) * scale;
+        const sz = center.z + (p.z - center.z) * scale;
+        // Then offset radially outward to raise above surface
+        const heightScale = FLASH_CONFIG.heightOffset;
+        return new THREE.Vector3(sx * heightScale, sy * heightScale, sz * heightScale);
+    });
+
+    if (boundaryPoints.length < 3) return null;
+
+    // Close the loop by adding first point at the end
+    const closedPoints = [...boundaryPoints, boundaryPoints[0]];
+
+    const geometry = new THREE.BufferGeometry().setFromPoints(closedPoints);
+
+    const material = new THREE.LineBasicMaterial({
+        color: FLASH_CONFIG.color,
+        linewidth: 3, // Note: linewidth > 1 only works on some systems
+        depthWrite: true,
+        depthTest: true
+    });
+
+    const borderLine = new THREE.Line(geometry, material);
+    borderLine.renderOrder = FLASH_CONFIG.renderOrder;
+
+    return borderLine;
 }
 
 /**
@@ -69,27 +118,29 @@ export function disposeOverlay(overlay: THREE.Mesh): void {
 export class TileOverlayManager {
     private scene: THREE.Scene;
     private overlays: Map<string, THREE.Mesh> = new Map();
-    
+    private flashOverlays: Map<string, THREE.Line> = new Map();
+    private flashTimers: Map<string, { timeout: ReturnType<typeof setTimeout>; interval: ReturnType<typeof setInterval> }> = new Map();
+
     constructor(scene: THREE.Scene) {
         this.scene = scene;
     }
-    
+
     /**
      * Add overlay for a tile
      */
     add(tile: HexTile): void {
         const tileId = String(tile.id);
-        
+
         // Remove existing overlay first
         this.remove(tileId);
-        
+
         const overlay = createTileOverlay(tile);
         if (overlay) {
             this.scene.add(overlay);
             this.overlays.set(tileId, overlay);
         }
     }
-    
+
     /**
      * Remove overlay for a tile
      */
@@ -101,14 +152,14 @@ export class TileOverlayManager {
             this.overlays.delete(tileId);
         }
     }
-    
+
     /**
      * Check if tile has an overlay
      */
     has(tileId: string): boolean {
         return this.overlays.has(tileId);
     }
-    
+
     /**
      * Clear all overlays
      */
@@ -119,11 +170,72 @@ export class TileOverlayManager {
         });
         this.overlays.clear();
     }
-    
+
     /**
      * Get overlay count
      */
     get size(): number {
         return this.overlays.size;
+    }
+
+    /**
+     * Flash a tile in bright red for 5 seconds with blinking effect
+     */
+    flashTile(tile: HexTile): void {
+        const tileId = String(tile.id);
+
+        // Clear any existing flash for this tile
+        this.stopFlash(tileId);
+
+        const flashOverlay = createFlashOverlay(tile);
+        if (!flashOverlay) return;
+
+        this.scene.add(flashOverlay);
+        this.flashOverlays.set(tileId, flashOverlay);
+
+        // Blink effect - toggle visibility
+        let visible = true;
+        const interval = setInterval(() => {
+            visible = !visible;
+            flashOverlay.visible = visible;
+        }, FLASH_CONFIG.blinkInterval);
+
+        // Remove after duration
+        const timeout = setTimeout(() => {
+            this.stopFlash(tileId);
+        }, FLASH_CONFIG.duration);
+
+        this.flashTimers.set(tileId, { timeout, interval });
+
+        console.log(`🔴 Flashing tile ${tileId} for ${FLASH_CONFIG.duration / 1000} seconds`);
+    }
+
+    /**
+     * Stop flashing a tile
+     */
+    private stopFlash(tileId: string): void {
+        const timers = this.flashTimers.get(tileId);
+        if (timers) {
+            clearTimeout(timers.timeout);
+            clearInterval(timers.interval);
+            this.flashTimers.delete(tileId);
+        }
+
+        const flashOverlay = this.flashOverlays.get(tileId);
+        if (flashOverlay) {
+            this.scene.remove(flashOverlay);
+            disposeOverlay(flashOverlay);
+            this.flashOverlays.delete(tileId);
+        }
+    }
+
+    /**
+     * Clear all overlays and flashes
+     */
+    clearAll(): void {
+        this.clear();
+        this.flashTimers.forEach((timers, tileId) => {
+            this.stopFlash(tileId);
+        });
     }
 }

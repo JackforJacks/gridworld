@@ -173,8 +173,12 @@ class Hexasphere {
             const noise2 = Math.sin(x * 0.02 - z * 0.02) * Math.cos(y * 0.015);
             const noise3 = Math.sin(x * 0.005 + y * 0.005 + z * 0.005);
 
-            const elevation = (noise1 * 0.5 + noise2 * 0.3 + noise3 * 0.2) +
-                Math.random() * 0.3 - 0.15;
+            // Use position-based deterministic noise instead of Math.random()
+            // This ensures terrain is always consistent for the same tile position
+            const positionNoise = Math.sin(x * 12.9898 + y * 78.233 + z * 45.164) * 43758.5453;
+            const deterministicNoise = (positionNoise - Math.floor(positionNoise)) * 0.3 - 0.15;
+
+            const elevation = (noise1 * 0.5 + noise2 * 0.3 + noise3 * 0.2) + deterministicNoise;
 
             const continentNoise = Math.sin(x * 0.003) * Math.cos(z * 0.003) +
                 Math.sin(y * 0.004) * 0.5;

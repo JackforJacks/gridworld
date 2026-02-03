@@ -3,19 +3,18 @@
  * Handles village creation and seeding
  * 
  * This module has been refactored into:
- * - dbUtils.js - Database schema utilities
- * - postgresSeeding.js - Postgres-based village seeding
- * - redisSeeding.js - Redis-first village seeding
- * - residency.js - Residency assignment utilities
+ * - dbUtils.ts - Database schema utilities
+ * - postgresSeeding.ts - Postgres-based village seeding
+ * - redisSeeding.ts - Redis-first village seeding (PRIMARY - all initialization goes here)
+ * - residency.ts - Residency assignment utilities
+ * 
+ * NOTE: All world initialization is Redis-first. Data is only persisted to Postgres when save is invoked.
  */
 
-import pool from '../../config/database';
 import { seedRandomVillages, seedVillagesForTile } from './postgresSeeding';
 import { seedVillagesStorageFirst, seedWorldIfEmpty, SeedVillagesResult } from './redisSeeding';
 import { assignResidencyForTile } from './residency';
 import storage from '../storage';
-import PopulationState from '../populationState';
-import { getRandomSex, getRandomAge, getRandomBirthDate } from '../population/calculator';
 
 // Re-export SeedVillagesResult for external use
 export type { SeedVillagesResult };
@@ -86,169 +85,34 @@ async function seedIfNoVillages() {
 }
 
 /**
- * Create initial world with tiles and population (fallback)
+ * Create initial world with tiles and population
+ * Delegates to the Redis-first approach - all data goes to Redis first,
+ * then persisted to Postgres when save is invoked
  */
 async function createInitialWorld() {
-    // Check if there are any tiles at all
-    const { rows: allTiles } = await pool.query('SELECT COUNT(*) as count FROM tiles');
-    const tileCount = parseInt(allTiles[0].count);
-
-    let tilesToPopulate: { id: number }[] = [];
-
-    if (tileCount === 0) {
-        console.log('[villageSeeder] No tiles found, creating initial habitable tiles...');
-        // createInitialTiles now returns the created tile descriptors
-        tilesToPopulate = await createInitialTiles();
-    } else {
-        // Use existing habitable tiles that ALSO have cleared lands in tiles_lands
-        // This ensures villages can be seeded on those tiles
-        let { rows: habitable } = await pool.query(`
-            SELECT DISTINCT t.id 
-            FROM tiles t 
-            INNER JOIN tiles_lands tl ON t.id = tl.tile_id AND tl.land_type = 'cleared'
-            WHERE t.is_habitable = TRUE
-        `);
-
-        // If no habitable tiles with cleared lands, create tiles_lands for some habitable tiles
-        if (habitable.length === 0) {
-            console.log('[villageSeeder] No habitable tiles with cleared lands found. Creating tiles_lands entries...');
-
-            // Get some random habitable tiles
-            const { rows: habitableTiles } = await pool.query(`
-                SELECT id FROM tiles WHERE is_habitable = TRUE ORDER BY RANDOM() LIMIT 5
-            `);
-
-            if (habitableTiles.length === 0) {
-                console.warn('[villageSeeder] No habitable tiles found at all. Cannot create initial population.');
-                return;
-            }
-
-            // Create tiles_lands entries for these tiles
-            for (const tile of habitableTiles) {
-                for (let chunkIndex = 0; chunkIndex < 100; chunkIndex++) {
-                    const landType = chunkIndex < 5 ? 'cleared' : (Math.random() > 0.3 ? 'forest' : 'wasteland');
-                    await pool.query(`
-                        INSERT INTO tiles_lands (tile_id, chunk_index, land_type, cleared)
-                        VALUES ($1, $2, $3, $4)
-                        ON CONFLICT (tile_id, chunk_index) DO NOTHING
-                    `, [tile.id, chunkIndex, landType, landType === 'cleared']);
-                }
-            }
-
-            console.log(`[villageSeeder] Created tiles_lands entries for ${habitableTiles.length} habitable tiles`);
-
-            // Re-query for habitable tiles with cleared lands
-            const result = await pool.query(`
-                SELECT DISTINCT t.id 
-                FROM tiles t 
-                INNER JOIN tiles_lands tl ON t.id = tl.tile_id AND tl.land_type = 'cleared'
-                WHERE t.is_habitable = TRUE
-            `);
-            habitable = result.rows;
-        }
-
-        if (habitable.length === 0) {
-            console.warn('[villageSeeder] Still no habitable tiles with cleared lands after creating tiles_lands. Cannot create initial population.');
-            return;
-        }
-
-        const shuffled = habitable.sort(() => 0.5 - Math.random());
-        tilesToPopulate = shuffled.slice(0, 5);
-        console.log(`[villageSeeder] Selected ${tilesToPopulate.length} random tiles for initial population:`, tilesToPopulate.map(t => t.id));
-    }
-
-    // Create initial population on each tile
-    for (const tile of tilesToPopulate) {
-        await createInitialPopulation(tile.id);
-    }
+    console.log('[villageSeeder] Creating initial world using Redis-first approach...');
+    // Use the Redis-first seeding from redisSeeding.ts
+    const result = await seedWorldIfEmpty();
+    console.log(`[villageSeeder] Initial world created: ${result.people} people, ${result.villages} villages`);
 }
 
 /**
- * Create initial habitable tiles
+ * @deprecated Use seedWorldIfEmpty() from redisSeeding.ts instead
+ * This function is kept for backwards compatibility but delegates to Redis-first approach
  */
 async function createInitialTiles() {
-    const initialTiles = [
-        { id: 1, center_x: 0, center_y: 0, center_z: 1, latitude: 90, longitude: 0, terrain_type: 'plains', is_land: true, is_habitable: true, fertility: 75 },
-        { id: 2, center_x: 1, center_y: 0, center_z: 0, latitude: 0, longitude: 90, terrain_type: 'plains', is_land: true, is_habitable: true, fertility: 70 },
-        { id: 3, center_x: 0, center_y: 1, center_z: 0, latitude: 0, longitude: 0, terrain_type: 'plains', is_land: true, is_habitable: true, fertility: 80 },
-        { id: 4, center_x: -1, center_y: 0, center_z: 0, latitude: 0, longitude: 180, terrain_type: 'plains', is_land: true, is_habitable: true, fertility: 65 },
-        { id: 5, center_x: 0, center_y: -1, center_z: 0, latitude: 0, longitude: 270, terrain_type: 'plains', is_land: true, is_habitable: true, fertility: 72 }
-    ];
-
-    for (const tile of initialTiles) {
-        await pool.query(`
-            INSERT INTO tiles (id, center_x, center_y, center_z, latitude, longitude, terrain_type, is_land, is_habitable, fertility, biome, boundary_points, neighbor_ids)
-            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)
-            ON CONFLICT (id) DO NOTHING
-        `, [tile.id, tile.center_x, tile.center_y, tile.center_z, tile.latitude, tile.longitude, tile.terrain_type, tile.is_land, tile.is_habitable, tile.fertility, 'temperate_grassland', '[]', '[]']);
-
-        // Create tiles_lands for this tile
-        const landsForTile: { tile_id: number; chunk_index: number; land_type: string; cleared: boolean }[] = [];
-        for (let chunkIndex = 0; chunkIndex < 100; chunkIndex++) {
-            const landType = chunkIndex < 5 ? 'cleared' : (Math.random() > 0.3 ? 'forest' : 'wasteland');
-            await pool.query(`
-                INSERT INTO tiles_lands (tile_id, chunk_index, land_type, cleared)
-                VALUES ($1, $2, $3, $4)
-                ON CONFLICT (tile_id, chunk_index) DO NOTHING
-            `, [tile.id, chunkIndex, landType, landType === 'cleared']);
-
-            landsForTile.push({
-                tile_id: tile.id,
-                chunk_index: chunkIndex,
-                land_type: landType,
-                cleared: landType === 'cleared'
-            });
-        }
-
-        // ALSO store in Redis so seedVillagesStorageFirst can find cleared chunks
-        await storage.hset('tile', tile.id.toString(), JSON.stringify({
-            ...tile,
-            biome: 'temperate_grassland',
-            boundary_points: [],
-            neighbor_ids: []
-        }));
-        await storage.hset('tile:lands', tile.id.toString(), JSON.stringify(landsForTile));
-    }
-
-    console.log(`[villageSeeder] Created ${initialTiles.length} initial habitable tiles with land chunks`);
-    // Return the created tile descriptors so callers can populate them
-    return initialTiles;
+    console.warn('[villageSeeder] createInitialTiles is deprecated - using Redis-first approach');
+    // The Redis-first approach handles tile selection internally
+    // Return empty array - actual tile selection happens in seedWorldIfEmpty
+    return [];
 }
 
 /**
- * Create initial population on a tile
+ * @deprecated Legacy function - population is now created via createInitialPopulationRedisFirst in redisSeeding.ts
  */
-async function createInitialPopulation(tileId) {
-    // Add 100-200 people per tile
-    const peopleCount = 100 + Math.floor(Math.random() * 100);
-
-    for (let i = 0; i < peopleCount; i++) {
-        const sex = getRandomSex();
-        const age = getRandomAge();
-        const birthDate = getRandomBirthDate(1, 1, 1, age); // Year 1, month 1, day 1
-
-        const tempId = await PopulationState.getNextId();
-
-        const personObj = {
-            id: tempId,
-            tile_id: tileId,
-            residency: 0, // Default residency - required for village membership sets
-            sex: sex,
-            date_of_birth: birthDate,
-            health: 100,
-            family_id: null
-        };
-
-        const result = await PopulationState.addPerson(personObj, true);
-
-        // Debug: verify first person was added
-        if (i === 0) {
-            const check = await storage.hget('person', tempId.toString());
-            console.log(`[DEBUG] First person add result: ${result}, verification hget: ${check ? 'OK' : 'MISSING'}`);
-        }
-    }
-
-    console.log(`[villageSeeder] Created ${peopleCount} people on tile ${tileId}`);
+async function createInitialPopulation(tileId: number) {
+    console.warn(`[villageSeeder] createInitialPopulation is deprecated for tile ${tileId} - use Redis-first approach`);
+    // No-op - population creation is handled by seedWorldIfEmpty -> createInitialPopulationRedisFirst
 }
 
 export {

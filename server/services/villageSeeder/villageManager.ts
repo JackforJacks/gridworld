@@ -119,6 +119,7 @@ async function ensureVillagesForPopulatedTiles(options: EnsureVillagesOptions = 
         // Step 1: Get all people grouped by tile
         const peopleByTile = await getPeopleGroupedByTile();
         const populatedTileIds = Object.keys(peopleByTile).filter(tid => peopleByTile[tid].length > 0);
+        const populatedTileIdSet = new Set(populatedTileIds.map(tid => parseInt(tid)));
 
         if (populatedTileIds.length === 0) {
             console.log('[VillageManager] No populated tiles found');
@@ -127,9 +128,30 @@ async function ensureVillagesForPopulatedTiles(options: EnsureVillagesOptions = 
 
         // Step 2: Get existing villages grouped by tile
         const villagesByTile = await getVillagesGroupedByTile();
+        
+        // Step 2.5: Clean up orphan villages (villages on tiles without people)
+        // This prevents stale villages from previous world states
+        const orphanCleanupPipeline = storage.pipeline();
+        let orphansRemoved = 0;
+        for (const [tileId, villages] of Object.entries(villagesByTile)) {
+            if (!populatedTileIdSet.has(parseInt(String(tileId)))) {
+                // This tile has villages but no people - remove the villages
+                for (const v of villages) {
+                    orphanCleanupPipeline.hdel('village', v.id.toString());
+                    orphanCleanupPipeline.hdel('village:cleared', v.id.toString());
+                    orphansRemoved++;
+                }
+                delete villagesByTile[parseInt(String(tileId))];
+            }
+        }
+        if (orphansRemoved > 0) {
+            await orphanCleanupPipeline.exec();
+            console.log(`[VillageManager] Cleaned up ${orphansRemoved} orphan villages on empty tiles`);
+        }
 
         // Step 3: For each populated tile, ensure it has villages
         let totalCreated = 0;
+        let skippedNoLands = 0;
         const allVillages: Village[] = [];
 
         for (const tileIdStr of populatedTileIds) {
@@ -146,13 +168,21 @@ async function ensureVillagesForPopulatedTiles(options: EnsureVillagesOptions = 
                 continue;
             }
 
-            // Need to create villages for this tile
+            // Get cleared chunks for this tile
             const clearedChunks = await getClearedChunksForTile(tileId);
-
-            // If no cleared chunks, create some
             let chunksToUse = clearedChunks.slice(0, desiredVillages);
+            
+            // If no cleared chunks exist, try to create them from tile:lands
             if (chunksToUse.length === 0) {
                 chunksToUse = await createClearedChunksForTile(tileId, desiredVillages);
+            }
+            
+            // If still no chunks, this tile shouldn't have population - skip it
+            // This indicates a data integrity issue (people on tile without lands)
+            if (chunksToUse.length === 0) {
+                console.warn(`[VillageManager] ⚠️ Tile ${tileId} has ${peopleCount} people but no cleared lands - skipping (data integrity issue)`);
+                skippedNoLands++;
+                continue;
             }
 
             // Clear existing villages for this tile if forcing
@@ -164,13 +194,16 @@ async function ensureVillagesForPopulatedTiles(options: EnsureVillagesOptions = 
                 await pipeline.exec();
             }
 
-            // Create new villages
-            const newVillageCount = Math.max(0, desiredVillages - (force ? 0 : existingVillages.length));
-            if (newVillageCount > 0 && chunksToUse.length > 0) {
-                const villageIds = await idAllocator.getVillageIdBatch(newVillageCount);
+            // Create new villages - when forcing, always create desiredVillages
+            const newVillageCount = force ? desiredVillages : Math.max(0, desiredVillages - existingVillages.length);
+            if (newVillageCount > 0) {
+                // Limit to available chunks - don't create fake chunks
+                const villagesToCreate = Math.min(newVillageCount, chunksToUse.length);
+                
+                const villageIds = await idAllocator.getVillageIdBatch(villagesToCreate);
                 const pipeline = storage.pipeline();
 
-                for (let i = 0; i < newVillageCount && i < chunksToUse.length; i++) {
+                for (let i = 0; i < villagesToCreate; i++) {
                     const village = {
                         id: villageIds[i],
                         tile_id: tileId,
@@ -192,21 +225,28 @@ async function ensureVillagesForPopulatedTiles(options: EnsureVillagesOptions = 
                 await pipeline.exec();
             }
 
-            // Keep existing villages if not forcing
+            // Keep existing villages if not forcing (they weren't deleted)
             if (!force) {
                 allVillages.push(...existingVillages);
             }
         }
 
-        // Step 4: Assign residency to all people
-        const assigned = await assignResidencyToAllPeople(populatedTileIds, allVillages, peopleByTile);
+        // Step 4: Assign residency to all people (only for tiles with villages)
+        const tilesWithVillages = populatedTileIds.filter(tid => {
+            const tileId = parseInt(tid);
+            return allVillages.some(v => v.tile_id === tileId);
+        });
+        const assigned = await assignResidencyToAllPeople(tilesWithVillages, allVillages, peopleByTile);
 
+        if (skippedNoLands > 0) {
+            console.warn(`[VillageManager] ⚠️ Skipped ${skippedNoLands} tiles with people but no cleared lands`);
+        }
 
         return {
             success: true,
             created: totalCreated,
             assigned: assigned,
-            tiles: populatedTileIds.length,
+            tiles: tilesWithVillages.length,
             totalVillages: allVillages.length
         };
 
@@ -379,8 +419,11 @@ async function assignResidencyToAllPeople(populatedTileIds: string[], allVillage
         const villages = villagesByTile[tileId] || [];
         const people = peopleByTile[tileIdStr] || [];
 
+        // Skip tiles without villages - they were already filtered in ensureVillagesForPopulatedTiles
         if (villages.length === 0) {
-            console.warn(`[VillageManager] No villages for tile ${tileId} with ${people.length} people`);
+            if (people.length > 0) {
+                console.warn(`[VillageManager] Skipping tile ${tileId} with ${people.length} people - no villages available`);
+            }
             continue;
         }
 

@@ -15,6 +15,7 @@ import storage from '../services/storage';
 import serverConfig from '../config/server';
 import { validateBody } from '../middleware/validate';
 import { WorldRestartSchema } from '../schemas';
+import { restartWorld } from '../services/worldRestart';
 
 // Helper to safely extract error message
 function getErrorMessage(error: unknown): string {
@@ -102,7 +103,7 @@ router.get('/state', async (req: Request, res: Response) => {
 async function selfGet(path: string): Promise<Record<string, unknown>> {
     const port = process.env.PORT || 3000;
     return new Promise((resolve, reject) => {
-        const req = http.request({ hostname: 'localhost', port, path, method: 'GET', timeout: 300000 }, (resp) => {
+        const req = http.request({ hostname: 'localhost', port, path, method: 'GET' }, (resp) => {
             let data = '';
             resp.on('data', (chunk: Buffer | string) => { data += chunk; });
             resp.on('end', () => {
@@ -119,14 +120,15 @@ async function selfGet(path: string): Promise<Record<string, unknown>> {
                 }
             });
         });
-        req.on('error', (err: Error) => {
-            console.error(`[selfGet ${path}] error:`, err.message || err);
-            reject(err);
-        });
-        req.on('timeout', () => {
+        // Set socket timeout to 10 minutes for large operations like tile regeneration
+        req.setTimeout(600000, () => {
             const err = new Error('timeout');
             console.error(`[selfGet ${path}] timeout`);
             req.destroy(err);
+            reject(err);
+        });
+        req.on('error', (err: Error) => {
+            console.error(`[selfGet ${path}] error:`, err.message || err);
             reject(err);
         });
         req.end();
@@ -173,170 +175,62 @@ router.get('/', (req: Request, res: Response) => {
 
 // POST /api/worldrestart - Unified restart endpoint (tiles + population + villages + calendar reset)
 // REQUIRES explicit confirmation to prevent accidental data loss
+// Uses unified WorldRestart service for clean, optimized, Redis-first restart
 router.post('/worldrestart', validateBody(WorldRestartSchema), async (req: Request, res: Response) => {
-    const startTime = Date.now();
-
-    if (serverConfig.verboseLogs) console.log('🔴 [worldrestart] CONFIRMED - Starting world restart (all data will be wiped)...');
-
-    const populationService = req.app.locals.populationService;
-    if (!populationService) {
-        return res.status(500).json({ success: false, message: 'Population service unavailable' });
+    if (serverConfig.verboseLogs) {
+        console.log('🔴 [worldrestart] CONFIRMED - Starting world restart...');
     }
-
-    let calendarState: unknown = null;
-    let wasRunning = false;
-    let seedResult: VillageSeedResult | null = null;
 
     try {
         // Mark restarting so tick handlers skip processing
         PopulationState.isRestarting = true;
 
-        // Generate a new random seed for world restart to create different environments
-        const newWorldSeed = Math.floor(Math.random() * 2147483647);
-        process.env.WORLD_SEED = newWorldSeed.toString();
-        if (serverConfig.verboseLogs) console.log(`🎲 [worldrestart] Generated new random world seed: ${newWorldSeed}`);
-
-        // Always regenerate tiles with new seed for truly random environments
-        let stepStart = Date.now();
-        try {
-            await selfGet('/api/tiles?regenerate=true&silent=1');
-            if (serverConfig.verboseLogs) console.log(`⏱️ [worldrestart] Tiles regeneration with new seed: ${Date.now() - stepStart}ms`);
-        } catch (regenErr: unknown) {
-            console.error('[API /api/worldrestart] Tile regeneration failed:', getErrorMessage(regenErr));
-            throw regenErr;
-        }
-
-        // Pause calendar during world restart to prevent tick events
-        const calendarService = req.app.locals.calendarService;
-        if (calendarService && calendarService.state && calendarService.state.isRunning) {
-            wasRunning = true;
-            if (serverConfig.verboseLogs) console.log('⏸️ Pausing calendar for world restart...');
-            calendarService.stop();
-        }
-
-        // Skip the old tile regeneration logic since we always regenerate now
-        // Reset population and reinitialize on habitable tiles
-        stepStart = Date.now();
-        await populationService.resetPopulation({ preserveDatabase: false });
-        if (serverConfig.verboseLogs) console.log(`⏱️ [worldrestart] Population reset (full wipe): ${Date.now() - stepStart}ms`);
-
-        stepStart = Date.now();
-        // Select habitable tiles that also have cleared lands from Redis
-        const habitableIds: number[] = [];
-        try {
-            const tileData = await storage.hgetall('tile');
-            const landsData = await storage.hgetall('tile:lands');
-
-            if (tileData && landsData) {
-                for (const [tileId, tileJson] of Object.entries(tileData)) {
-                    const tile = JSON.parse(tileJson as string);
-                    if (tile.is_habitable) {
-                        // Check if this tile has cleared lands
-                        const landsJson = landsData[tileId];
-                        if (landsJson) {
-                            const lands = JSON.parse(landsJson as string);
-                            const hasClearedLand = lands.some((land: { cleared?: boolean }) => land.cleared);
-                            if (hasClearedLand) {
-                                habitableIds.push(parseInt(tileId));
-                            }
-                        }
-                    }
-                }
+        // Use unified WorldRestart service
+        const result = await restartWorld({
+            context: {
+                calendarService: req.app.locals.calendarService,
+                io: req.app.locals.io
             }
-        } catch (e: unknown) {
-            console.error('[API /api/worldrestart] Failed to get habitable tiles from Redis:', getErrorMessage(e));
-        }
+        });
 
-        if (habitableIds.length > 0) {
-            await populationService.initializeTilePopulations(habitableIds, { preserveDatabase: false, forceAll: true });
-        }
-        if (serverConfig.verboseLogs) console.log(`⏱️ [worldrestart] Population initialization: ${Date.now() - stepStart}ms`);
-
-        // Seed villages using robust VillageManager (non-fatal)
-        stepStart = Date.now();
-        try {
-            // Use VillageManager for robust village creation and residency assignment
-            const VillageManager = require('../services/villageSeeder/villageManager');
-            seedResult = await VillageManager.ensureVillagesForPopulatedTiles({ force: true });
-            if (serverConfig.verboseLogs) console.log(`⏱️ [worldrestart] Village seeding (VillageManager): ${Date.now() - stepStart}ms`);
-        } catch (seedErr: unknown) {
-            console.warn('[API /api/worldrestart] Village seeding failed:', getErrorMessage(seedErr));
-        }
-
-        // Broadcast villages to clients from storage
-        try {
-            const villages = await StateManager.getAllVillages();
-            if (req.app.locals.io && villages.length > 0) {
-                req.app.locals.io.emit('villagesUpdated', villages);
-                if (serverConfig.verboseLogs) console.log(`[API /api/worldrestart] Broadcasted ${villages.length} villages to clients`);
-            }
-        } catch (villageErr: unknown) {
-            console.warn('[API /api/worldrestart] Village broadcast failed:', getErrorMessage(villageErr));
-        }
-
-        // Reset calendar to Year 4000 and reset internal counters
-        try {
-            const calendarService = req.app.locals.calendarService;
-            if (calendarService && typeof calendarService.setDate === 'function') {
-                calendarService.setDate(1, 1, 4000);
-                if (calendarService.state) {
-                    if (typeof calendarService.calculateTotalDays === 'function') {
-                        calendarService.state.totalDays = calendarService.calculateTotalDays(4000, 1, 1);
-                    } else {
-                        calendarService.state.totalDays = 0;
-                    }
-                    calendarService.state.totalTicks = 0;
-                    calendarService.state.startTime = Date.now();
-                    calendarService.state.lastTickTime = Date.now();
-                }
-                if (typeof calendarService.saveStateToDB === 'function') {
-                    try { await calendarService.saveStateToDB(); } catch (e: unknown) { console.warn('[worldrestart] Failed to save calendar state to DB:', (e as Error)?.message ?? e); }
-                }
-                calendarState = calendarService.getState();
-                if (calendarService.io && typeof calendarService.io.emit === 'function') {
-                    calendarService.io.emit('calendarState', calendarState);
-                    calendarService.io.emit('calendarDateSet', calendarState);
-                }
-                if (serverConfig.verboseLogs) console.log('[API /api/worldrestart] Calendar reset to Year 4000');
-            }
-        } catch (calErr: unknown) {
-            console.warn('[API /api/worldrestart] Calendar reset failed:', getErrorMessage(calErr));
-        }
-
-        // Broadcast population update to all clients after restart
-        try {
-            await populationService.broadcastUpdate('populationReset');
-            if (serverConfig.verboseLogs) console.log('[API /api/worldrestart] Population update broadcasted to clients');
-        } catch (broadcastErr: unknown) {
-            console.warn('[API /api/worldrestart] Failed to broadcast population update:', getErrorMessage(broadcastErr));
-        }
-
-        const elapsed = Date.now() - startTime;
-        const worldSeed = (process.env.WORLD_SEED || 'unknown');
-        console.log(`🎲 World restarted with seed: ${worldSeed} (took ${elapsed}ms)`);
-
-        // Clear restarting flag and resume calendar if it was running
+        // Clear restarting flag
         PopulationState.isRestarting = false;
-        if (wasRunning && req.app.locals.calendarService) {
-            if (serverConfig.verboseLogs) console.log('▶️ Resuming calendar after world restart...');
-            req.app.locals.calendarService.start();
+
+        if (!result.success) {
+            return res.status(500).json({
+                success: false,
+                message: 'World restart failed',
+                error: result.error,
+                elapsed: result.elapsed
+            });
         }
 
-        return res.json({ success: true, message: 'World restarted and reinitialized', newSeed: worldSeed, calendarState, elapsed, villagesSeeded: seedResult?.created ?? 0 });
+        // Get calendar state for response
+        let calendarState = null;
+        if (req.app.locals.calendarService?.getState) {
+            calendarState = req.app.locals.calendarService.getState();
+        }
+
+        return res.json({
+            success: true,
+            message: 'World restarted and reinitialized',
+            newSeed: result.seed,
+            calendarState,
+            elapsed: result.elapsed,
+            villagesSeeded: result.villages,
+            integrity: result.integrity
+        });
+
     } catch (error: unknown) {
         // Clear restarting flag even on error
         PopulationState.isRestarting = false;
 
-        const elapsed = Date.now() - startTime;
         console.error('[API /api/worldrestart] Failed:', getErrorMessage(error));
-
-        // Resume calendar even on failure if it was running
-        if (wasRunning && req.app.locals.calendarService) {
-            console.log('▶️ Resuming calendar after world restart failure...');
-            req.app.locals.calendarService.start();
-        }
-
-        return res.status(500).json({ success: false, message: 'World restart failed', error: getErrorMessage(error), elapsed });
+        return res.status(500).json({
+            success: false,
+            message: 'World restart failed',
+            error: getErrorMessage(error)
+        });
     }
 });
 

@@ -256,10 +256,18 @@ async function selectTilesForInitialization(tileIds: number[]): Promise<number[]
 
     let candidateTiles: number[];
     if (Array.isArray(tileIds) && tileIds.length > 0) {
+        // Filter provided tiles against habitableFromDb to ensure only habitable tiles are used
         const filtered = tileIds.filter(id => habitableFromDb.includes(id));
-        candidateTiles = filtered.length > 0 ? filtered : tileIds;
-        if (serverConfig.verboseLogs && filtered.length === 0) {
-            console.log('[PopulationOperations] Using provided tileIds as fallback (habitable tiles not yet cached in storage)');
+        if (filtered.length > 0) {
+            candidateTiles = filtered;
+        } else if (habitableFromDb.length > 0) {
+            // If provided tiles don't match, use habitable tiles from Redis instead
+            console.warn(`[PopulationOperations] Provided ${tileIds.length} tileIds but none are habitable. Using ${habitableFromDb.length} habitable tiles from Redis.`);
+            candidateTiles = habitableFromDb;
+        } else {
+            // No habitable tiles at all - this is an error state
+            console.error('[PopulationOperations] No habitable tiles available - cannot initialize population');
+            candidateTiles = [];
         }
     } else {
         candidateTiles = habitableFromDb;

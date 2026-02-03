@@ -3,9 +3,9 @@
  * Handles syncing state between Redis (hot data) and PostgreSQL (persistence)
  * 
  * This module has been refactored into:
- * - loadOperations.js - Loading state from PostgreSQL to Redis
- * - saveOperations.js - Saving Redis state to PostgreSQL
- * - redisOperations.js - Redis CRUD operations
+ * - loadOperations.ts - Loading state from PostgreSQL to Redis
+ * - saveOperations.ts - Saving Redis state to PostgreSQL
+ * - redisOperations.ts - Redis CRUD operations
  */
 
 import storage from '../storage';
