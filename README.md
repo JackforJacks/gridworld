@@ -1,185 +1,359 @@
-GridWorld - Interactive 3D Hexasphere
-=====================================
+# GridWorld
 
-An interactive 3D hexasphere application built with Three.js, featuring real-time population management and modern build tools.
-
-**Features:**
-- 🌍 Interactive 3D hexasphere with click-to-select tiles
-- 📊 Real-time population counter that updates every second
-- 🔄 WebSocket-based live data synchronization
-- 🎮 Mouse and keyboard controls for 3D navigation
-- 🚀 Modern build system with hot reload
-- 💾 Persistent data storage in JSON format
+An interactive 3D hexasphere world simulation built with Three.js, featuring real-time population management, village systems, and a custom calendar simulation.
 
 ![Screenshot](screenshot.jpg)
 
+## Features
+
+- 🌍 **Interactive 3D Hexasphere** - Procedurally generated planet with clickable tiles
+- 👥 **Population Simulation** - Real-time population growth, births, deaths, and aging
+- 🏘️ **Village System** - Autonomous villages with residents and food management
+- 📅 **Calendar System** - Custom game calendar with day/month/year progression
+- 🔄 **Real-time Sync** - WebSocket-based live updates across all connected clients
+- 💾 **Dual Storage** - Redis for fast in-memory state, PostgreSQL for persistence
+- 🚀 **Modern Stack** - TypeScript, Express, Socket.IO, Three.js, Webpack
+
+## Prerequisites
+
+- **Node.js** >= 18.0.0
+- **Redis** - For real-time game state
+- **PostgreSQL** - For persistent storage
+- **npm** or **yarn**
+
 ## Quick Start
 
-### Development Mode
+### 1. Clone and Install
+
 ```bash
+git clone https://github.com/your-repo/gridworld.git
+cd gridworld
 npm install
-npm run dev
-```
-Open http://localhost:8080 to see the application with hot reload.
-
-### Production Mode
-```bash
-npm install
-npm run build
-npm run server
-```
-Open http://localhost:8080 to see the production application with population management.
-
-## Population Management
-
-The application includes a real-time population management system:
-
-- **Population Display**: Real-time counter in the top-right corner
-- **Auto Growth**: Population increases by 1 every second
-- **Data Persistence**: Population data is saved to `data.json`
-- **WebSocket Sync**: All connected clients see updates instantly
-
-### API Endpoints
-
-- `GET /api/population` - Get current population data
-- `POST /api/population` - Update population count or growth rate
-- `GET /api/population/reset` - Reset population to 1,000,000
-
-### Example API Usage
-
-```bash
-# Get current population
-curl http://localhost:8080/api/population
-
-# Update population to 5 million with growth rate of 2 per second
-curl -X POST http://localhost:8080/api/population \
-  -H "Content-Type: application/json" \
-  -d '{"count": 5000000, "rate": 2}'
-
-# Reset to default
-curl http://localhost:8080/api/population/reset
 ```
 
-## Development
+### 2. Configure Environment
 
-### Available Scripts
+Create a `.env` file in the project root:
 
-- `npm run dev` - Start development server with hot reload
-- `npm run build` - Build for production
-- `npm run server` - Start production server
-- `npm run prod` - Build and start production server
-- `npm run clean` - Clean build artifacts
+```env
+# Server
+PORT=3000
+NODE_ENV=development
 
-### Testing ✅
-- Run all tests: `npm test`
-- Run unit tests only: `npm run test:unit`
-- Run integration tests only: `npm run test:integration`
-- Run coverage (unit): `npm run test:coverage`
-- Run a single test file: `npm run test:file -- path/to/test/file.test.js` or `npx jest path/to/test/file.test.js`
-- Run tests by name: `npx jest -t "partial name of test"` (useful for focused checks)
-- Watch mode (fast feedback): `npm run test:watch` or `npm run test:unit:watch`
+# PostgreSQL
+DB_HOST=localhost
+DB_PORT=5432
+DB_NAME=gridworld
+DB_USER=postgres
+DB_PASSWORD=password
 
-Tips:
-- Keep tests small and focused: test one unit of behavior at a time (function/module).
-- Prefer the `MemoryAdapter` for storage-related unit tests to avoid external dependencies.
-- Use `describe.only` / `test.only` locally to focus on a single test while developing.
+# Redis (defaults to localhost:6379)
+REDIS_HOST=localhost
+REDIS_PORT=6379
 
-### Project Structure
+# Hexasphere Configuration
+HEXASPHERE_RADIUS=30
+HEXASPHERE_SUBDIVISIONS=3
+HEXASPHERE_TILE_WIDTH_RATIO=1
 
-```
-src/
-├── main.js              # Entry point
-├── population-manager.js # Real-time population management
-├── ui-manager.js         # UI components and population display
-├── scene-manager.js      # Three.js scene management
-├── camera-controller.js  # Camera controls
-├── input-handler.js      # Input event handling
-└── Sphere/              # Hexasphere implementation
-    ├── hexaSphere.js    # Main sphere generator
-    ├── tile.js          # Individual tile logic
-    ├── face.js          # Face geometry
-    └── ...
+# Optional Features
+VERBOSE_LOGS=false
+AUTO_SAVE_ENABLED=false
 ```
 
-## Technical Details
-
-### Hexasphere Generation 
-
-```javascript
-var radius = 15;        // Radius used to calculate position of tiles
-var subDivisions = 5;   // Divide each edge of the icosohedron into this many segments
-var tileWidth = 0.9;    // Add padding (1.0 = no padding; 0.1 = mostly padding)
-
-var hexasphere = new Hexasphere(radius, subDivisions, tileWidth);
-for(var i = 0; i< hexasphere.tiles.length; i++){
-   // hexasphere.tiles[i].centerPoint contains x,y,z of the tile
-   // hexasphere.tiles[i].boundary contains an ordered array of the boundary points
-   // hexasphere.tiles[i].neighbors contains a list of all the neighboring tiles
-}
-
-var waveformObjString = hexasphere.toObj() // export as waveform .obj to use in 3d modelling software
-var jsonString = hexasphere.toJson() // export it as a json object
-
-```
-
-Check out a [demo on my website](https://www.robscanlon.com/hexasphere/).  The demo uses Three.js to render the sphere, but that is not an inherit dependency of hexasphere.js.
-You can generate a waveform (.obj) model directly from the website, if you don't want to deal with the javascript library.
-
-## GridWorld Development
-
-This project has been enhanced with a modern development setup using Webpack and ES6 modules.
-
-### Development Setup
+### 3. Initialize Database
 
 ```bash
-# Install dependencies
-npm install
+# Create the PostgreSQL database first
+createdb gridworld
 
-# Start development server with hot reload
-npm run dev
-# Opens http://localhost:3000
-
-# Build for production
-npm run build
-
-# Build for development (unminified)
-npm run build:dev
+# Run migrations
+npm run db:init
 ```
 
-### Project Structure
+### 4. Start Development Server
+
+```bash
+npm run full-auto
+```
+
+This starts:
+- **Webpack Dev Server** on `http://localhost:8080` (client with hot reload)
+- **Express API Server** on `http://localhost:3000` (backend with auto-restart)
+
+Open http://localhost:8080 in your browser.
+
+## Available Scripts
+
+### Development
+
+| Command | Description |
+|---------|-------------|
+| `npm run full-auto` | Start both client and server in watch mode (recommended) |
+| `npm run dev` | Start Webpack dev server only |
+| `npm run server:watch` | Start backend server with nodemon |
+| `npm run server:dev` | Start backend server without watch |
+
+### Building
+
+| Command | Description |
+|---------|-------------|
+| `npm run build` | Build both client and server for production |
+| `npm run build:client` | Build client only |
+| `npm run build:server` | Build server only |
+| `npm run clean` | Remove dist folder |
+
+### Production
+
+| Command | Description |
+|---------|-------------|
+| `npm run prod` | Build and start production server |
+| `npm run server` | Start production server (requires build first) |
+
+### Testing
+
+| Command | Description |
+|---------|-------------|
+| `npm test` | Run all tests |
+| `npm run test:unit` | Run unit tests only |
+| `npm run test:integration` | Run integration tests only |
+| `npm run test:coverage` | Run tests with coverage report |
+| `npm run test:watch` | Run tests in watch mode |
+
+### Database
+
+| Command | Description |
+|---------|-------------|
+| `npm run db:init` | Initialize database schema |
+| `npm run db:reset` | Reset and reinitialize database |
+
+### Simulation
+
+| Command | Description |
+|---------|-------------|
+| `npm run simulate` | Run 100-year simulation |
+| `npm run simulate:10y` | Run 10-year simulation |
+| `npm run simulate:50y` | Run 50-year simulation |
+
+## Project Structure
 
 ```
 GridWorld/
-├── src/                    # Source code (ES6 modules)
-│   ├── main.js            # Application entry point
-│   ├── scene-manager.js   # Three.js scene management
-│   ├── input-handler.js   # Input handling
-│   ├── ui-manager.js      # UI components
-│   └── Sphere/            # Hexasphere library
+├── src/                    # Client-side code
+│   ├── index.ts           # Client entry point
+│   ├── core/              # Core modules
+│   │   ├── hexasphere/    # Hexasphere generation
+│   │   ├── scene/         # Three.js scene management
+│   │   └── input/         # Input handling
+│   ├── components/        # UI components
+│   ├── managers/          # State managers
+│   ├── services/          # API & Socket services
+│   └── utils/             # Utility functions
+│
+├── server/                 # Server-side code
+│   ├── index.ts           # Server entry point
+│   ├── config/            # Configuration files
+│   │   ├── database.ts    # PostgreSQL config
+│   │   ├── redis.ts       # Redis config
+│   │   ├── server.ts      # Server settings
+│   │   └── gameBalance.ts # Game constants
+│   ├── routes/            # API routes
+│   │   ├── api.ts         # Main API router
+│   │   ├── tiles.ts       # Tile endpoints
+│   │   ├── population.ts  # Population endpoints
+│   │   ├── villages.ts    # Village endpoints
+│   │   └── calendar.ts    # Calendar endpoints
+│   ├── services/          # Business logic
+│   │   ├── storage.ts     # Redis storage layer
+│   │   ├── worldRestart/  # World generation
+│   │   └── ...
+│   ├── models/            # Data models
+│   ├── repositories/      # Data access layer
+│   └── migrations/        # Database migrations
+│
+├── scripts/               # Utility scripts
 ├── css/                   # Stylesheets
-├── dist/                  # Production build output
-├── webpack.config.js      # Build configuration
-└── package.json          # Dependencies and scripts
+├── dist/                  # Build output (generated)
+└── types/                 # TypeScript type definitions
 ```
 
-### Features
+## API Endpoints
 
-- **Hot Module Replacement**: See changes instantly while developing
-- **Modern JavaScript**: ES6 modules, async/await support
-- **Optimized Builds**: Code splitting and minification for production
-- **Development Server**: Live reload and error overlay
-- **Source Maps**: Debug with original source code
+### Configuration
+- `GET /api/config` - Get server configuration
 
-Implementations in Other Languages
---------
+### Tiles
+- `GET /api/tiles` - Get all tiles with geometry
+- `GET /api/tiles/state` - Get compact tile state (optimized)
+- `GET /api/tiles/:id` - Get detailed tile data
 
-If you port this to other languages, let me know and I'll link to it here:
+### Population
+- `GET /api/population` - Get population statistics
+- `GET /api/population/tile/:id` - Get tile population
+- `POST /api/population` - Update population
 
-- Objective-C: [pkclsoft/HexasphereDemo](https://github.com/pkclsoft/HexasphereDemo)
-- Unity C#: [Em3rgencyLT/Hexasphere](https://github.com/Em3rgencyLT/Hexasphere)
+### Villages
+- `GET /api/villages` - List all villages
+- `GET /api/villages/:id` - Get village details
+- `GET /api/villages/:id/residents` - Get village residents
 
-License
---------
+### Calendar
+- `GET /api/calendar/state` - Get current calendar state
+- `POST /api/calendar/start` - Start calendar progression
+- `POST /api/calendar/stop` - Stop calendar progression
+- `POST /api/calendar/tick` - Advance one day manually
+
+### World Management
+- `POST /api/worldrestart` - Regenerate world with new seed
+- `POST /api/save` - Save Redis state to PostgreSQL
+- `POST /api/load` - Load state from PostgreSQL to Redis
+
+## Environment Variables
+
+### Server Configuration
+
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `PORT` | `3000` | Server port |
+| `NODE_ENV` | `development` | Environment mode |
+| `VERBOSE_LOGS` | `false` | Enable detailed logging |
+| `AUTO_SAVE_ENABLED` | `false` | Auto-save to PostgreSQL |
+
+### Database (PostgreSQL)
+
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `DB_HOST` | `localhost` | PostgreSQL host |
+| `DB_PORT` | `5432` | PostgreSQL port |
+| `DB_NAME` | `gridworld` | Database name |
+| `DB_USER` | `postgres` | Database user |
+| `DB_PASSWORD` | `password` | Database password |
+| `DB_POOL_MAX` | `20` | Max pool connections |
+
+### Redis
+
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `REDIS_HOST` | `localhost` | Redis host |
+| `REDIS_PORT` | `6379` | Redis port |
+
+### Hexasphere
+
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `HEXASPHERE_RADIUS` | `30` | Sphere radius |
+| `HEXASPHERE_SUBDIVISIONS` | `3` | Subdivision level (affects tile count) |
+| `HEXASPHERE_TILE_WIDTH_RATIO` | `1` | Tile width ratio |
+
+**Subdivision levels:**
+- `2` = 162 tiles
+- `3` = 642 tiles
+- `4` = 1442 tiles (default)
+- `5` = 2562 tiles
+
+## Controls
+
+### Mouse
+- **Left Click** - Select tile
+- **Left Drag** - Rotate globe
+- **Scroll** - Zoom in/out
+
+### Keyboard
+- **Space** - Toggle auto-rotation
+- **R** - Reset camera position
+- **T** - Toggle tile labels
+- **+/-** - Adjust rotation speed
+
+## WebSocket Events
+
+The application uses Socket.IO for real-time updates:
+
+### Client → Server
+- `subscribe:tile` - Subscribe to tile updates
+- `unsubscribe:tile` - Unsubscribe from tile
+
+### Server → Client
+- `population:update` - Population changed
+- `calendar:tick` - Day advanced
+- `village:update` - Village data changed
+- `tile:update` - Tile state changed
+
+## Testing
+
+```bash
+# Run all tests
+npm test
+
+# Run unit tests only
+npm run test:unit
+
+# Run integration tests only
+npm run test:integration
+
+# Run with coverage
+npm run test:coverage
+
+# Watch mode
+npm run test:watch
+```
+
+**Tips:**
+- Keep tests small and focused: test one unit of behavior at a time
+- Prefer the `MemoryAdapter` for storage-related unit tests
+- Use `describe.only` / `test.only` locally to focus on a single test
+
+## Troubleshooting
+
+### Redis Connection Failed
+```
+Error: Redis connection to localhost:6379 failed
+```
+Ensure Redis is running:
+```bash
+# Windows (if using WSL or Docker)
+redis-server
+
+# Or check if running
+redis-cli ping
+```
+
+### PostgreSQL Connection Failed
+```
+Error: connect ECONNREFUSED 127.0.0.1:5432
+```
+1. Ensure PostgreSQL is running
+2. Verify credentials in `.env`
+3. Create database: `createdb gridworld`
+4. Run migrations: `npm run db:init`
+
+### Port Already in Use
+```
+Error: listen EADDRINUSE: address already in use :::8080
+```
+Kill existing Node processes:
+```bash
+# Windows
+taskkill /F /IM node.exe
+
+# Linux/Mac
+pkill -f node
+```
+
+### World Not Initialized
+```
+Error: World not initialized - No tiles found
+```
+The world generates automatically on first server start. If Redis was flushed, restart the server to regenerate.
+
+## Tech Stack
+
+- **Frontend**: Three.js, TypeScript, Webpack
+- **Backend**: Express, Socket.IO, TypeScript
+- **Database**: PostgreSQL (persistence), Redis (real-time state)
+- **Testing**: Jest, ts-jest
+- **Build**: Webpack, Babel, TypeScript
+
+## License
 
 The MIT License (MIT) Copyright (c) 2014-2017 Robert Scanlon
 
@@ -188,3 +362,7 @@ Permission is hereby granted, free of charge, to any person obtaining a copy of 
 The above copyright notice and this permission notice shall be included in all copies or substantial portions of the Software.
 
 THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
+
+## Credits
+
+Based on [hexasphere.js](https://github.com/arscan/hexasphere.js) by Rob Scanlon.
