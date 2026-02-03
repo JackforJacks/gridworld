@@ -19,6 +19,7 @@ import SceneManager from './core/scene/SceneManager';
 import UIManager from './managers/ui/UIManager';
 import CalendarManager from './managers/calendar/CalendarManager';
 import CalendarDisplay from './components/dashboard/CalendarDisplay';
+import MemoryDisplay from './components/dashboard/MemoryDisplay';
 import BackgroundStars from './core/renderer/BackgroundStars';
 import { initializeAndStartGame } from './core/scene/init';
 import SocketService, { getSocketService } from './services/socket/SocketService';
@@ -100,6 +101,7 @@ class GridWorldApp {
     private uiManager: UIManager | null;
     private calendarManager: CalendarManager | null;
     private calendarDisplay: CalendarDisplay | null;
+    private memoryDisplay: MemoryDisplay | null;
 
     // Socket connection (via SocketService singleton)
     private socketService: SocketService | null;
@@ -121,6 +123,7 @@ class GridWorldApp {
         this.uiManager = null;
         this.calendarManager = null;
         this.calendarDisplay = null;
+        this.memoryDisplay = null;
 
         // Socket connection (via SocketService singleton)
         this.socketService = null;
@@ -373,6 +376,9 @@ class GridWorldApp {
             // Initialize calendar display
             this.calendarDisplay = new CalendarDisplay(this.calendarManager);
 
+            // Initialize memory display
+            this.memoryDisplay = new MemoryDisplay();
+
         } catch (error: unknown) {
             console.error('Failed to initialize calendar system:', error);
         }
@@ -480,6 +486,10 @@ class GridWorldApp {
      * Clean up application resources
      */
     destroy(): void {
+        if (this.memoryDisplay) {
+            this.memoryDisplay.destroy();
+        }
+
         if (this.calendarDisplay) {
             this.calendarDisplay.destroy();
         }

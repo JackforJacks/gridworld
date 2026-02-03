@@ -27,6 +27,9 @@ import StateManager from './services/stateManager';
 // Import middleware
 import errorHandler from './middleware/errorHandler';
 
+// Import memory tracker
+import memoryTracker from './services/memoryTracker';
+
 // For CommonJS: __dirname is available directly
 // eslint-disable-next-line @typescript-eslint/no-var-requires
 const serverDirname = __dirname || path.resolve(path.dirname(''));
@@ -53,6 +56,9 @@ class GridWorldServer {
         // Wait for Redis to be ready before proceeding - Redis is required
         const storage = await import('./services/storage');
         await storage.default.waitForReady();
+
+        // Start memory tracker (samples every 60 seconds)
+        memoryTracker.start(60000);
 
         // Configure middleware
         this.app.use(compression()); // Compress all HTTP responses
@@ -247,6 +253,9 @@ class GridWorldServer {
                 const VillageServiceModule = await import('./services/villageService');
                 VillageServiceModule.default.stopFoodUpdateTimer();
             } catch (e: unknown) { /* ignore */ }
+
+            // Stop memory tracker
+            try { memoryTracker.stop(); } catch (e: unknown) { /* ignore */ }
 
             if (populationServiceInstance) {
                 try { await populationServiceInstance.shutdown(); } catch (e: unknown) { /* ignore */ }

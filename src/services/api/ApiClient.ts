@@ -135,6 +135,50 @@ export interface VitalRatePoint {
     deathRate: number;
 }
 
+/** Memory usage statistics from server */
+export interface MemoryStats {
+    /** Resident Set Size - total memory allocated for the process */
+    rss: number;
+    /** Total size of the allocated heap */
+    heapTotal: number;
+    /** Actual memory used during execution */
+    heapUsed: number;
+    /** V8 external memory (C++ objects bound to JS) */
+    external: number;
+    /** Memory used by ArrayBuffers and SharedArrayBuffers */
+    arrayBuffers: number;
+    /** Formatted human-readable values */
+    formatted: {
+        rss: string;
+        heapTotal: string;
+        heapUsed: string;
+        external: string;
+        arrayBuffers: string;
+    };
+    /** Heap usage percentage */
+    heapUsagePercent: number;
+    /** Timestamp of the measurement */
+    timestamp: number;
+    /** Uptime in seconds */
+    uptimeSeconds: number;
+}
+
+/** Memory history response */
+export interface MemoryHistory {
+    current: MemoryStats;
+    peak: {
+        heapUsed: number;
+        heapUsedFormatted: string;
+        rss: number;
+        rssFormatted: string;
+        timestamp: number;
+    };
+    samples: MemoryStats[];
+    sampleCount: number;
+    averageHeapUsed: number;
+    averageHeapUsedFormatted: string;
+}
+
 /**
  * ApiClient - Singleton HTTP client
  */
@@ -369,6 +413,29 @@ class ApiClient {
      */
     async syncGame(): Promise<ApiResponse> {
         return this.request<ApiResponse>('/api/sync', { method: 'POST' });
+    }
+
+    // ==================== SYSTEM ====================
+
+    /**
+     * Get current memory usage statistics
+     */
+    async getMemoryStats(): Promise<ApiResponse<MemoryStats>> {
+        return this.request<ApiResponse<MemoryStats>>('/api/system/memory');
+    }
+
+    /**
+     * Get memory usage history
+     */
+    async getMemoryHistory(): Promise<ApiResponse<MemoryHistory>> {
+        return this.request<ApiResponse<MemoryHistory>>('/api/system/memory/history');
+    }
+
+    /**
+     * Get system health status
+     */
+    async getSystemHealth(): Promise<ApiResponse> {
+        return this.request<ApiResponse>('/api/system/health');
     }
 }
 
