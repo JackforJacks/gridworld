@@ -9,7 +9,6 @@ import { getApiClient } from '../../services/api/ApiClient';
 interface SceneManagerLike {
     getPopulationStats(): Record<string, unknown>;
     regenerateTiles(): Promise<void>;
-    toggleTileLabels(): boolean;
     searchTile(tileId: number | string): { x: number; y: number; z: number } | null;
 }
 
@@ -302,7 +301,6 @@ class UIManager {
         const showStatsButton = document.getElementById('show-stats');
         const saveGameButton = document.getElementById('save-game');
         const loadGameButton = document.getElementById('load-game');
-        const toggleTileLabelsButton = document.getElementById('toggle-tile-labels');
         const tileSearchInput = document.getElementById('tile-search-input') as HTMLInputElement | null;
         const tileSearchBtn = document.getElementById('tile-search-btn');
 
@@ -327,12 +325,6 @@ class UIManager {
         if (loadGameButton) {
             loadGameButton.addEventListener('click', () => {
                 this.handleLoadGame();
-            });
-        }
-
-        if (toggleTileLabelsButton) {
-            toggleTileLabelsButton.addEventListener('click', () => {
-                this.handleToggleTileLabels();
             });
         }
 
@@ -485,21 +477,6 @@ class UIManager {
             await this.sceneManager.regenerateTiles();
         } catch (error: unknown) {
             console.error("❌ Error during world restart:", error);
-        }
-    }
-
-    handleToggleTileLabels(): void {
-        if (!this.sceneManager) {
-            console.error("SceneManager not available for tile labels toggle.");
-            return;
-        }
-
-        const button = document.getElementById('toggle-tile-labels');
-        const visible = this.sceneManager.toggleTileLabels();
-
-        if (button) {
-            button.textContent = visible ? '🏷️ Hide IDs' : '🏷️ IDs';
-            button.classList.toggle('active', visible);
         }
     }
 

@@ -14,7 +14,6 @@ import { initializeColorCaches, getBiomeColor, getBiomeColorCached, getTerrainCo
 import { buildTilesFromData, buildTilesFromLocalHexasphere, createHexasphereMesh, calculateTileProperties, validateTileBoundary, sanitizeBoundaryPoint, createBufferGeometry, normalizePoint } from './geometryBuilder';
 import type { LocalHexasphere, CompactTileState } from './geometryBuilder';
 import { TileOverlayManager } from './tileOverlays';
-import { TileLabelManager } from './tileLabels';
 import { updateTilePopulations, checkPopulationThresholds, getPopulationStats, resetTileColors, initializeTilePopulations, reinitializePopulation } from './populationDisplay';
 import { addLighting, updateCameraLight, disposeLighting, createLightingState, LightingState } from './lighting';
 
@@ -39,7 +38,6 @@ class SceneManager {
     // State tracking
     private tileColorIndices: Map<string, TileColorInfo>;
     private overlayManager: TileOverlayManager | null;
-    private labelManager: TileLabelManager | null;
     private populationUnsubscribe: (() => void) | null;
 
     constructor() {
@@ -54,7 +52,6 @@ class SceneManager {
         this.habitableTileIds = [];
         this.sphereRadius = 30;
         this.overlayManager = null;
-        this.labelManager = null;
 
         // Pre-cache all biome and terrain colors
         initializeColorCaches();
@@ -66,7 +63,6 @@ class SceneManager {
         this.renderer.setClearColor(0x000000, 0);
         this.scene = new THREE.Scene();
         this.overlayManager = new TileOverlayManager(this.scene);
-        this.labelManager = new TileLabelManager(this.scene);
 
         this.populationUnsubscribe = populationManager.subscribe((eventType: PopulationEventType, _data: unknown) => {
             if (eventType === 'populationUpdate') {
@@ -154,12 +150,6 @@ class SceneManager {
         this.scene!.add(mesh);
         getAppContext().currentTiles = this.currentTiles;
 
-        // Add tile labels (hidden by default)
-        if (this.labelManager && this.hexasphere?.tiles) {
-            this.labelManager.clear();
-            this.labelManager.addAll(this.hexasphere.tiles);
-        }
-
         // Apply population data
         updateTilePopulations(this.hexasphere);
         if (this.overlayManager) {
@@ -185,12 +175,6 @@ class SceneManager {
         this.currentTiles.push(mesh);
         this.scene!.add(mesh);
         getAppContext().currentTiles = this.currentTiles;
-
-        // Add tile labels (hidden by default)
-        if (this.labelManager && this.hexasphere?.tiles) {
-            this.labelManager.clear();
-            this.labelManager.addAll(this.hexasphere.tiles);
-        }
 
         // Apply population data
         updateTilePopulations(this.hexasphere);
@@ -224,22 +208,6 @@ class SceneManager {
 
     clearTileOverlays(): void {
         this.overlayManager?.clear();
-    }
-
-    /** Toggle tile ID labels visibility */
-    toggleTileLabels(): boolean {
-        if (!this.labelManager) return false;
-        return this.labelManager.toggle();
-    }
-
-    /** Set tile labels visibility */
-    setTileLabelsVisible(visible: boolean): void {
-        this.labelManager?.setVisible(visible);
-    }
-
-    /** Check if tile labels are visible */
-    areTileLabelsVisible(): boolean {
-        return this.labelManager?.visible ?? false;
     }
 
     /** 
