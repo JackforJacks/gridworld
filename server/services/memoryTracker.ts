@@ -72,7 +72,7 @@ class MemoryTracker {
     getStats(): MemoryStats {
         const memUsage = process.memoryUsage();
         const uptimeSeconds = Math.floor((Date.now() - this.startTime) / 1000);
-        
+
         const stats: MemoryStats = {
             rss: memUsage.rss,
             heapTotal: memUsage.heapTotal,
@@ -86,8 +86,8 @@ class MemoryTracker {
                 external: this.formatBytes(memUsage.external),
                 arrayBuffers: this.formatBytes(memUsage.arrayBuffers),
             },
-            heapUsagePercent: memUsage.heapTotal > 0 
-                ? Math.round((memUsage.heapUsed / memUsage.heapTotal) * 100) 
+            heapUsagePercent: memUsage.heapTotal > 0
+                ? Math.round((memUsage.heapUsed / memUsage.heapTotal) * 100)
                 : 0,
             timestamp: Date.now(),
             uptimeSeconds,
@@ -111,7 +111,7 @@ class MemoryTracker {
      */
     getHistory(): MemoryHistory {
         const current = this.getStats();
-        
+
         // Calculate average heap usage from samples
         const avgHeapUsed = this.samples.length > 0
             ? this.samples.reduce((sum, s) => sum + s.heapUsed, 0) / this.samples.length
@@ -139,7 +139,7 @@ class MemoryTracker {
     private recordSample(): void {
         const stats = this.getStats();
         this.samples.push(stats);
-        
+
         // Keep only the last maxSamples
         if (this.samples.length > this.maxSamples) {
             this.samples = this.samples.slice(-this.maxSamples);
@@ -158,7 +158,7 @@ class MemoryTracker {
 
         // Record initial sample
         this.recordSample();
-        
+
         this.intervalId = setInterval(() => {
             this.recordSample();
         }, intervalMs);

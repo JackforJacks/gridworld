@@ -62,7 +62,7 @@ class MemoryDisplay {
     private renderStats(stats: MemoryStats): string {
         const heapPercent = stats.heapUsagePercent;
         const barColor = heapPercent > 80 ? '#ff4444' : heapPercent > 60 ? '#ffaa00' : '#44ff44';
-        
+
         return `
             <div class="memory-icon">💾</div>
             <div class="memory-content">
