@@ -3,6 +3,7 @@
 
 import populationManager from '../population/PopulationManager';
 import { getAppContext } from '../../core/AppContext';
+import { getApiClient } from '../../services/api/ApiClient';
 
 // Interface for SceneManager to avoid circular dependencies
 interface SceneManagerLike {
@@ -406,8 +407,7 @@ class UIManager {
         saveButton.innerHTML = '⏳ Saving...';
 
         try {
-            const response = await fetch('/api/save', { method: 'POST' });
-            const result = await response.json();
+            const result = await getApiClient().saveGame();
 
             if (result.success) {
                 saveButton.classList.remove('saving');
@@ -447,8 +447,7 @@ class UIManager {
         loadButton.innerHTML = '⏳ Loading...';
 
         try {
-            const response = await fetch('/api/sync', { method: 'POST' });
-            const result = await response.json();
+            const result = await getApiClient().syncGame();
 
             if (result.success) {
                 loadButton.classList.remove('loading');

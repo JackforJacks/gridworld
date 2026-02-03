@@ -83,11 +83,11 @@ router.post('/population/sync', async (req: Request, res: Response) => {
 router.get('/state', async (req: Request, res: Response) => {
     try {
         const villages = await StateManager.getAllVillages();
-        const people = await StateManager.getAllPeople();
+        const peopleCount = await StateManager.getPopulationCount();
         res.json({
             initialized: StateManager.isInitialized(),
             villages: villages.length,
-            people: people.length,
+            people: peopleCount,
             totalFoodStores: villages.reduce((sum: number, v: { food_stores?: number }) => sum + (v.food_stores || 0), 0).toFixed(0)
         });
     } catch (error: unknown) {

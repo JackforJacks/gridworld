@@ -15,16 +15,16 @@ export function updateTilePopulations(hexasphere: HexasphereData | null): void {
         console.warn('[SceneManager] updateTilePopulations: hexasphere not ready');
         return;
     }
-    
+
     const tilePopulations = populationManager.getAllTilePopulations();
     const tiles = hexasphere.tiles;
     const tileCount = tiles.length;
-    
+
     // Optimized loop with reduced property access
     for (let i = 0; i < tileCount; i++) {
         const tile = tiles[i];
         const isHabitable = tile.Habitable === 'yes' || tile.is_habitable === true;
-        
+
         if (isHabitable) {
             // Try numeric ID first, then string (most common case first)
             tile.population = tilePopulations[tile.id] ?? tilePopulations[String(tile.id)] ?? 0;
@@ -35,42 +35,33 @@ export function updateTilePopulations(hexasphere: HexasphereData | null): void {
 }
 
 /**
- * Check population thresholds and update overlays
+ * Check population thresholds - overlay system removed for performance
+ * Now just tracks the isHighlighted state without creating overlay meshes
  */
 export function checkPopulationThresholds(
     hexasphere: HexasphereData | null,
     tileColorIndices: Map<string, TileColorInfo>,
-    overlayManager: TileOverlayManager
+    _overlayManager: TileOverlayManager
 ): void {
     if (!hexasphere?.tiles) return;
-    
+
     const tiles = hexasphere.tiles;
     const tileCount = tiles.length;
-    
-    // Optimized loop with cached lookups
+
+    // Just update state tracking, no overlay meshes
     for (let i = 0; i < tileCount; i++) {
         const tile = tiles[i];
-        
+
         // Early continue for non-habitable tiles
         if (tile.Habitable !== 'yes') continue;
-        
+
         const population = tile.population ?? 0;
         const tileIdStr = String(tile.id);
         const colorInfo = tileColorIndices.get(tileIdStr);
         if (!colorInfo) continue;
-        
-        const shouldBeRed = population > 0;
-        const isHighlighted = colorInfo.isHighlighted;
-        
-        // Only act on state changes
-        if (shouldBeRed !== isHighlighted) {
-            if (shouldBeRed) {
-                overlayManager.add(tile);
-            } else {
-                overlayManager.remove(tileIdStr);
-            }
-            colorInfo.isHighlighted = shouldBeRed;
-        }
+
+        // Track state without creating overlays
+        colorInfo.isHighlighted = population > 0;
     }
 }
 
@@ -83,7 +74,7 @@ export function resetTileColors(
     overlayManager: TileOverlayManager
 ): void {
     if (!hexasphere?.tiles) return;
-    
+
     for (const tile of hexasphere.tiles) {
         const colorInfo = tileColorIndices.get(String(tile.id));
         if (colorInfo && colorInfo.isHighlighted) {
@@ -103,10 +94,10 @@ export function getPopulationStats(
     tileColorIndices: Map<string, TileColorInfo>
 ): PopulationStats | { error: string } {
     if (!hexasphere?.tiles) return { error: 'No hexasphere data available' };
-    
+
     const tiles = hexasphere.tiles;
     const tileCount = tiles.length;
-    
+
     let habitableTiles = 0;
     let populatedTiles = 0;
     let highPopulationTiles = 0;
@@ -205,6 +196,6 @@ export async function reinitializePopulation(
     } catch (error: unknown) {
         console.error('❌ Failed to reinitialize population:', error);
     }
-    
+
     return ids;
 }

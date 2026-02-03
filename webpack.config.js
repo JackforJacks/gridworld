@@ -165,6 +165,12 @@ module.exports = (env, argv) => {
           changeOrigin: true,
           timeout: 60000,
           proxyTimeout: 60000,
+          onError: (err, req, res) => {
+            // Silently handle connection resets - common with long-polling
+            if (err.code !== 'ECONNRESET') {
+              console.log('API proxy error:', err.message);
+            }
+          },
         },
         {
           context: ['/socket.io'],
@@ -173,13 +179,18 @@ module.exports = (env, argv) => {
           changeOrigin: true,
           timeout: 30000,
           proxyTimeout: 30000,
-          logLevel: 'debug',
           onError: (err, req, res) => {
-            console.log('WebSocket proxy error:', err.message);
+            // Silently handle connection resets - common with Socket.IO polling
+            if (err.code !== 'ECONNRESET' && err.code !== 'ECONNREFUSED') {
+              console.log('WebSocket proxy error:', err.message);
+            }
           },
           onProxyReqWs: (proxyReq, req, socket) => {
             socket.on('error', (err) => {
-              console.log('WebSocket socket error:', err.message);
+              // Silently handle socket errors - normal during reconnects
+              if (err.code !== 'ECONNRESET') {
+                console.log('WebSocket socket error:', err.message);
+              }
             });
           },
           headers: {

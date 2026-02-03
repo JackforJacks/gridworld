@@ -54,6 +54,13 @@ async function updatePerson(personId, updates) {
 }
 
 /**
+ * Get population count from Redis (O(1) operation)
+ */
+async function getPopulationCount(): Promise<number> {
+    return await storage.hlen('person');
+}
+
+/**
  * Get all people from Redis
  */
 async function getAllPeople() {
@@ -142,6 +149,7 @@ export {
     getAllVillages,
     getPerson,
     updatePerson,
+    getPopulationCount,
     getAllPeople,
     getVillagePopulation,
     getTileFertility,

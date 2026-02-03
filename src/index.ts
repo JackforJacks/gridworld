@@ -21,7 +21,7 @@ import CalendarManager from './managers/calendar/CalendarManager';
 import CalendarDisplay from './components/dashboard/CalendarDisplay';
 import BackgroundStars from './core/renderer/BackgroundStars';
 import { initializeAndStartGame } from './core/scene/init';
-import { io, Socket } from 'socket.io-client';
+import SocketService, { getSocketService } from './services/socket/SocketService';
 
 // Village data structure for socket updates
 interface VillageUpdate {
@@ -101,8 +101,8 @@ class GridWorldApp {
     private calendarManager: CalendarManager | null;
     private calendarDisplay: CalendarDisplay | null;
 
-    // Socket connection
-    private socket: Socket | null;
+    // Socket connection (via SocketService singleton)
+    private socketService: SocketService | null;
 
     // Three.js objects
     private scene: THREE.Scene | null;
@@ -122,8 +122,8 @@ class GridWorldApp {
         this.calendarManager = null;
         this.calendarDisplay = null;
 
-        // Socket connection
-        this.socket = null;
+        // Socket connection (via SocketService singleton)
+        this.socketService = null;
 
         // Three.js objects
         this.scene = null;
@@ -251,8 +251,13 @@ class GridWorldApp {
                 initStars();
             }
 
-            // Create the hexasphere using server environment variables
+            // Create the hexasphere using server environment variables (with timing)
+            console.log('🌐 Starting sphere initialization...');
+            const sphereStartTime = performance.now();
             const tileData = await this.sceneManager!.createHexasphere();
+            const sphereEndTime = performance.now();
+            const sphereInitTime = (sphereEndTime - sphereStartTime).toFixed(2);
+            console.log(`🌐 Sphere initialized in ${sphereInitTime}ms`);
 
             // Initialize game logic if needed
             if (typeof initializeAndStartGame === 'function') {
@@ -267,109 +272,16 @@ class GridWorldApp {
     }
 
     /**
-     * Initialize socket connection
+     * Initialize socket connection using centralized SocketService
      */
     async initializeSocket(): Promise<void> {
         try {
-            // Connect directly to backend to avoid webpack-dev-server proxy issues
-            this.socket = io('http://localhost:3000', {
-                timeout: 30000,
-                transports: ['polling'], // Use polling only (server disables upgrades)
-                upgrade: false, // Disable upgrading to WebSocket
-                forceNew: false,
-                reconnection: true,
-                reconnectionDelay: 1000,
-                reconnectionDelayMax: 5000,
-                reconnectionAttempts: 5,
-                path: '/socket.io'
-            });
+            // Use centralized SocketService singleton
+            this.socketService = getSocketService();
+            await this.socketService.connect();
 
-            return new Promise<void>((resolve, reject) => {
-                let timedOut = false;
-                const timeout = setTimeout(() => {
-                    timedOut = true;
-                    console.warn('Socket connection timeout — continuing without socket');
-                    resolve();
-                }, 10000);
-
-                this.socket!.on('connect', () => {
-                    if (!timedOut) {
-                        clearTimeout(timeout);
-                        resolve();
-                    } else {
-                        console.info('Socket connected after timeout; continuing with existing state');
-                    }
-                });
-
-                this.socket!.on('connect_error', (error: Error) => {
-                    console.error('🔌 Socket connection error:', error.message);
-                    if (!timedOut) {
-                        clearTimeout(timeout);
-                        // Don't reject - continue without socket
-                        resolve();
-                    }
-                });
-
-                // Apply incoming village updates to client-side tiles so UI totals refresh in real time
-                const applyVillageUpdate = (village: VillageUpdate): void => {
-                    try {
-                        const ctx = getAppContext();
-                        const sceneManager = ctx.sceneManager;
-                        if (!sceneManager || !sceneManager.hexasphere) return;
-                        const hexasphere = sceneManager.hexasphere as unknown as { tiles?: TileWithLands[] };
-                        const tiles = hexasphere.tiles || [];
-                        const tile = tiles.find((t: TileWithLands) => t.id === village.tile_id);
-                        if (!tile || !Array.isArray(tile.lands)) return;
-                        const land = tile.lands.find((l: LandChunk) => l.chunk_index === village.land_chunk_index);
-                        if (land) {
-                            land.village_id = village.id;
-                            land.village_name = village.name || village.village_name || land.village_name;
-                            land.food_stores = village.food_stores;
-                            land.food_capacity = village.food_capacity;
-                            land.food_production_rate = village.food_production_rate;
-                            land.housing_capacity = village.housing_capacity;
-
-                            // Propagate housing slot array and occupied count so client-side
-                            // fallback (tile.lands -> villages) shows correct occupancy
-                            if (Array.isArray(village.housing_slots)) {
-                                land.housing_slots = village.housing_slots;
-                                land.occupied_slots = village.housing_slots.length;
-                            } else if (typeof village.occupied_slots !== 'undefined') {
-                                land.occupied_slots = village.occupied_slots;
-                                // keep existing housing_slots if present, else empty array
-                                land.housing_slots = land.housing_slots || [];
-                            }
-                        }
-
-                        // If the info panel for this tile is open, refresh it immediately
-                        const selector = ctx.tileSelector;
-                        if (selector && selector.infoRefreshTileId === tile.id && typeof selector.updateInfoPanel === 'function') {
-                            selector.updateInfoPanel(tile);
-                        }
-                    } catch (e: unknown) {
-                        console.warn('Error applying village update:', e);
-                    }
-                };
-
-                this.socket!.on('villageUpdated', applyVillageUpdate);
-                this.socket!.on('villagesUpdated', (villages: VillageUpdate[]) => {
-                    try {
-                        if (!Array.isArray(villages)) return;
-                        villages.forEach(applyVillageUpdate);
-                    } catch (e: unknown) {
-                        console.warn('Error handling villagesUpdated:', e);
-                    }
-                });
-
-                // Listen for auto-save completion and log timing
-                this.socket!.on('autoSaveComplete', (data: { success: boolean; elapsed: number; error?: string }) => {
-                    if (data.success) {
-                        // [log removed]
-                    } else {
-                        console.warn(`💾 Auto-save failed in ${data.elapsed}ms: ${data.error}`);
-                    }
-                });
-            });
+            // Set up socket event handlers for village updates
+            this.setupSocketEventHandlers();
         } catch (error: unknown) {
             console.error('Failed to initialize socket:', error);
             // Continue without socket connection
@@ -377,17 +289,86 @@ class GridWorldApp {
     }
 
     /**
+     * Set up socket event handlers for real-time updates
+     */
+    private setupSocketEventHandlers(): void {
+        if (!this.socketService) return;
+
+        // Apply incoming village updates to client-side tiles so UI totals refresh in real time
+        const applyVillageUpdate = (village: VillageUpdate): void => {
+            try {
+                const ctx = getAppContext();
+                const sceneManager = ctx.sceneManager;
+                if (!sceneManager || !sceneManager.hexasphere) return;
+                const hexasphere = sceneManager.hexasphere as unknown as { tiles?: TileWithLands[] };
+                const tiles = hexasphere.tiles || [];
+                const tile = tiles.find((t: TileWithLands) => t.id === village.tile_id);
+                if (!tile || !Array.isArray(tile.lands)) return;
+                const land = tile.lands.find((l: LandChunk) => l.chunk_index === village.land_chunk_index);
+                if (land) {
+                    land.village_id = village.id;
+                    land.village_name = village.name || village.village_name || land.village_name;
+                    land.food_stores = village.food_stores;
+                    land.food_capacity = village.food_capacity;
+                    land.food_production_rate = village.food_production_rate;
+                    land.housing_capacity = village.housing_capacity;
+
+                    // Propagate housing slot array and occupied count so client-side
+                    // fallback (tile.lands -> villages) shows correct occupancy
+                    if (Array.isArray(village.housing_slots)) {
+                        land.housing_slots = village.housing_slots;
+                        land.occupied_slots = village.housing_slots.length;
+                    } else if (typeof village.occupied_slots !== 'undefined') {
+                        land.occupied_slots = village.occupied_slots;
+                        // keep existing housing_slots if present, else empty array
+                        land.housing_slots = land.housing_slots || [];
+                    }
+                }
+
+                // If the info panel for this tile is open, refresh it immediately
+                const selector = ctx.tileSelector;
+                if (selector && selector.infoRefreshTileId === tile.id && typeof selector.updateInfoPanel === 'function') {
+                    selector.updateInfoPanel(tile);
+                }
+            } catch (e: unknown) {
+                console.warn('Error applying village update:', e);
+            }
+        };
+
+        this.socketService.on('villageUpdated', applyVillageUpdate);
+        this.socketService.on('villagesUpdated', (villages: unknown) => {
+            try {
+                if (!Array.isArray(villages)) return;
+                (villages as VillageUpdate[]).forEach(applyVillageUpdate);
+            } catch (e: unknown) {
+                console.warn('Error handling villagesUpdated:', e);
+            }
+        });
+
+        // Listen for auto-save completion and log timing
+        this.socketService.on('autoSaveComplete', (data: unknown) => {
+            const saveData = data as { success: boolean; elapsed: number; error?: string };
+            if (saveData.success) {
+                // [log removed]
+            } else {
+                console.warn(`💾 Auto-save failed in ${saveData.elapsed}ms: ${saveData.error}`);
+            }
+        });
+    }
+
+    /**
      * Initialize calendar system
      */
     async initializeCalendar(): Promise<void> {
         try {
-            if (!this.socket) {
+            const socket = this.socketService?.getSocket();
+            if (!socket) {
                 console.warn('No socket connection available for calendar');
                 return;
             }
 
-            // Initialize calendar manager
-            this.calendarManager = new CalendarManager(this.socket);
+            // Initialize calendar manager with socket from SocketService
+            this.calendarManager = new CalendarManager(socket);
 
             // Initialize calendar display
             this.calendarDisplay = new CalendarDisplay(this.calendarManager);
@@ -507,8 +488,9 @@ class GridWorldApp {
             this.calendarManager.destroy();
         }
 
-        if (this.socket) {
-            this.socket.disconnect();
+        // SocketService is a singleton - disconnect it
+        if (this.socketService) {
+            this.socketService.disconnect();
         }
     }
 }

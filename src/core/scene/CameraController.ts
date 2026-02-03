@@ -18,6 +18,10 @@ class CameraController {
     private autoRotate: boolean;
     private rotationSpeed: number;
 
+    // Cached vectors to avoid allocations in render loop
+    private static readonly AXIS_X = new THREE.Vector3(1, 0, 0);
+    private static readonly AXIS_Y = new THREE.Vector3(0, 1, 0);
+
     constructor(camera: THREE.PerspectiveCamera, initialDistance: number = 160) {
         this.camera = camera;
         this.distance = initialDistance;
@@ -35,9 +39,9 @@ class CameraController {
         this.camera.position.set(0, 0, this.distance);
         this.camera.lookAt(0, 0, 0);
 
-        // Apply rotations
-        this.camera.position.applyAxisAngle(new THREE.Vector3(1, 0, 0), this.rotation.x);
-        this.camera.position.applyAxisAngle(new THREE.Vector3(0, 1, 0), this.rotation.y);
+        // Apply rotations using cached axis vectors (zero allocations)
+        this.camera.position.applyAxisAngle(CameraController.AXIS_X, this.rotation.x);
+        this.camera.position.applyAxisAngle(CameraController.AXIS_Y, this.rotation.y);
         this.camera.lookAt(0, 0, 0);
     }
 

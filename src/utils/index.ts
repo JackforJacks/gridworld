@@ -20,9 +20,10 @@ const biomeColors = {
     ocean: 0x4A90E2      // Keep ocean blue for water tiles
 };
 
-const isLand = function (centerPoint) {
+const isLand = function (centerPoint: { x: number; y: number; z: number } | [number, number, number]) {
     // Simple land/ocean determination - you can make this more sophisticated
-    const y = centerPoint.y;
+    // Handle both array [x,y,z] and object {x,y,z} formats
+    const y = Array.isArray(centerPoint) ? centerPoint[1] : centerPoint.y;
     const randomFactor = Math.random();
     return y > -0.3 && randomFactor > 0.4; // Roughly 60% chance of land if above certain Y
 };

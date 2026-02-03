@@ -203,17 +203,16 @@ class IdAllocator {
             await this.refillPool(entityType, count);
         }
 
-        // Allocate the IDs
+        // Allocate the IDs - return start and count for memory efficiency
         const firstId = poolInfo.localNext;
         poolInfo.localNext += count;
 
-        // Use Uint32Array internally for memory efficiency (4 bytes per ID vs 8)
-        const idsTyped = new Uint32Array(count);
+        // Create array directly - avoid intermediate Uint32Array for large batches
+        const ids = new Array<number>(count);
         for (let i = 0; i < count; i++) {
-            idsTyped[i] = firstId + i;
+            ids[i] = firstId + i;
         }
-        // Return a plain Array for callers/tests for compatibility
-        return Array.from(idsTyped);
+        return ids;
     }
 
     /**

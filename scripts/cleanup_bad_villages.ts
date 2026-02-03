@@ -1,5 +1,6 @@
 ﻿/**
  * Cleanup villages on uninhabitable tiles (ocean, mountains, etc.)
+ * Optimized with batch Redis/Postgres operations
  */
 import { Pool } from 'pg';
 import Redis from 'ioredis';
@@ -19,54 +20,103 @@ async function cleanup() {
         db: parseInt(process.env.REDIS_DB || '0')
     });
 
-    // Get all villages from Redis
-    const villages = await redis.hgetall('village');
-    const badVillages: Array<{ id: number, tile_id: number, terrain: string }> = [];
+    console.time('cleanup');
 
+    // Get all villages and tiles in parallel
+    const [villages, tiles] = await Promise.all([
+        redis.hgetall('village'),
+        redis.hgetall('tile')
+    ]);
+
+    // Build tile lookup map for O(1) access
+    const tileMap = new Map<string, { terrain_type: string; is_land: boolean; is_habitable: boolean }>();
+    for (const [id, json] of Object.entries(tiles || {})) {
+        tileMap.set(id, JSON.parse(json as string));
+    }
+
+    // Identify bad villages
+    const badVillages: Array<{ id: number; tile_id: number; terrain: string }> = [];
     for (const [id, json] of Object.entries(villages || {})) {
         const v = JSON.parse(json as string);
-        const tileData = await redis.hget('tile', v.tile_id.toString());
-        if (tileData) {
-            const t = JSON.parse(tileData);
-            if (t.terrain_type === 'ocean' || t.terrain_type === 'mountains' || !t.is_land || !t.is_habitable) {
-                badVillages.push({ id: parseInt(id), tile_id: v.tile_id, terrain: t.terrain_type });
-            }
+        const t = tileMap.get(v.tile_id.toString());
+        if (t && (t.terrain_type === 'ocean' || t.terrain_type === 'mountains' || !t.is_land || !t.is_habitable)) {
+            badVillages.push({ id: parseInt(id), tile_id: v.tile_id, terrain: t.terrain_type });
         }
     }
 
-    console.log('Bad villages on uninhabitable tiles:', badVillages);
-
-    // Delete from Postgres and Redis
-    for (const v of badVillages) {
-        console.log(`Deleting village ${v.id} on tile ${v.tile_id} (${v.terrain})...`);
-
-        // Update people to remove residency (table is 'people' not 'person')
-        await pool.query('UPDATE people SET residency = NULL WHERE residency = $1', [v.id]);
-        // Delete village (table is 'villages' not 'village')
-        await pool.query('DELETE FROM villages WHERE id = $1', [v.id]);
-        // Remove from Redis
-        await redis.hdel('village', v.id.toString());
+    console.log(`Found ${badVillages.length} bad villages on uninhabitable tiles`);
+    if (badVillages.length === 0) {
+        await redis.quit();
+        await pool.end();
+        console.timeEnd('cleanup');
+        return;
     }
 
-    // Fix people in Redis that were on bad tiles
+    badVillages.forEach(v => console.log(`  - Village ${v.id} on tile ${v.tile_id} (${v.terrain})`));
+
+    const badVillageIds = badVillages.map(v => v.id);
+    const badTileIds = new Set(badVillages.map(v => v.tile_id));
+
+    // Batch Postgres operations in a transaction
+    const client = await pool.connect();
+    try {
+        await client.query('BEGIN');
+
+        // Batch update people residency
+        await client.query(
+            'UPDATE people SET residency = NULL WHERE residency = ANY($1::int[])',
+            [badVillageIds]
+        );
+
+        // Batch delete villages
+        await client.query(
+            'DELETE FROM villages WHERE id = ANY($1::int[])',
+            [badVillageIds]
+        );
+
+        await client.query('COMMIT');
+        console.log(`Deleted ${badVillageIds.length} villages from Postgres`);
+    } catch (err) {
+        await client.query('ROLLBACK');
+        throw err;
+    } finally {
+        client.release();
+    }
+
+    // Batch delete villages from Redis using pipeline
+    const pipeline = redis.pipeline();
+    for (const id of badVillageIds) {
+        pipeline.hdel('village', id.toString());
+    }
+    await pipeline.exec();
+    console.log(`Deleted ${badVillageIds.length} villages from Redis`);
+
+    // Fix people in Redis with bad tile assignments
     const people = await redis.hgetall('person');
-    const badTileIds = badVillages.map(v => v.tile_id);
-    let fixed = 0;
+    const peopleToFix: Array<[string, string]> = [];
 
     for (const [id, json] of Object.entries(people || {})) {
         const p = JSON.parse(json as string);
-        if (badTileIds.includes(p.tile_id)) {
+        if (badTileIds.has(p.tile_id)) {
             p.tile_id = null;
             p.residency = null;
-            await redis.hset('person', id, JSON.stringify(p));
-            fixed++;
+            peopleToFix.push([id, JSON.stringify(p)]);
         }
     }
 
-    console.log(`Fixed ${fixed} people with bad tile assignments`);
+    // Batch update people in Redis using pipeline
+    if (peopleToFix.length > 0) {
+        const peoplePipeline = redis.pipeline();
+        for (const [id, json] of peopleToFix) {
+            peoplePipeline.hset('person', id, json);
+        }
+        await peoplePipeline.exec();
+    }
+    console.log(`Fixed ${peopleToFix.length} people with bad tile assignments`);
 
     await redis.quit();
     await pool.end();
+    console.timeEnd('cleanup');
     console.log('Cleanup complete!');
 }
 

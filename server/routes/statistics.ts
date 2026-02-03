@@ -27,11 +27,10 @@ router.get('/current', async (req, res) => {
             });
         }
 
-        // Get current population count from StateManager
+        // Get current population count from StateManager (O(1) operation)
         let currentPopulation = 0;
         try {
-            const people = await StateManager.getAllPeople();
-            currentPopulation = people.length;
+            currentPopulation = await StateManager.getPopulationCount();
         } catch (e: unknown) {
             console.warn('Could not get population count:', e instanceof Error ? (e as Error).message : String(e));
         }
@@ -272,11 +271,10 @@ router.get('/dashboard', async (req, res) => {
             });
         }
 
-        // Get current population count from StateManager
+        // Get current population count from StateManager (O(1) operation)
         let currentPopulation = 0;
         try {
-            const people = await StateManager.getAllPeople();
-            currentPopulation = people.length;
+            currentPopulation = await StateManager.getPopulationCount();
         } catch (e: unknown) {
             console.warn('Could not get population count:', e instanceof Error ? (e as Error).message : String(e));
         }

@@ -20,6 +20,10 @@ class TileSelector {
     private infoRefreshInterval: ReturnType<typeof setInterval> | null;
     public infoRefreshTileId: number | string | null;
 
+    // Cached vectors to avoid allocations
+    private static readonly _mouseVec = new THREE.Vector2();
+    private static readonly _tileCenter = new THREE.Vector3();
+
     constructor(scene: THREE.Scene, camera: THREE.Camera, _sceneManager: SceneManagerLike) {
         this.scene = scene;
         this.camera = camera;
@@ -65,7 +69,8 @@ class TileSelector {
         const mouseX = ((event.clientX - rect.left) / rect.width) * 2 - 1;
         const mouseY = -((event.clientY - rect.top) / rect.height) * 2 + 1;
 
-        this.raycaster.setFromCamera(new THREE.Vector2(mouseX, mouseY), this.camera);
+        TileSelector._mouseVec.set(mouseX, mouseY);
+        this.raycaster.setFromCamera(TileSelector._mouseVec, this.camera);
 
         const currentTiles = getAppContext().currentTiles || [];
         const intersects = this.raycaster.intersectObjects(currentTiles);
@@ -85,13 +90,20 @@ class TileSelector {
         if (!tiles?.length) return null;
 
         let closestTile: HexTile | null = null;
-        let minDistance = Infinity;
+        let minDistanceSq = Infinity;
 
+        // Reuse cached vector and use squared distance to avoid sqrt per tile
         for (const tile of tiles) {
-            const center = new THREE.Vector3(tile.centerPoint.x, tile.centerPoint.y, tile.centerPoint.z);
-            const distance = intersectionPoint.distanceTo(center);
-            if (distance < minDistance) {
-                minDistance = distance;
+            // Handle both array [x,y,z] and object {x,y,z} formats
+            const cp = tile.centerPoint;
+            if (Array.isArray(cp)) {
+                TileSelector._tileCenter.set(cp[0], cp[1], cp[2]);
+            } else {
+                TileSelector._tileCenter.set(cp.x, cp.y, cp.z);
+            }
+            const distanceSq = intersectionPoint.distanceToSquared(TileSelector._tileCenter);
+            if (distanceSq < minDistanceSq) {
+                minDistanceSq = distanceSq;
                 closestTile = tile;
             }
         }
@@ -109,7 +121,32 @@ class TileSelector {
         this.removeBorder();
         this.createBorder(tile);
         this.selectedTile = tile;
+
+        // Fetch detailed tile data on-demand and show panel
+        this.fetchAndShowTileDetails(tile);
+    }
+
+    /**
+     * Fetch detailed tile data from server and update the panel
+     */
+    private async fetchAndShowTileDetails(tile: HexTile): Promise<void> {
+        // Show panel immediately with basic data
         this.showInfoPanel(tile);
+
+        try {
+            // Fetch detailed data (lands, fertility, villages)
+            const response = await fetch(`/api/tiles/${tile.id}`);
+            if (response.ok) {
+                const detailedData = await response.json();
+                // Merge detailed data into tile object
+                tile.lands = detailedData.lands;
+                tile.fertility = detailedData.fertility;
+                // Update panel with enriched data
+                this.updatePanel(tile);
+            }
+        } catch (error) {
+            console.warn(`Failed to fetch detailed tile data for tile ${tile.id}:`, error);
+        }
     }
 
     createBorder(tile: HexTile): void {
@@ -140,10 +177,21 @@ class TileSelector {
             btn.classList.toggle('active', idx === 0);
         });
 
-        // Start periodic refresh
+        // Start periodic refresh (fetches latest data from server)
         this.infoRefreshTileId = tile.id;
-        this.infoRefreshInterval = setInterval(() => {
+        this.infoRefreshInterval = setInterval(async () => {
             if (!this.tileInfoPanel?.classList.contains('hidden') && this.selectedTile) {
+                // Re-fetch detailed data on each refresh
+                try {
+                    const response = await fetch(`/api/tiles/${this.selectedTile.id}`);
+                    if (response.ok) {
+                        const detailedData = await response.json();
+                        this.selectedTile.lands = detailedData.lands;
+                        this.selectedTile.fertility = detailedData.fertility;
+                    }
+                } catch (error) {
+                    // Ignore fetch errors during refresh
+                }
                 this.updatePanel(this.selectedTile);
             } else {
                 this.stopRefresh();

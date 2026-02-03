@@ -6,17 +6,11 @@ import * as THREE from 'three';
 const LIGHTING_CONFIG = {
     ambient: {
         color: 0xffffff,
-        intensity: 0.3
-    },
-    directional: {
-        color: 0xffffff,
-        intensity: 0.7,
-        position: { x: 10, y: 20, z: 10 }
+        intensity: 0.15  // Subtle fill light
     },
     camera: {
         color: 0xffffff,
-        intensity: 1.0,
-        radiusMultiplier: 0.8
+        intensity: 1.2  // Main light source - reduced
     }
 };
 
@@ -25,8 +19,7 @@ const LIGHTING_CONFIG = {
  */
 export interface LightingState {
     ambientLight: THREE.AmbientLight | null;
-    directionalLight: THREE.DirectionalLight | null;
-    cameraLight: THREE.PointLight | null;
+    cameraLight: THREE.DirectionalLight | null;
 }
 
 /**
@@ -35,7 +28,6 @@ export interface LightingState {
 export function createLightingState(): LightingState {
     return {
         ambientLight: null,
-        directionalLight: null,
         cameraLight: null
     };
 }
@@ -56,8 +48,8 @@ export function addLighting(
         }
         state.cameraLight = null;
     }
-    
-    // Add ambient light if not present
+
+    // Add ambient light if not present (subtle fill light)
     if (!state.ambientLight) {
         state.ambientLight = new THREE.AmbientLight(
             LIGHTING_CONFIG.ambient.color,
@@ -65,36 +57,24 @@ export function addLighting(
         );
         scene.add(state.ambientLight);
     }
-    
-    // Add directional light if not present
-    if (!state.directionalLight) {
-        state.directionalLight = new THREE.DirectionalLight(
-            LIGHTING_CONFIG.directional.color,
-            LIGHTING_CONFIG.directional.intensity
-        );
-        state.directionalLight.position.set(
-            LIGHTING_CONFIG.directional.position.x,
-            LIGHTING_CONFIG.directional.position.y,
-            LIGHTING_CONFIG.directional.position.z
-        );
-        scene.add(state.directionalLight);
-    }
-    
-    // Add camera-following point light
-    const lightRadius = sphereRadius * LIGHTING_CONFIG.camera.radiusMultiplier;
-    state.cameraLight = new THREE.PointLight(
+
+    // Add camera-following directional light (main light source)
+    // DirectionalLight shines from its position toward the target (default 0,0,0)
+    state.cameraLight = new THREE.DirectionalLight(
         LIGHTING_CONFIG.camera.color,
-        LIGHTING_CONFIG.camera.intensity,
-        lightRadius
+        LIGHTING_CONFIG.camera.intensity
     );
-    state.cameraLight.position.set(0, 0, 0);
-    camera.add(state.cameraLight);
-    
+    // Position light at camera position, pointing toward origin (sphere center)
+    state.cameraLight.position.set(0, 0, 1);  // In front of camera in local space
+    state.cameraLight.target.position.set(0, 0, 0);  // Point toward origin
+    camera.add(state.cameraLight);  // Light moves with camera
+    camera.add(state.cameraLight.target);  // Target also needs to be child of camera
+
     // Ensure camera is in scene
     if (!scene.children.includes(camera)) {
         scene.add(camera);
     }
-    
+
     return state;
 }
 
@@ -112,10 +92,6 @@ export function disposeLighting(scene: THREE.Scene, state: LightingState): void 
     if (state.ambientLight) {
         scene.remove(state.ambientLight);
         state.ambientLight = null;
-    }
-    if (state.directionalLight) {
-        scene.remove(state.directionalLight);
-        state.directionalLight = null;
     }
     if (state.cameraLight) {
         if (state.cameraLight.parent) {

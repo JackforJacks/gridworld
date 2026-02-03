@@ -3,13 +3,16 @@
 import * as THREE from 'three';
 import { getAppContext } from '../../AppContext';
 import populationManager from '../../../managers/population/PopulationManager';
+import { getApiClient } from '../../../services/api/ApiClient';
+import Hexasphere from '../../hexasphere/HexaSphere';
 
 // Import types
 import type { HexTile, HexasphereData, TileColorInfo, TileDataResponse, PopulationEventType } from './types';
 
 // Import modules
 import { initializeColorCaches, getBiomeColor, getBiomeColorCached, getTerrainColor } from './colorUtils';
-import { buildTilesFromData, createHexasphereMesh, calculateTileProperties, validateTileBoundary, sanitizeBoundaryPoint, createBufferGeometry } from './geometryBuilder';
+import { buildTilesFromData, buildTilesFromLocalHexasphere, createHexasphereMesh, calculateTileProperties, validateTileBoundary, sanitizeBoundaryPoint, createBufferGeometry, normalizePoint } from './geometryBuilder';
+import type { LocalHexasphere, CompactTileState } from './geometryBuilder';
 import { TileOverlayManager } from './tileOverlays';
 import { TileLabelManager } from './tileLabels';
 import { updateTilePopulations, checkPopulationThresholds, getPopulationStats, resetTileColors, initializeTilePopulations, reinitializePopulation } from './populationDisplay';
@@ -79,16 +82,13 @@ class SceneManager {
     async createHexasphere(radius: number | null = null, subdivisions: number | null = null, tileWidthRatio: number | null = null, forceRegenerate: boolean = false): Promise<void> {
         this.clearTiles();
 
-        // If no parameters provided, fetch defaults from server config
+        // If no parameters provided, fetch defaults from server config using ApiClient
         if (radius === null || subdivisions === null || tileWidthRatio === null) {
             try {
-                const configResponse = await fetch('/api/config');
-                if (configResponse.ok) {
-                    const config = await configResponse.json();
-                    radius = radius ?? config.hexasphere.radius;
-                    subdivisions = subdivisions ?? config.hexasphere.subdivisions;
-                    tileWidthRatio = tileWidthRatio ?? config.hexasphere.tileWidthRatio;
-                }
+                const config = await getApiClient().getConfig();
+                radius = radius ?? config.hexasphere.radius;
+                subdivisions = subdivisions ?? config.hexasphere.subdivisions;
+                tileWidthRatio = tileWidthRatio ?? config.hexasphere.tileWidthRatio;
             } catch (error: unknown) {
                 console.warn('Failed to fetch config from server, using fallback defaults:', error);
                 radius = radius ?? 30;
@@ -100,20 +100,77 @@ class SceneManager {
         await this.fetchAndBuildTiles(radius!, subdivisions!, tileWidthRatio!, forceRegenerate);
     }
 
-    async fetchAndBuildTiles(radius: number, subdivisions: number, tileWidthRatio: number, forceRegenerate: boolean = false): Promise<void> {
+    async fetchAndBuildTiles(radius: number, subdivisions: number, tileWidthRatio: number, _forceRegenerate: boolean = false): Promise<void> {
         try {
             this.sphereRadius = radius;
 
-            const regenQuery = forceRegenerate ? '&regenerate=true' : '';
-            const response = await fetch(`/api/tiles?radius=${radius}&subdivisions=${subdivisions}&tileWidthRatio=${tileWidthRatio}${regenQuery}`);
-            if (!response.ok) throw new Error(`Failed to fetch tiles: ${response.status}`);
-            const tileData = await response.json();
-            this.buildTilesFromData(tileData);
+            // OPTIMIZED: Generate geometry locally, fetch only state from server
+            // This is much faster than fetching full geometry over network
+
+            // Step 1: Generate hexasphere locally (deterministic, same params = same result)
+            const genStart = performance.now();
+            const localHexasphere = new Hexasphere(radius, subdivisions, tileWidthRatio);
+            const genTime = (performance.now() - genStart).toFixed(2);
+            console.log(`  🌐 Hexasphere generated locally in ${genTime}ms (${localHexasphere.tiles.length} tiles)`);
+
+            // Step 2: Fetch only tile state from server (terrain, biome, etc.)
+            const fetchStart = performance.now();
+            let tileState: Record<string, CompactTileState> = {};
+            try {
+                const stateResponse = await getApiClient().getTileState();
+                tileState = stateResponse.state;
+                const fetchTime = (performance.now() - fetchStart).toFixed(2);
+                console.log(`  ⬇️ Tile state fetched in ${fetchTime}ms (${stateResponse.count} tiles)`);
+            } catch (error: unknown) {
+                console.warn('⚠️ Failed to fetch tile state, using local terrain generation:', error);
+                // Continue with locally-generated terrain types
+            }
+
+            // Step 3: Build Three.js geometry from local hexasphere + server state
+            const buildStart = performance.now();
+            this.buildTilesFromLocalHexasphere(localHexasphere as LocalHexasphere, tileState);
+            const buildTime = (performance.now() - buildStart).toFixed(2);
+            console.log(`  🔨 Tiles built in ${buildTime}ms`);
         } catch (error: unknown) {
-            console.error('❌ Error fetching tile data from server:', error);
+            console.error('❌ Error building hexasphere:', error);
         }
     }
 
+    /**
+     * Build tiles from locally-generated hexasphere + server state
+     */
+    buildTilesFromLocalHexasphere(hexasphere: LocalHexasphere, tileState: Record<string, CompactTileState>): void {
+        const result = buildTilesFromLocalHexasphere(hexasphere, tileState);
+        if (!result) return;
+
+        this.hexasphere = result.hexasphere;
+        this.habitableTileIds = result.habitableTileIds;
+        this.tileColorIndices = result.tileColorIndices;
+
+        // Create mesh and add to scene
+        const mesh = createHexasphereMesh(result.geometry, result.hexasphere);
+        this.hexasphereMesh = mesh;
+        this.currentTiles.push(mesh);
+        this.scene!.add(mesh);
+        getAppContext().currentTiles = this.currentTiles;
+
+        // Add tile labels (hidden by default)
+        if (this.labelManager && this.hexasphere?.tiles) {
+            this.labelManager.clear();
+            this.labelManager.addAll(this.hexasphere.tiles);
+        }
+
+        // Apply population data
+        updateTilePopulations(this.hexasphere);
+        if (this.overlayManager) {
+            checkPopulationThresholds(this.hexasphere, this.tileColorIndices, this.overlayManager);
+        }
+    }
+
+    /**
+     * @deprecated Use buildTilesFromLocalHexasphere instead for better performance
+     * Kept for backwards compatibility with server-provided tile data
+     */
     buildTilesFromData(tileData: TileDataResponse): void {
         const result = buildTilesFromData(tileData);
         if (!result) return;
@@ -214,10 +271,11 @@ class SceneManager {
         this.overlayManager.flashTile(tile);
 
         // Return the center point for camera targeting
+        const cp = normalizePoint(tile.centerPoint);
         return {
-            x: tile.centerPoint.x,
-            y: tile.centerPoint.y,
-            z: tile.centerPoint.z
+            x: cp.x,
+            y: cp.y,
+            z: cp.z
         };
     }
 
@@ -246,33 +304,19 @@ class SceneManager {
         if (!confirmed) return;
 
         try {
-            const restartResponse = await fetch('/api/worldrestart', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ confirm: 'DELETE_ALL_DATA' })
-            });
-            if (!restartResponse.ok) {
-                const errorData = await restartResponse.json().catch(() => ({}));
-                throw new Error(`Failed to restart world: ${restartResponse.status} - ${errorData.message || 'Unknown error'}`);
-            }
-            const restartData = await restartResponse.json();
+            // Use ApiClient for world restart
+            await getApiClient().worldRestart();
 
-            // Apply calendar state
-            await this.applyCalendarState(restartData);
-
-            // Get config
+            // Get config using ApiClient
             let radius = this.sphereRadius || 30;
             let subdivisions = 3;
             let tileWidthRatio = 1;
 
             try {
-                const configResponse = await fetch('/api/config');
-                if (configResponse.ok) {
-                    const config = await configResponse.json();
-                    radius = config.hexasphere.radius;
-                    subdivisions = config.hexasphere.subdivisions;
-                    tileWidthRatio = config.hexasphere.tileWidthRatio;
-                }
+                const config = await getApiClient().getConfig();
+                radius = config.hexasphere.radius;
+                subdivisions = config.hexasphere.subdivisions;
+                tileWidthRatio = config.hexasphere.tileWidthRatio;
             } catch (error: unknown) {
                 console.warn('Failed to fetch config, using fallback values:', error);
             }
@@ -287,38 +331,30 @@ class SceneManager {
 
             this.clearTileOverlays();
 
-            // Fetch tiles from Redis (worldrestart already generated them)
-            const response = await fetch(`/api/tiles?radius=${radius}&subdivisions=${subdivisions}&tileWidthRatio=${tileWidthRatio}`);
-            if (!response.ok) throw new Error(`Failed to fetch tiles: ${response.status}`);
-            const tileData = await response.json();
+            // Apply calendar state (fetch fresh)
+            await this.applyCalendarState({});
 
-            this.buildTilesFromData(tileData);
+            // Fetch tiles using ApiClient (worldrestart already generated them)
+            const tileData = await getApiClient().getTiles(radius, subdivisions, tileWidthRatio, false);
+
+            this.buildTilesFromData(tileData as TileDataResponse);
         } catch (error: unknown) {
             console.error('❌ Failed to regenerate tiles:', error);
             throw error;
         }
     }
 
-    private async applyCalendarState(restartData: { calendarState?: unknown }): Promise<void> {
+    private async applyCalendarState(_restartData: { calendarState?: unknown }): Promise<void> {
         try {
-            let calendarState = restartData?.calendarState;
-            if (!calendarState) {
-                try {
-                    const csResp = await fetch('/api/calendar/state');
-                    if (csResp.ok) {
-                        const csJson = await csResp.json();
-                        if (csJson?.success) calendarState = csJson.data;
-                    }
-                } catch (e: unknown) {
-                    console.warn('Failed to fetch /api/calendar/state after restart:', e);
-                }
-            }
+            // Fetch calendar state using ApiClient
+            const result = await getApiClient().getCalendarState();
+            const calendarState = result?.success ? result.data : null;
 
             if (calendarState && typeof calendarState === 'object') {
-                const state = calendarState as { currentDate?: { year: number } };
+                const state = calendarState as { currentDate?: { year: number }; year?: number };
                 const yearEl = document.getElementById('calendar-year-inline');
-                if (yearEl && state.currentDate) {
-                    yearEl.textContent = `Year: ${state.currentDate.year}`;
+                if (yearEl && (state.currentDate || state.year)) {
+                    yearEl.textContent = `Year: ${state.currentDate?.year ?? state.year}`;
                 }
                 const ctx = getAppContext();
                 if (ctx.calendarManager?.updateState) {
@@ -428,6 +464,7 @@ class SceneManager {
     }
 
     updateCameraLight(camera: THREE.Camera): void {
+        // PointLight is attached to camera as child - moves automatically with camera
         updateCameraLight(camera, this.lightingState);
     }
 

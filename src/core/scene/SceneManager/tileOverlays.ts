@@ -1,7 +1,8 @@
 // Scene Manager - Tile Overlays
 // Handles population overlay meshes on tiles
 import * as THREE from 'three';
-import { BoundaryPoint, HexTile } from './types';
+import { BoundaryPoint, HexTile, AnyPoint } from './types';
+import { normalizePoint } from './geometryBuilder';
 
 /** Overlay configuration */
 const OVERLAY_CONFIG = {
@@ -26,12 +27,13 @@ const FLASH_CONFIG = {
  */
 export function createTileOverlay(tile: HexTile): THREE.Mesh | null {
     // Build overlay geometry from tile boundary
-    const boundaryPoints = tile.boundary.map((p: BoundaryPoint) => {
-        const center = tile.centerPoint;
+    const center = normalizePoint(tile.centerPoint);
+    const boundaryPoints = tile.boundary.map((p: AnyPoint) => {
+        const pt = normalizePoint(p);
         const scale = 1.0; // Same size as tile
-        const x = center.x + (p.x - center.x) * scale;
-        const y = center.y + (p.y - center.y) * scale;
-        const z = center.z + (p.z - center.z) * scale;
+        const x = center.x + (pt.x - center.x) * scale;
+        const y = center.y + (pt.y - center.y) * scale;
+        const z = center.z + (pt.z - center.z) * scale;
         return new THREE.Vector3(x, y, z);
     });
 
@@ -80,13 +82,14 @@ export function disposeOverlay(overlay: THREE.Mesh | THREE.Line): void {
 export function createFlashOverlay(tile: HexTile): THREE.Line | null {
     // Build border line from tile boundary - scaled inward to stay inside tile
     // Then offset outward from center (radially) to raise above surface
-    const boundaryPoints = tile.boundary.map((p: BoundaryPoint) => {
-        const center = tile.centerPoint;
+    const center = normalizePoint(tile.centerPoint);
+    const boundaryPoints = tile.boundary.map((p: AnyPoint) => {
+        const pt = normalizePoint(p);
         const scale = FLASH_CONFIG.scale;
         // First scale inward from center
-        const sx = center.x + (p.x - center.x) * scale;
-        const sy = center.y + (p.y - center.y) * scale;
-        const sz = center.z + (p.z - center.z) * scale;
+        const sx = center.x + (pt.x - center.x) * scale;
+        const sy = center.y + (pt.y - center.y) * scale;
+        const sz = center.z + (pt.z - center.z) * scale;
         // Then offset radially outward to raise above surface
         const heightScale = FLASH_CONFIG.heightOffset;
         return new THREE.Vector3(sx * heightScale, sy * heightScale, sz * heightScale);

@@ -126,9 +126,9 @@ interface IntegrityResult {
 // CONSTANTS
 // ============================================================================
 
-const DEFAULT_TILE_COUNT = 5;
-const PEOPLE_PER_TILE_MIN = 100;
-const PEOPLE_PER_TILE_MAX = 200;
+const POPULATED_TILE_RATIO = 0.6; // Seed 60% of habitable tiles
+const PEOPLE_PER_TILE_MIN = 0;
+const PEOPLE_PER_TILE_MAX = 3000;
 const CALENDAR_START_YEAR = 4000;
 
 // Village names pool
@@ -174,7 +174,7 @@ function mulberry32(seed: number): SeededRandomFn {
  */
 export async function restartWorld(options: WorldRestartOptions = {}): Promise<WorldRestartResult> {
     const startTime = Date.now();
-    const tileCount = options.tileCount ?? DEFAULT_TILE_COUNT;
+    const tileCount = options.tileCount ?? 0; // 0 means use POPULATED_TILE_RATIO (60%)
 
     // Generate or use provided seed
     const seed = options.seed ?? Math.floor(Math.random() * 2147483647);
@@ -457,26 +457,53 @@ async function createPopulation(seed: number, tileCount: number): Promise<Popula
         habitableTileIds.push(parseInt(tileId));
     }
 
+    // Warn if no habitable tiles found, but continue with empty population
     if (habitableTileIds.length === 0) {
-        throw new Error('No habitable tiles found');
+        console.warn('⚠️ [WorldRestart] No habitable tiles found - world will have no population');
+        return { habitableTiles: 0, selectedTiles: [], people: [] };
     }
 
-    // Shuffle and select tiles
+    // Shuffle and select 60% of habitable tiles (or use explicit tileCount if provided)
     const rng = createSeededRandom(seed);
     const shuffled = [...habitableTileIds].sort(() => rng() - 0.5);
-    const selectedTiles = shuffled.slice(0, Math.min(tileCount, shuffled.length));
+    const targetCount = tileCount > 0
+        ? Math.min(tileCount, shuffled.length)
+        : Math.floor(shuffled.length * POPULATED_TILE_RATIO);
+    const selectedTiles = shuffled.slice(0, targetCount);
 
-    console.log(`   Selected ${selectedTiles.length} tiles from ${habitableTileIds.length} habitable: ${selectedTiles.join(', ')}`);
+    console.log(`   Seeding ${selectedTiles.length} tiles (${Math.round(selectedTiles.length / habitableTileIds.length * 100)}% of ${habitableTileIds.length} habitable)`);
 
-    // Create people on each selected tile
-    const allPeople: Person[] = [];
-    const pipeline = storage.pipeline();
+    console.log(`   Selected ${selectedTiles.length} tiles from ${habitableTileIds.length} habitable`);
 
-    for (const tileId of selectedTiles) {
+    // Pre-calculate total people needed for batch ID allocation
+    const tilePeopleCounts: number[] = [];
+    let totalPeopleNeeded = 0;
+
+    for (const _tileId of selectedTiles) {
         const peopleCount = PEOPLE_PER_TILE_MIN + Math.floor(rng() * (PEOPLE_PER_TILE_MAX - PEOPLE_PER_TILE_MIN));
+        tilePeopleCounts.push(peopleCount);
+        totalPeopleNeeded += peopleCount;
+    }
+
+    console.log(`   Allocating ${totalPeopleNeeded} person IDs in batch...`);
+
+    // Batch allocate ALL person IDs in one Redis call
+    const allPersonIds = await idAllocator.getPersonIdBatch(totalPeopleNeeded);
+    let personIdIndex = 0;
+
+    const PIPELINE_CHUNK_SIZE = 10000; // Chunk Redis pipelines to avoid memory issues
+
+    // Create people on each selected tile, chunking pipelines
+    const allPeople: Person[] = [];
+    let pipeline = storage.pipeline();
+    let pipelineCount = 0;
+
+    for (let tileIndex = 0; tileIndex < selectedTiles.length; tileIndex++) {
+        const tileId = selectedTiles[tileIndex];
+        const peopleCount = tilePeopleCounts[tileIndex];
 
         for (let i = 0; i < peopleCount; i++) {
-            const personId = await idAllocator.getNextPersonId();
+            const personId = allPersonIds[personIdIndex++];
             const sex = rng() < 0.5 ? 'M' : 'F';
             const age = 18 + Math.floor(rng() * 40); // 18-57 years old
             const birthYear = CALENDAR_START_YEAR - age;
@@ -494,10 +521,21 @@ async function createPopulation(seed: number, tileCount: number): Promise<Popula
 
             allPeople.push(person);
             pipeline.hset('person', personId.toString(), JSON.stringify(person));
+            pipelineCount++;
+
+            // Flush pipeline in chunks to avoid memory issues
+            if (pipelineCount >= PIPELINE_CHUNK_SIZE) {
+                await pipeline.exec();
+                pipeline = storage.pipeline();
+                pipelineCount = 0;
+            }
         }
     }
 
-    await pipeline.exec();
+    // Flush remaining pipeline commands
+    if (pipelineCount > 0) {
+        await pipeline.exec();
+    }
 
     console.log(`   Created ${allPeople.length} people on ${selectedTiles.length} tiles`);
 
@@ -523,25 +561,42 @@ async function createVillages(selectedTiles: number[], people: Person[]): Promis
         peopleByTile.get(tileId)!.push(person);
     }
 
-    const villages: Village[] = [];
-    const pipeline = storage.pipeline();
-    let nameIndex = 0;
+    // Pre-fetch all lands data in one call
+    const allLands = await storage.hgetall('tile:lands');
 
+    // Pre-determine how many villages we need (tiles with people and cleared lands)
+    const tilesNeedingVillages: number[] = [];
     for (const tileId of selectedTiles) {
         const tilePeople = peopleByTile.get(tileId) || [];
         if (tilePeople.length === 0) continue;
 
-        // Get cleared chunks for this tile
-        const landsJson = await storage.hget('tile:lands', tileId.toString());
+        const landsJson = allLands[tileId.toString()];
         if (!landsJson) continue;
 
         const lands: LandChunk[] = JSON.parse(landsJson);
+        if (lands.some(l => l.cleared)) {
+            tilesNeedingVillages.push(tileId);
+        }
+    }
+
+    // Batch allocate all village IDs
+    const villageIds = await idAllocator.getVillageIdBatch(tilesNeedingVillages.length);
+
+    const PIPELINE_CHUNK_SIZE = 10000;
+    const villages: Village[] = [];
+    let pipeline = storage.pipeline();
+    let pipelineCount = 0;
+    let nameIndex = 0;
+    let villageIdIndex = 0;
+
+    for (const tileId of tilesNeedingVillages) {
+        const tilePeople = peopleByTile.get(tileId) || [];
+        const landsJson = allLands[tileId.toString()];
+        const lands: LandChunk[] = JSON.parse(landsJson);
         const clearedChunks = lands.filter(l => l.cleared).map(l => l.chunk_index);
 
-        if (clearedChunks.length === 0) continue;
-
         // Create one village per tile (on first cleared chunk)
-        const villageId = await idAllocator.getNextVillageId();
+        const villageId = villageIds[villageIdIndex++];
         const chunkIndex = clearedChunks[0];
         const villageName = VILLAGE_NAMES[nameIndex % VILLAGE_NAMES.length];
         nameIndex++;
@@ -559,6 +614,7 @@ async function createVillages(selectedTiles: number[], people: Person[]): Promis
 
         villages.push(village);
         pipeline.hset('village', villageId.toString(), JSON.stringify(village));
+        pipelineCount++;
 
         // Assign all people on this tile to this village
         const membershipKey = `village:${tileId}:${chunkIndex}:people`;
@@ -566,10 +622,21 @@ async function createVillages(selectedTiles: number[], people: Person[]): Promis
             person.residency = villageId;
             pipeline.hset('person', person.id.toString(), JSON.stringify(person));
             pipeline.sadd(membershipKey, person.id.toString());
+            pipelineCount += 2;
+
+            // Flush pipeline in chunks
+            if (pipelineCount >= PIPELINE_CHUNK_SIZE) {
+                await pipeline.exec();
+                pipeline = storage.pipeline();
+                pipelineCount = 0;
+            }
         }
     }
 
-    await pipeline.exec();
+    // Flush remaining
+    if (pipelineCount > 0) {
+        await pipeline.exec();
+    }
 
     console.log(`   Created ${villages.length} villages with ${people.length} residents`);
 

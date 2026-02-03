@@ -9,6 +9,22 @@ const GLOW_COLORS = [0xffff00, 0xffdd00, 0xffaa00, 0xff8800];
 /** Number of glow layers */
 const GLOW_LAYERS = 4;
 
+// Cached vectors to avoid allocations in loops
+const _vec = new THREE.Vector3();
+const _normal = new THREE.Vector3();
+
+// Cached materials (reused across border creations)
+const cachedMaterials: THREE.LineBasicMaterial[] = GLOW_COLORS.map((color, offset) => {
+    const glowIntensity = 1 - (offset * 0.2);
+    return new THREE.LineBasicMaterial({
+        color,
+        depthTest: false,
+        transparent: true,
+        opacity: glowIntensity * 0.8,
+        linewidth: 8 - (offset * 1.5)
+    });
+});
+
 /**
  * Create a glowing border around a tile
  */
@@ -26,31 +42,23 @@ export function createTileBorder(tile: HexTile): THREE.Group {
             const point = tile.boundary[i % boundaryLen];
 
             if (point && !isNaN(point.x) && !isNaN(point.y) && !isNaN(point.z)) {
-                const vec = new THREE.Vector3(point.x, point.y, point.z);
+                // Reuse cached vector instead of creating new one
+                _vec.set(point.x, point.y, point.z);
 
                 // Apply outward offset along normal
                 if (offsetScale > 0) {
-                    const normal = vec.clone().normalize();
-                    vec.add(normal.multiplyScalar(offsetScale));
+                    _normal.copy(_vec).normalize().multiplyScalar(offsetScale);
+                    _vec.add(_normal);
                 }
 
-                vertices.push(vec.x, vec.y, vec.z);
+                vertices.push(_vec.x, _vec.y, _vec.z);
             }
         }
 
         if (vertices.length > 0) {
             geometry.setAttribute('position', new THREE.Float32BufferAttribute(vertices, 3));
-
-            const glowIntensity = 1 - (offset * 0.2);
-            const material = new THREE.LineBasicMaterial({
-                color: GLOW_COLORS[offset],
-                depthTest: false,
-                transparent: true,
-                opacity: glowIntensity * 0.8,
-                linewidth: 8 - (offset * 1.5)
-            });
-
-            borderGroup.add(new THREE.LineLoop(geometry, material));
+            // Reuse cached material instead of creating new one per border
+            borderGroup.add(new THREE.LineLoop(geometry, cachedMaterials[offset]));
         }
     }
 
@@ -62,6 +70,12 @@ export function createTileBorder(tile: HexTile): THREE.Group {
  */
 export function removeTileBorder(scene: THREE.Scene, borderLines: THREE.Group | null): void {
     if (borderLines) {
+        // Dispose geometries to prevent memory leaks (materials are cached and reused)
+        borderLines.traverse((child) => {
+            if (child instanceof THREE.LineLoop) {
+                child.geometry.dispose();
+            }
+        });
         scene.remove(borderLines);
     }
 }

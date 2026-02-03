@@ -160,6 +160,10 @@ class StateManager {
         return redisOps.updatePerson(personId, updates);
     }
 
+    static async getPopulationCount(): Promise<number> {
+        return redisOps.getPopulationCount();
+    }
+
     static async getAllPeople(): Promise<any[]> {
         return redisOps.getAllPeople();
     }

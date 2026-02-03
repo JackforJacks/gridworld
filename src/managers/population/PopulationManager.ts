@@ -1,5 +1,5 @@
 // Population Manager - Handles real-time population data updates
-import { io, Socket } from 'socket.io-client';
+import SocketService, { getSocketService } from '../../services/socket/SocketService';
 
 /** Growth configuration for population updates */
 interface GrowthConfig {
@@ -58,7 +58,7 @@ interface BulkUpdateEntry {
 type PopulationCallback = (eventType: string, data: unknown) => void;
 
 class PopulationManager {
-    private socket: Socket | null;
+    private socketService: SocketService | null;
     private callbacks: Set<PopulationCallback>;
     private populationData: PopulationData;
     private isConnected: boolean;
@@ -69,9 +69,10 @@ class PopulationManager {
     private maxRetries: number;
     private apiBaseUrl: string;
     private pingInterval: ReturnType<typeof setInterval> | null;
+    private connectionUnsubscribe: (() => void) | null;
 
     constructor() {
-        this.socket = null;
+        this.socketService = null;
         this.callbacks = new Set();
         this.populationData = {
             globalData: {
@@ -92,6 +93,7 @@ class PopulationManager {
         this.maxRetries = 5;
         this.apiBaseUrl = '/api/population';
         this.pingInterval = null;
+        this.connectionUnsubscribe = null;
     }
 
     // Check if population data already exists
@@ -138,80 +140,62 @@ class PopulationManager {
         return data;
     }
 
-    // Initialize connection to the server with retry logic
-    async connect(forceNew: boolean = false): Promise<void> {
+    // Initialize connection to the server using centralized SocketService
+    async connect(_forceNew: boolean = false): Promise<void> {
         try {
-            // Connect to the socket.io server through the webpack dev server proxy
-            this.socket = io('http://localhost:8080', {
-                timeout: 30000,
-                transports: ['polling'], // Use only polling to bypass WebSocket proxy issues
-                upgrade: false, // Disable upgrading to WebSocket
-                forceNew: !!forceNew, // ensure a fresh sid when forced
-                reconnection: true,
-                reconnectionDelay: 1000,
-                reconnectionDelayMax: 5000,
-                reconnectionAttempts: 5
-            });
+            // Use centralized SocketService singleton
+            this.socketService = getSocketService();
+            await this.socketService.connect();
 
-            this.socket.on('connect', () => {
-                this.isConnected = true;
-                this.connectionRetries = 0; // Reset retry counter
-                this.notifyCallbacks('connected', true);
+            // Subscribe to connection state changes
+            this.connectionUnsubscribe = this.socketService.onConnectionChange((connected) => {
+                this.isConnected = connected;
+                this.notifyCallbacks('connected', connected);
 
-                // Request initial data on connect
-                this.socket?.emit('getPopulation');
-            });
-
-            this.socket.on('disconnect', (reason: string) => {
-                this.isConnected = false;
-                this.notifyCallbacks('connected', false);
-
-                // Only handle manual reconnection for certain disconnect reasons
-                if (reason !== 'io client disconnect' && reason !== 'io server disconnect') {
-                    this.handleReconnection();
+                if (connected) {
+                    this.connectionRetries = 0;
+                    // Request initial data on connect
+                    this.socketService?.emit('getPopulation');
                 }
             });
 
-            this.socket.on('populationUpdate', (data: PopulationData) => {
-                // [log removed]
-                this.updatePopulationData(data);
-                this.notifyCallbacks('populationUpdate', data);
-            });
-
-            // Handle all population-related events that carry updated data
-            const populationEvents = ['populationReset', 'senescenceApplied', 'familiesCreated', 'familyEvents', 'populationRegenerated'];
-            for (const eventName of populationEvents) {
-                this.socket.on(eventName, (data: PopulationData) => {
-                    this.updatePopulationData(data);
-                    this.notifyCallbacks('populationUpdate', data);
-                });
-            }
-
-            this.socket.on('connect_error', (error) => {
-                console.error('🔌 Connection error:', error.message);
-                this.isConnected = false;
-                this.handleReconnection();
-            });
-
-            this.socket.on('error', (error: Error) => {
-                console.error('🔌 Socket error:', error.message);
-            });
-
-            // Add ping/pong for connection health
-            this.socket.on('pong', () => {
-                // Connection is healthy
-            });
-
-            // Periodically ping the server to keep connection alive
-            this.pingInterval = setInterval(() => {
-                if (this.socket && this.socket.connected) {
-                    this.socket.emit('ping');
-                }
-            }, 30000); // Ping every 30 seconds
+            // Set up population event handlers
+            this.setupSocketEventHandlers();
 
         } catch (error: unknown) {
             console.error('❌ Failed to connect to population server:', error);
         }
+    }
+
+    // Set up socket event handlers for population updates
+    private setupSocketEventHandlers(): void {
+        if (!this.socketService) return;
+
+        this.socketService.on('populationUpdate', (data: unknown) => {
+            this.updatePopulationData(data as PopulationData);
+            this.notifyCallbacks('populationUpdate', data);
+        });
+
+        // Handle all population-related events that carry updated data
+        const populationEvents = ['populationReset', 'senescenceApplied', 'familiesCreated', 'familyEvents', 'populationRegenerated'];
+        for (const eventName of populationEvents) {
+            this.socketService.on(eventName, (data: unknown) => {
+                this.updatePopulationData(data as PopulationData);
+                this.notifyCallbacks('populationUpdate', data);
+            });
+        }
+
+        // Add ping/pong for connection health
+        this.socketService.on('pong', () => {
+            // Connection is healthy
+        });
+
+        // Periodically ping the server to keep connection alive
+        this.pingInterval = setInterval(() => {
+            if (this.socketService?.getIsConnected()) {
+                this.socketService.emit('ping');
+            }
+        }, 30000); // Ping every 30 seconds
     }
 
     // OPTIMIZED: Handle reconnection with exponential backoff
@@ -247,11 +231,16 @@ class PopulationManager {
             this.pingInterval = null;
         }
 
-        if (this.socket) {
-            this.socket.disconnect();
-            this.socket = null;
-            this.isConnected = false;
+        // Unsubscribe from connection state changes
+        if (this.connectionUnsubscribe) {
+            this.connectionUnsubscribe();
+            this.connectionUnsubscribe = null;
         }
+
+        // Note: We don't disconnect SocketService here since it's shared
+        // Other modules may still need it
+        this.socketService = null;
+        this.isConnected = false;
     }
 
     // Get current population data
@@ -370,7 +359,7 @@ class PopulationManager {
 
     // OPTIMIZED: Enhanced connection status with health check
     isConnectedToServer(): boolean {
-        return this.isConnected && !!this.socket?.connected;
+        return this.isConnected && !!this.socketService?.getIsConnected();
     }
 
     // OPTIMIZED: Get time since last update with better formatting

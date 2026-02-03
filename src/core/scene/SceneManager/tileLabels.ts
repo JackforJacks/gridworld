@@ -2,6 +2,7 @@
 // Displays tile ID numbers on each hexagon using canvas-based sprites
 import * as THREE from 'three';
 import { HexTile } from './types';
+import { normalizePoint } from './geometryBuilder';
 
 /** Label configuration */
 const LABEL_CONFIG = {
@@ -63,7 +64,7 @@ export function createTileLabel(tile: HexTile): THREE.Sprite | null {
     const sprite = new THREE.Sprite(material);
 
     // Position slightly above tile center
-    const center = tile.centerPoint;
+    const center = normalizePoint(tile.centerPoint);
     const normal = new THREE.Vector3(center.x, center.y, center.z).normalize();
     sprite.position.set(
         center.x + normal.x * LABEL_CONFIG.heightOffset,
@@ -90,11 +91,14 @@ export function disposeLabel(sprite: THREE.Sprite): void {
 
 /**
  * Manages tile label state
+ * Labels are created lazily on first visibility toggle to improve initial load time
  */
 export class TileLabelManager {
     private scene: THREE.Scene;
     private labels: Map<string, THREE.Sprite> = new Map();
     private _visible: boolean = false;
+    private pendingTiles: HexTile[] = [];  // Tiles waiting for lazy label creation
+    private labelsCreated: boolean = false;  // Track if labels have been built
 
     constructor(scene: THREE.Scene) {
         this.scene = scene;
@@ -119,11 +123,30 @@ export class TileLabelManager {
 
     /**
      * Add labels for multiple tiles
+     * DEFERRED: Labels are not created immediately - they're built on first visibility toggle
      */
     addAll(tiles: HexTile[]): void {
-        for (const tile of tiles) {
+        // Store tiles for lazy creation instead of creating all labels immediately
+        this.pendingTiles = tiles.slice();
+        this.labelsCreated = false;
+    }
+
+    /**
+     * Actually create labels from pending tiles (called on first visibility toggle)
+     */
+    private createPendingLabels(): void {
+        if (this.labelsCreated || this.pendingTiles.length === 0) return;
+
+        console.log(`🏷️ Creating ${this.pendingTiles.length} tile labels...`);
+        const startTime = performance.now();
+
+        for (const tile of this.pendingTiles) {
             this.add(tile);
         }
+
+        this.pendingTiles = [];
+        this.labelsCreated = true;
+        console.log(`🏷️ Labels created in ${(performance.now() - startTime).toFixed(2)}ms`);
     }
 
     /**
@@ -140,8 +163,14 @@ export class TileLabelManager {
 
     /**
      * Toggle visibility of all labels
+     * Creates labels lazily on first show
      */
     setVisible(visible: boolean): void {
+        // Create labels on first show
+        if (visible && !this.labelsCreated && this.pendingTiles.length > 0) {
+            this.createPendingLabels();
+        }
+
         this._visible = visible;
         this.labels.forEach(label => {
             label.visible = visible;
