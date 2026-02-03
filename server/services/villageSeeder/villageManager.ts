@@ -128,7 +128,7 @@ async function ensureVillagesForPopulatedTiles(options: EnsureVillagesOptions = 
 
         // Step 2: Get existing villages grouped by tile
         const villagesByTile = await getVillagesGroupedByTile();
-        
+
         // Step 2.5: Clean up orphan villages (villages on tiles without people)
         // This prevents stale villages from previous world states
         const orphanCleanupPipeline = storage.pipeline();
@@ -171,12 +171,12 @@ async function ensureVillagesForPopulatedTiles(options: EnsureVillagesOptions = 
             // Get cleared chunks for this tile
             const clearedChunks = await getClearedChunksForTile(tileId);
             let chunksToUse = clearedChunks.slice(0, desiredVillages);
-            
+
             // If no cleared chunks exist, try to create them from tile:lands
             if (chunksToUse.length === 0) {
                 chunksToUse = await createClearedChunksForTile(tileId, desiredVillages);
             }
-            
+
             // If still no chunks, this tile shouldn't have population - skip it
             // This indicates a data integrity issue (people on tile without lands)
             if (chunksToUse.length === 0) {
@@ -199,7 +199,7 @@ async function ensureVillagesForPopulatedTiles(options: EnsureVillagesOptions = 
             if (newVillageCount > 0) {
                 // Limit to available chunks - don't create fake chunks
                 const villagesToCreate = Math.min(newVillageCount, chunksToUse.length);
-                
+
                 const villageIds = await idAllocator.getVillageIdBatch(villagesToCreate);
                 const pipeline = storage.pipeline();
 

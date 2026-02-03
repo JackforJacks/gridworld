@@ -8,13 +8,13 @@ async function main() {
         // Get all tiles from Redis
         const tileData = await redis.hgetall('tile');
         const landsData = await redis.hgetall('tile:lands');
-        
+
         // Parse tiles
         const tiles: Record<string, any> = {};
         for (const [tileId, json] of Object.entries(tileData || {})) {
             tiles[tileId] = JSON.parse(json as string);
         }
-        
+
         // Find habitable tiles with cleared lands
         const habitableIds: number[] = [];
         for (const [tileId, tile] of Object.entries(tiles)) {
@@ -28,9 +28,9 @@ async function main() {
                 }
             }
         }
-        
+
         console.log('Total habitable tiles with cleared lands:', habitableIds.length);
-        
+
         // Get villages first to know which tiles to check
         const villages = await redis.hgetall('village');
         const villageTileIds = new Set<number>();
@@ -38,7 +38,7 @@ async function main() {
             const v = JSON.parse(vjson as string);
             if (v.tile_id) villageTileIds.add(v.tile_id);
         }
-        
+
         console.log('\n--- Villages and their tiles ---');
         for (const [vid, vjson] of Object.entries(villages || {})) {
             const v = JSON.parse(vjson as string);
@@ -50,7 +50,7 @@ async function main() {
                 console.log(`❌ Village ${vid}: tile ${v.tile_id} NOT FOUND in tiles`);
             }
         }
-        
+
         // Count bad villages
         let badCount = 0;
         for (const [vid, vjson] of Object.entries(villages || {})) {
@@ -58,9 +58,9 @@ async function main() {
             const tile = tiles[v.tile_id?.toString()];
             if (!tile || !tile.is_habitable) badCount++;
         }
-        
+
         console.log(`\n${badCount > 0 ? '❌' : '✅'} ${badCount} villages on uninhabitable tiles out of ${Object.keys(villages || {}).length} total`);
-        
+
     } finally {
         await redis.quit();
     }

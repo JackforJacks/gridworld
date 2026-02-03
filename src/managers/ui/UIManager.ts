@@ -497,7 +497,7 @@ class UIManager {
 
         const button = document.getElementById('toggle-tile-labels');
         const visible = this.sceneManager.toggleTileLabels();
-        
+
         if (button) {
             button.textContent = visible ? '🏷️ Hide IDs' : '🏷️ IDs';
             button.classList.toggle('active', visible);
@@ -517,12 +517,12 @@ class UIManager {
         }
 
         const tileCenter = this.sceneManager.searchTile(id);
-        
+
         if (!tileCenter) {
             console.warn(`Tile ${id} not found`);
             return;
         }
-        
+
         // Point camera at the tile
         if (this.cameraController) {
             this.cameraController.lookAtPoint(tileCenter);

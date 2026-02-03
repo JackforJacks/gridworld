@@ -21,7 +21,7 @@ async function cleanup() {
 
     // Get all villages from Redis
     const villages = await redis.hgetall('village');
-    const badVillages: Array<{id: number, tile_id: number, terrain: string}> = [];
+    const badVillages: Array<{ id: number, tile_id: number, terrain: string }> = [];
 
     for (const [id, json] of Object.entries(villages || {})) {
         const v = JSON.parse(json as string);
@@ -29,7 +29,7 @@ async function cleanup() {
         if (tileData) {
             const t = JSON.parse(tileData);
             if (t.terrain_type === 'ocean' || t.terrain_type === 'mountains' || !t.is_land || !t.is_habitable) {
-                badVillages.push({id: parseInt(id), tile_id: v.tile_id, terrain: t.terrain_type});
+                badVillages.push({ id: parseInt(id), tile_id: v.tile_id, terrain: t.terrain_type });
             }
         }
     }
@@ -39,7 +39,7 @@ async function cleanup() {
     // Delete from Postgres and Redis
     for (const v of badVillages) {
         console.log(`Deleting village ${v.id} on tile ${v.tile_id} (${v.terrain})...`);
-        
+
         // Update people to remove residency (table is 'people' not 'person')
         await pool.query('UPDATE people SET residency = NULL WHERE residency = $1', [v.id]);
         // Delete village (table is 'villages' not 'village')

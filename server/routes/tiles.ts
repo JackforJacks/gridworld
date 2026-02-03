@@ -70,7 +70,7 @@ loadWorldSeed();
 // Does NOT regenerate tiles - use /api/worldrestart for that
 router.get('/', async (req: Request, res: Response): Promise<void> => {
     const startTime = Date.now();
-    
+
     // If client requests regeneration, redirect them to the proper endpoint
     if (req.query.regenerate === 'true' || req.query.t) {
         res.status(400).json({

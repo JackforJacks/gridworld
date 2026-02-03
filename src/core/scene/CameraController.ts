@@ -91,18 +91,18 @@ class CameraController {
         // Convert point to spherical coordinates to get rotation angles
         // The point is on the sphere surface, we need to rotate camera to face it
         const normalized = new THREE.Vector3(point.x, point.y, point.z).normalize();
-        
+
         // Calculate target rotation angles
         // Y rotation (horizontal): atan2 of x and z
         const targetY = Math.atan2(normalized.x, normalized.z);
-        
+
         // X rotation (vertical): asin of y (latitude)
         const targetX = -Math.asin(normalized.y);
-        
+
         // Set target rotations for smooth animation
         this.targetRotation.y = targetY;
         this.targetRotation.x = Math.max(-Math.PI / 2, Math.min(Math.PI / 2, targetX));
-        
+
         // Stop auto-rotate so user can see the tile
         this.autoRotate = false;
     }

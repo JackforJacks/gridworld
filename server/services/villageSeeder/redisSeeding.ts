@@ -431,7 +431,7 @@ async function seedWorldIfEmpty(): Promise<SeedWorldResult> {
 async function createInitialTilesRedisFirst(): Promise<InitialTile[]> {
     // Get all tiles from Redis
     const allTilesData = await storage.hgetall('tile');
-    
+
     if (!allTilesData || Object.keys(allTilesData).length === 0) {
         console.warn('[villageSeeder] No tiles found in Redis - tiles must be generated first via /api/tiles');
         return [];
@@ -442,28 +442,28 @@ async function createInitialTilesRedisFirst(): Promise<InitialTile[]> {
     for (const [tileId, tileJson] of Object.entries(allTilesData)) {
         try {
             const tile = JSON.parse(tileJson);
-            
+
             // Get terrain and biome info
             const terrainType = tile.terrain_type || tile.terrainType || '';
             const biome = tile.biome || '';
             const isLand = tile.is_land === true || tile.isLand === true;
-            
+
             // Skip ocean and mountain tiles
             if (!isLand || terrainType === 'ocean' || terrainType === 'mountains') {
                 continue;
             }
-            
+
             // Skip uninhabitable biomes
             if (biome === 'tundra' || biome === 'desert' || biome === 'alpine') {
                 continue;
             }
-            
+
             // Check if tile is marked as habitable
             const isHabitable = tile.is_habitable === true || tile.Habitable === 'yes' || tile.Habitable === true;
             if (!isHabitable) {
                 continue;
             }
-            
+
             habitableTiles.push({
                 id: parseInt(tileId),
                 center_x: tile.center_x || tile.centerPoint?.x || 0,
@@ -490,7 +490,7 @@ async function createInitialTilesRedisFirst(): Promise<InitialTile[]> {
     const shuffled = habitableTiles.sort(() => Math.random() - 0.5);
     const tilesToPopulate = shuffled.slice(0, 5);
 
-    console.log(`[villageSeeder] Selected ${tilesToPopulate.length} habitable tiles for initial population:`, 
+    console.log(`[villageSeeder] Selected ${tilesToPopulate.length} habitable tiles for initial population:`,
         tilesToPopulate.map(t => `${t.id} (${t.terrain_type})`).join(', '));
 
     const pipeline = storage.pipeline();
@@ -498,12 +498,12 @@ async function createInitialTilesRedisFirst(): Promise<InitialTile[]> {
     for (const tile of tilesToPopulate) {
         // Check if tile already has lands in Redis
         const existingLands = await storage.hget('tile:lands', tile.id.toString());
-        
+
         if (existingLands) {
             // Tile lands already exist, ensure at least 5 chunks are cleared
             const lands: LandChunk[] = JSON.parse(existingLands);
             let clearedCount = lands.filter(l => l.land_type === 'cleared').length;
-            
+
             if (clearedCount < 5) {
                 // Clear some chunks (Redis only - Postgres persisted on save)
                 for (let i = 0; i < lands.length && clearedCount < 5; i++) {

@@ -194,25 +194,25 @@ class SceneManager {
             console.warn('Cannot search tile: hexasphere or overlayManager not ready');
             return null;
         }
-        
+
         const id = typeof tileId === 'string' ? parseInt(tileId, 10) : tileId;
-        
+
         if (isNaN(id)) {
             console.warn('Invalid tile ID:', tileId);
             return null;
         }
-        
+
         // Find the tile
         const tile = this.hexasphere.tiles.find((t: HexTile) => t.id === id);
-        
+
         if (!tile) {
             console.warn(`Tile ${id} not found in hexasphere`);
             return null;
         }
-        
+
         // Flash the tile
         this.overlayManager.flashTile(tile);
-        
+
         // Return the center point for camera targeting
         return {
             x: tile.centerPoint.x,

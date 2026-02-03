@@ -86,22 +86,22 @@ export function calculateTerrain(x: number, y: number, z: number): string {
     const noise1 = Math.sin(x * 0.01 + z * 0.01) * Math.cos(y * 0.01);
     const noise2 = Math.sin(x * 0.02 - z * 0.02) * Math.cos(y * 0.015);
     const noise3 = Math.sin(x * 0.005 + y * 0.005 + z * 0.005);
-    
+
     // Position-based deterministic noise (replaces Math.random())
     const posNoise = positionHash(x, y, z, 0) * 0.3 - 0.15;
-    
+
     const elevation = (noise1 * 0.5 + noise2 * 0.3 + noise3 * 0.2) + posNoise;
-    
+
     // Continent noise for land/water distribution
     const continentNoise = Math.sin(x * 0.003) * Math.cos(z * 0.003) + Math.sin(y * 0.004) * 0.5;
     const waterThreshold = 0.0 + continentNoise * 0.2;
-    
+
     if (elevation < waterThreshold) {
         return 'ocean';
     }
-    
+
     const landElevation = elevation - waterThreshold;
-    
+
     if (landElevation > 0.3) {
         return 'mountains';
     } else if (landElevation > 0.15) {
@@ -141,17 +141,17 @@ export function calculateBiome(
     seed: number
 ): string | null {
     if (terrainType === 'ocean') return null;
-    
+
     // Mountains ALWAYS have alpine biome
     if (terrainType === 'mountains') return 'alpine';
-    
+
     // Calculate latitude from y-coordinate (sphere centered at origin)
     const radius = Math.sqrt(x * x + y * y + z * z);
     const latitude = Math.abs(Math.asin(y / radius) * (180 / Math.PI));
-    
+
     // Position-based random for biome variation
     const rng = createPositionRandom(x, y, z, seed);
-    
+
     // Biome based on latitude bands with variation
     if (latitude > 60) {
         return rng() < 0.8 ? 'tundra' : 'alpine';
@@ -192,13 +192,13 @@ export function calculateFertility(
     if (!biome || terrainType === 'ocean' || terrainType === 'mountains') {
         return 0;
     }
-    
+
     const base = BASE_FERTILITY[biome] || 50;
-    
+
     // Position-based variation (different seed offset to avoid correlation with biome)
     const rng = createPositionRandom(x, y, z, seed + 1000);
     const variation = Math.floor((rng() - 0.5) * 20);
-    
+
     return Math.max(0, Math.min(100, base + variation));
 }
 
@@ -216,15 +216,15 @@ export function calculateFertility(
  */
 export function isHabitable(terrainType: string, biome: string | null, isLand: boolean): boolean {
     if (!isLand) return false;
-    
+
     if (UNINHABITABLE_TERRAIN.includes(terrainType as typeof UNINHABITABLE_TERRAIN[number])) {
         return false;
     }
-    
+
     if (biome && UNINHABITABLE_BIOMES.includes(biome as typeof UNINHABITABLE_BIOMES[number])) {
         return false;
     }
-    
+
     return true;
 }
 
@@ -246,7 +246,7 @@ export interface LandChunk {
  */
 function mulberry32(seed: number): () => number {
     let s = seed;
-    return function(): number {
+    return function (): number {
         let t = s += 0x6D2B79F5;
         t = Math.imul(t ^ t >>> 15, t | 1);
         t ^= t + Math.imul(t ^ t >>> 7, t | 61);
@@ -263,29 +263,29 @@ function mulberry32(seed: number): () => number {
  */
 export function generateLandsForTile(tileId: number, seed: number): LandChunk[] {
     const rng = mulberry32(tileId + seed);
-    
+
     // Determine land type distribution
     const wastelandPercent = Math.floor(rng() * 31); // 0-30%
     let forestPercent = Math.floor(rng() * 71); // 0-70%
     let clearedPercent = 100 - wastelandPercent - forestPercent;
-    
+
     if (clearedPercent < 0) {
         clearedPercent = 0;
         forestPercent = 100 - wastelandPercent;
     }
-    
+
     // Build land type array
     const landTypes: ('wasteland' | 'forest' | 'cleared')[] = [];
     for (let i = 0; i < wastelandPercent; i++) landTypes.push('wasteland');
     for (let i = 0; i < forestPercent; i++) landTypes.push('forest');
     while (landTypes.length < 100) landTypes.push('cleared');
-    
+
     // Shuffle deterministically
     for (let i = landTypes.length - 1; i > 0; i--) {
         const j = Math.floor(rng() * (i + 1));
         [landTypes[i], landTypes[j]] = [landTypes[j], landTypes[i]];
     }
-    
+
     // Create land chunks
     return landTypes.map((land_type, chunk_index) => ({
         tile_id: tileId,
@@ -331,12 +331,12 @@ export function calculateTileProperties(
     const biome = calculateBiome(x, y, z, terrainType, seed);
     const fertility = calculateFertility(x, y, z, biome, terrainType, seed);
     const habitable = isHabitable(terrainType, biome, isLand);
-    
+
     // Calculate lat/lon
     const radius = Math.sqrt(x * x + y * y + z * z);
     const latitude = Math.asin(y / radius) * (180 / Math.PI);
     const longitude = Math.atan2(z, x) * (180 / Math.PI);
-    
+
     return {
         terrainType,
         isLand,

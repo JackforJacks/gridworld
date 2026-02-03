@@ -20,27 +20,27 @@ const LABEL_CONFIG = {
 function createLabelTexture(text: string): THREE.CanvasTexture {
     const canvas = document.createElement('canvas');
     const ctx = canvas.getContext('2d')!;
-    
+
     ctx.font = `bold ${LABEL_CONFIG.fontSize}px ${LABEL_CONFIG.fontFamily}`;
     const metrics = ctx.measureText(text);
     const textWidth = metrics.width;
     const textHeight = LABEL_CONFIG.fontSize;
-    
+
     // Size canvas to fit text with padding
     canvas.width = textWidth + LABEL_CONFIG.padding * 2;
     canvas.height = textHeight + LABEL_CONFIG.padding * 2;
-    
+
     // Background
     ctx.fillStyle = LABEL_CONFIG.backgroundColor;
     ctx.fillRect(0, 0, canvas.width, canvas.height);
-    
+
     // Text
     ctx.font = `bold ${LABEL_CONFIG.fontSize}px ${LABEL_CONFIG.fontFamily}`;
     ctx.fillStyle = LABEL_CONFIG.textColor;
     ctx.textAlign = 'center';
     ctx.textBaseline = 'middle';
     ctx.fillText(text, canvas.width / 2, canvas.height / 2);
-    
+
     const texture = new THREE.CanvasTexture(canvas);
     texture.needsUpdate = true;
     return texture;
@@ -51,17 +51,17 @@ function createLabelTexture(text: string): THREE.CanvasTexture {
  */
 export function createTileLabel(tile: HexTile): THREE.Sprite | null {
     if (!tile.centerPoint) return null;
-    
+
     const texture = createLabelTexture(String(tile.id));
-    const material = new THREE.SpriteMaterial({ 
+    const material = new THREE.SpriteMaterial({
         map: texture,
         transparent: true,
         depthTest: true,
         depthWrite: false
     });
-    
+
     const sprite = new THREE.Sprite(material);
-    
+
     // Position slightly above tile center
     const center = tile.centerPoint;
     const normal = new THREE.Vector3(center.x, center.y, center.z).normalize();
@@ -70,11 +70,11 @@ export function createTileLabel(tile: HexTile): THREE.Sprite | null {
         center.y + normal.y * LABEL_CONFIG.heightOffset,
         center.z + normal.z * LABEL_CONFIG.heightOffset
     );
-    
+
     // Scale based on texture aspect ratio
     const aspect = texture.image.width / texture.image.height;
     sprite.scale.set(LABEL_CONFIG.scale * aspect, LABEL_CONFIG.scale, 1);
-    
+
     return sprite;
 }
 
@@ -95,20 +95,20 @@ export class TileLabelManager {
     private scene: THREE.Scene;
     private labels: Map<string, THREE.Sprite> = new Map();
     private _visible: boolean = false;
-    
+
     constructor(scene: THREE.Scene) {
         this.scene = scene;
     }
-    
+
     /**
      * Add label for a tile
      */
     add(tile: HexTile): void {
         const tileId = String(tile.id);
-        
+
         // Don't add duplicate
         if (this.labels.has(tileId)) return;
-        
+
         const label = createTileLabel(tile);
         if (label) {
             label.visible = this._visible;
@@ -116,7 +116,7 @@ export class TileLabelManager {
             this.labels.set(tileId, label);
         }
     }
-    
+
     /**
      * Add labels for multiple tiles
      */
@@ -125,7 +125,7 @@ export class TileLabelManager {
             this.add(tile);
         }
     }
-    
+
     /**
      * Remove label for a tile
      */
@@ -137,7 +137,7 @@ export class TileLabelManager {
             this.labels.delete(tileId);
         }
     }
-    
+
     /**
      * Toggle visibility of all labels
      */
@@ -147,14 +147,14 @@ export class TileLabelManager {
             label.visible = visible;
         });
     }
-    
+
     /**
      * Get current visibility
      */
     get visible(): boolean {
         return this._visible;
     }
-    
+
     /**
      * Toggle visibility
      */
@@ -162,7 +162,7 @@ export class TileLabelManager {
         this.setVisible(!this._visible);
         return this._visible;
     }
-    
+
     /**
      * Clear all labels
      */
@@ -173,7 +173,7 @@ export class TileLabelManager {
         });
         this.labels.clear();
     }
-    
+
     /**
      * Get label count
      */
