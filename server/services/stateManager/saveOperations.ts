@@ -45,6 +45,45 @@ interface FilteredVillageData {
     [villageId: string]: string;
 }
 
+interface ParsedPerson {
+    id: number;
+    tile_id: number | null;
+    residency: number | null;
+    village_id?: number | null;
+    sex: boolean | string;
+    date_of_birth: string;
+    family_id: number | null;
+}
+
+/**
+ * Pre-parse all people data once for efficiency
+ * Returns parsed people map and villageHasResidents map in a single pass
+ */
+function preParsePeopleData(
+    allPeopleData: Record<string, string>,
+    logError: (err: unknown, context: string, severity: unknown) => void,
+    ErrorSeverity: { LOW: unknown }
+): { parsedPeople: Map<string, ParsedPerson>; villageHasResidents: VillageHasResidentsMap } {
+    const parsedPeople = new Map<string, ParsedPerson>();
+    const villageHasResidents: VillageHasResidentsMap = {};
+    
+    for (const [personId, personJson] of Object.entries(allPeopleData)) {
+        try {
+            const person = JSON.parse(personJson as string);
+            parsedPeople.set(personId, person);
+            // Build villageHasResidents in the same pass
+            const villageRef = person.village_id || person.residency;
+            if (villageRef) {
+                villageHasResidents[villageRef] = true;
+            }
+        } catch (err: unknown) {
+            logError(err, `SaveOperations:ParsePerson:${personId}`, ErrorSeverity.LOW);
+        }
+    }
+    
+    return { parsedPeople, villageHasResidents };
+}
+
 /**
  * Save all Redis state back to PostgreSQL
  * This is a full save - it saves ALL data from Redis, replacing what's in Postgres.
@@ -69,24 +108,13 @@ async function saveToDatabase(context: SaveContext): Promise<SaveResult> {
         const allTileData = await storage.hgetall('tile') || {};
         const allLandsData = await storage.hgetall('tile:lands') || {};
         const allVillageData = await storage.hgetall('village') || {};
-        const allPeopleData = await storage.hgetall('person') || {};
-        const allFamilyData = await storage.hgetall('family') || {};
+        let allPeopleData = await storage.hgetall('person') || {};
+        let allFamilyData = await storage.hgetall('family') || {};
 
-        // --- STEP: Remove empty villages (no residents) from allVillageData ---
+        // --- STEP: Pre-parse people once and build villageHasResidents in single pass ---
         const { logError, ErrorSeverity } = require('../../utils/errorHandler');
-        const villageHasResidents: VillageHasResidentsMap = {};
-        for (const [personId, personJson] of Object.entries(allPeopleData)) {
-            try {
-                const person = JSON.parse(personJson as string);
-                // Check both village_id and residency fields (residency is the village_id in person records)
-                const villageRef = person.village_id || person.residency;
-                if (villageRef) {
-                    villageHasResidents[villageRef] = true;
-                }
-            } catch (err: unknown) {
-                logError(err, `SaveOperations:ParsePerson:${personId}`, ErrorSeverity.LOW);
-            }
-        }
+        let { parsedPeople, villageHasResidents } = preParsePeopleData(allPeopleData, logError, ErrorSeverity);
+        
         // Filter out villages with no residents
         const filteredVillageData: FilteredVillageData = {};
         for (const [villageId, villageJson] of Object.entries(allVillageData)) {
@@ -97,7 +125,7 @@ async function saveToDatabase(context: SaveContext): Promise<SaveResult> {
 
         const tileCount = Object.keys(allTileData).length;
         let villageCount = Object.keys(filteredVillageData).length;
-        let peopleCount = Object.keys(allPeopleData).length;
+        let peopleCount = parsedPeople.size;
         let familyCount = Object.keys(allFamilyData).length;
 
         // --- STEP: Pre-save validation for villages ---
@@ -118,41 +146,30 @@ async function saveToDatabase(context: SaveContext): Promise<SaveResult> {
                 console.log(`[SaveOperations] ✅ Repair successful: ${repairResult.result.created} villages created, ${repairResult.result.assigned} people assigned`);
 
                 // Refresh data maps after repair to save the correct state
-                // using const here would shadow the outer variables, so we need to update the object references if possible
-                // OR simply re-fetch the specific data that changed.
-                // Re-fetching full state is safer.
                 Object.assign(allTileData, await storage.hgetall('tile') || {});
                 Object.assign(allLandsData, await storage.hgetall('tile:lands') || {});
                 Object.assign(allVillageData, await storage.hgetall('village') || {});
                 // People might have been updated during assignment
-                Object.assign(allPeopleData, await storage.hgetall('person') || {});
+                allPeopleData = await storage.hgetall('person') || {};
                 // Families might have been created during repair
-                Object.assign(allFamilyData, await storage.hgetall('family') || {});
+                allFamilyData = await storage.hgetall('family') || {};
 
-                // Re-filter villages based on new state
-                const newVillageHasResidents: VillageHasResidentsMap = {};
-                for (const [personId, personJson] of Object.entries(allPeopleData)) {
-                    try {
-                        const person = JSON.parse(personJson as string);
-                        // Check both village_id and residency fields
-                        const villageRef = person.village_id || person.residency;
-                        if (villageRef) newVillageHasResidents[villageRef] = true;
-                    } catch (err: unknown) {
-                        logError(err, `SaveOperations:RefilterPerson:${personId}`, ErrorSeverity.LOW);
-                    }
-                }
+                // Re-parse people and rebuild villageHasResidents in single pass (optimized)
+                const reparsed = preParsePeopleData(allPeopleData, logError, ErrorSeverity);
+                parsedPeople = reparsed.parsedPeople;
+                villageHasResidents = reparsed.villageHasResidents;
 
                 // Clear and refill filtered set
                 for (const key in filteredVillageData) delete filteredVillageData[key];
                 for (const [villageId, villageJson] of Object.entries(allVillageData)) {
-                    if (newVillageHasResidents[villageId]) {
+                    if (villageHasResidents[villageId]) {
                         filteredVillageData[villageId] = villageJson as string;
                     }
                 }
 
                 // Recalculate counts after repair
                 villageCount = Object.keys(filteredVillageData).length;
-                peopleCount = Object.keys(allPeopleData).length;
+                peopleCount = parsedPeople.size;
                 familyCount = Object.keys(allFamilyData).length;
                 console.log(`[SaveOperations] Post-repair counts: Villages=${villageCount}, People=${peopleCount}, Families=${familyCount}`);
             } else {
@@ -341,10 +358,10 @@ async function saveToDatabase(context: SaveContext): Promise<SaveResult> {
             }
         }
 
-        // ========== STEP 3: Save ALL people from Redis ==========
+        // ========== STEP 3: Save ALL people from pre-parsed data (optimized - no re-parsing) ==========
         if (peopleCount > 0 && !transactionAborted) {
             const peopleBatchSize = 2000; // Larger batches for better performance
-            const peopleEntries = Object.entries(allPeopleData);
+            const peopleEntries = Array.from(parsedPeople.entries());
 
             for (let i = 0; i < peopleEntries.length && !transactionAborted; i += peopleBatchSize) {
                 const batch = peopleEntries.slice(i, i + peopleBatchSize);
@@ -352,25 +369,22 @@ async function saveToDatabase(context: SaveContext): Promise<SaveResult> {
                 const params: (number | string | boolean | null)[] = [];
                 let paramIdx = 1;
 
-                for (const [id, json] of batch) {
-                    try {
-                        const p = JSON.parse(json as string);
-                        const personId = Number(p.id);
-                        if (Number.isNaN(personId)) {
-                            continue;
-                        }
-                        const tileId = p.tile_id !== undefined && p.tile_id !== null ? Number(p.tile_id) : null;
-                        const residency = p.residency !== undefined && p.residency !== null ? Number(p.residency) : null;
-                        const numericFamilyId = p.family_id !== undefined && p.family_id !== null ? Number(p.family_id) : null;
-                        if (numericFamilyId !== null && !Number.isNaN(numericFamilyId) && allFamilyData[String(numericFamilyId)]) {
-                            peopleFamilyLinks.push({ personId, familyId: numericFamilyId });
-                        }
-                        // Convert sex to boolean: "M"/true = true (male), "F"/false = false (female)
-                        const sexBool = p.sex === 'M' || p.sex === true;
-                        values.push(`($${paramIdx}, $${paramIdx + 1}, $${paramIdx + 2}, $${paramIdx + 3}, $${paramIdx + 4}, $${paramIdx + 5})`);
-                        params.push(personId, tileId, sexBool, p.date_of_birth, residency, null);
-                        paramIdx += 6;
-                    } catch (e: unknown) { /* skip invalid */ }
+                for (const [id, p] of batch) {
+                    const personId = Number(p.id);
+                    if (Number.isNaN(personId)) {
+                        continue;
+                    }
+                    const tileId = p.tile_id !== undefined && p.tile_id !== null ? Number(p.tile_id) : null;
+                    const residency = p.residency !== undefined && p.residency !== null ? Number(p.residency) : null;
+                    const numericFamilyId = p.family_id !== undefined && p.family_id !== null ? Number(p.family_id) : null;
+                    if (numericFamilyId !== null && !Number.isNaN(numericFamilyId) && allFamilyData[String(numericFamilyId)]) {
+                        peopleFamilyLinks.push({ personId, familyId: numericFamilyId });
+                    }
+                    // Convert sex to boolean: "M"/true = true (male), "F"/false = false (female)
+                    const sexBool = p.sex === 'M' || p.sex === true;
+                    values.push(`($${paramIdx}, $${paramIdx + 1}, $${paramIdx + 2}, $${paramIdx + 3}, $${paramIdx + 4}, $${paramIdx + 5})`);
+                    params.push(personId, tileId, sexBool, p.date_of_birth, residency, null);
+                    paramIdx += 6;
                 }
 
                 if (values.length > 0) {
@@ -392,9 +406,9 @@ async function saveToDatabase(context: SaveContext): Promise<SaveResult> {
         }
 
         // ========== STEP 4: Save ALL families from Redis ==========
-        // Build set of valid person IDs to validate family spouse references
+        // Build set of valid person IDs from pre-parsed data (optimized)
         const validPersonIds = new Set<number>();
-        for (const personId of Object.keys(allPeopleData)) {
+        for (const personId of parsedPeople.keys()) {
             const numId = Number(personId);
             if (!Number.isNaN(numId)) {
                 validPersonIds.add(numId);

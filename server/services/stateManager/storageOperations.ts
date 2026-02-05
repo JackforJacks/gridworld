@@ -62,6 +62,13 @@ async function getAllPeople() {
 }
 
 /**
+ * Get population count from Redis (O(1) operation)
+ */
+async function getPopulationCount(): Promise<number> {
+    return await storage.hlen('person');
+}
+
+/**
  * Get population count for a village (from Redis index)
  */
 async function getVillagePopulation(tileId, chunkIndex) {
@@ -143,6 +150,7 @@ export {
     getPerson,
     updatePerson,
     getAllPeople,
+    getPopulationCount,
     getVillagePopulation,
     getTileFertility,
     getVillageClearedLand,

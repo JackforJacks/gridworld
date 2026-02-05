@@ -149,6 +149,9 @@ async function ensureVillagesForPopulatedTiles(options: EnsureVillagesOptions = 
             console.log(`[VillageManager] Cleaned up ${orphansRemoved} orphan villages on empty tiles`);
         }
 
+        // Step 2.6: Pre-fetch all lands data at once (optimization - avoids N sequential hget calls)
+        const allLandsData = await storage.hgetall('tile:lands') || {};
+
         // Step 3: For each populated tile, ensure it has villages
         let totalCreated = 0;
         let skippedNoLands = 0;
@@ -173,8 +176,8 @@ async function ensureVillagesForPopulatedTiles(options: EnsureVillagesOptions = 
                 continue;
             }
 
-            // Get cleared chunks for this tile
-            const clearedChunks = await getClearedChunksForTile(tileId);
+            // Get cleared chunks for this tile using pre-fetched data (optimized)
+            const clearedChunks = getClearedChunksFromPrefetched(allLandsData, tileId);
             let chunksToUse = clearedChunks.slice(0, desiredVillages);
 
             // If no cleared chunks exist, try to create them from tile:lands
@@ -327,6 +330,31 @@ async function getVillagesGroupedByTile(): Promise<VillagesByTile> {
     }
 
     return byTile;
+}
+
+/**
+ * Get cleared chunks from pre-fetched lands data (optimized - no Redis call)
+ */
+function getClearedChunksFromPrefetched(allLandsData: Record<string, string>, tileId: number): number[] {
+    const landsJson = allLandsData[tileId.toString()];
+    if (!landsJson) return [];
+
+    try {
+        const lands = JSON.parse(landsJson) as LandChunk[];
+        const cleared = lands
+            .filter((land: LandChunk) => land.land_type === 'cleared' || land.cleared === true)
+            .map((land: LandChunk) => land.chunk_index);
+
+        // Shuffle for randomness
+        for (let i = cleared.length - 1; i > 0; i--) {
+            const j = Math.floor(Math.random() * (i + 1));
+            [cleared[i], cleared[j]] = [cleared[j], cleared[i]];
+        }
+
+        return cleared;
+    } catch (e: unknown) {
+        return [];
+    }
 }
 
 /**

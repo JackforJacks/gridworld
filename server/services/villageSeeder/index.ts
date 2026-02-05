@@ -15,6 +15,8 @@ import { seedRandomVillages, seedVillagesForTile } from './postgresSeeding';
 import { seedVillagesStorageFirst, seedWorldIfEmpty, SeedVillagesResult } from './redisSeeding';
 import { assignResidencyForTile } from './residency';
 import storage from '../storage';
+import pool from '../../config/database';
+import PopulationState from '../populationState';
 
 // Re-export SeedVillagesResult for external use
 export type { SeedVillagesResult };
