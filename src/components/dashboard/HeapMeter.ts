@@ -20,6 +20,8 @@ class HeapMeter {
     private displayTimer: ReturnType<typeof setInterval> | null = null;
     private serverTimer: ReturnType<typeof setInterval> | null = null;
     private serverHeap = 0;
+    private rustMemoryBytes = 0;
+    private rustAvailable = false;
     private isVisible = true;
     private isFetching = false;
     private readonly SERVER_FETCH_INTERVAL_MS = 5000; // Reduced from 1000ms
@@ -91,7 +93,8 @@ class HeapMeter {
     private update(): void {
         const client = performance.memory ? `🖥️${this.fmt(performance.memory.usedJSHeapSize)}` : '';
         const server = this.serverHeap > 0 ? `☁️${this.fmt(this.serverHeap)}` : '';
-        this.el.textContent = [client, server].filter(Boolean).join(' ');
+        const rust = this.rustAvailable ? `⚙️${this.fmt(this.rustMemoryBytes)}` : '';
+        this.el.textContent = [client, server, rust].filter(Boolean).join(' ');
     }
 
     /**
@@ -106,14 +109,24 @@ class HeapMeter {
             const controller = new AbortController();
             const timeoutId = setTimeout(() => controller.abort(), 5000); // 5s timeout
             
-            const r = await fetch('/api/system/memory', { 
-                signal: controller.signal 
-            });
+            // Fetch memory and rust stats in parallel
+            const [memRes, rustRes] = await Promise.all([
+                fetch('/api/system/memory', { signal: controller.signal }),
+                fetch('/api/system/rust', { signal: controller.signal }),
+            ]);
             clearTimeout(timeoutId);
             
-            if (r.ok) {
-                const d = await r.json();
+            if (memRes.ok) {
+                const d = await memRes.json();
                 if (d.data?.heapUsed) this.serverHeap = d.data.heapUsed;
+            }
+            
+            if (rustRes.ok) {
+                const d = await rustRes.json();
+                if (d.data) {
+                    this.rustAvailable = d.data.available;
+                    if (d.data.memoryBytes) this.rustMemoryBytes = d.data.memoryBytes;
+                }
             }
         } catch { 
             // Ignore fetch errors silently

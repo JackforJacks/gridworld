@@ -5,6 +5,10 @@ node_modules/
 dist/
 build/
 
+# Rust/Cargo
+simulation/target/
+*.node
+
 # Development
 .env
 .env.local

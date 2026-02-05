@@ -1,0 +1,26 @@
+{
+  "name": "@gridworld/simulation",
+  "version": "0.1.0",
+  "description": "High-performance population simulation engine",
+  "main": "index.js",
+  "types": "index.d.ts",
+  "napi": {
+    "name": "simulation",
+    "triples": {
+      "defaults": true,
+      "additional": []
+    }
+  },
+  "scripts": {
+    "build": "napi build --platform --release",
+    "build:debug": "napi build --platform"
+  },
+  "devDependencies": {
+    "@napi-rs/cli": "^2.18.0"
+  },
+  "files": [
+    "index.js",
+    "index.d.ts",
+    "*.node"
+  ]
+}

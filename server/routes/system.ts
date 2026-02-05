@@ -4,6 +4,17 @@
 import express, { Request, Response, Router } from 'express';
 import memoryTracker from '../services/memoryTracker';
 
+// Try to load Rust simulation (optional dependency)
+let rustSim: {
+    runBenchmark: (pop: number, ticks: number) => { totalMs: number; perTickMs: number; finalPopulation: number };
+} | null = null;
+
+try {
+    rustSim = require('@gridworld/simulation');
+} catch {
+    console.log('⚙️ Rust simulation not available (run `cd simulation && npm run build`)');
+}
+
 const router: Router = express.Router();
 
 /**
@@ -92,6 +103,40 @@ router.get('/health', (req: Request, res: Response) => {
         },
         timestamp: Date.now(),
     });
+});
+
+/**
+ * GET /api/system/rust
+ * Get Rust simulation engine status and memory estimate
+ */
+router.get('/rust', (req: Request, res: Response) => {
+    if (!rustSim) {
+        res.json({
+            success: true,
+            data: { available: false },
+        });
+        return;
+    }
+    
+    try {
+        // Quick benchmark: 10K population, 10 ticks
+        const result = rustSim.runBenchmark(10000, 10);
+        // Estimate memory: ~200 bytes per entity
+        const memoryBytes = result.finalPopulation * 200;
+        res.json({
+            success: true,
+            data: {
+                available: true,
+                memoryBytes,
+                population: result.finalPopulation,
+            },
+        });
+    } catch (error: unknown) {
+        res.status(500).json({
+            success: false,
+            error: error instanceof Error ? error.message : 'Rust simulation error',
+        });
+    }
 });
 
 export default router;

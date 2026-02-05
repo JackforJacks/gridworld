@@ -126,6 +126,7 @@
     "webpack-dev-server": "^5.2.3"
   },
   "dependencies": {
+    "@gridworld/simulation": "file:./simulation",
     "compression": "^1.8.1",
     "cors": "^2.8.5",
     "dotenv": "^16.4.5",
