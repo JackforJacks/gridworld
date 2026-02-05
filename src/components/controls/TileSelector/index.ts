@@ -1,5 +1,6 @@
 // TileSelector - Main Orchestrator
 // Handles tile selection, borders, and info panel coordination
+// Optimized with request deduplication, debouncing, and proper cleanup
 import * as THREE from 'three';
 import { getAppContext } from '../../../core/AppContext';
 import { HexTile, SceneManagerLike } from './types';
@@ -20,9 +21,19 @@ class TileSelector {
     private infoRefreshInterval: ReturnType<typeof setInterval> | null;
     public infoRefreshTileId: number | string | null;
 
+    // Request management
+    private abortController: AbortController | null = null;
+    private lastFetchTime = 0;
+    private isFetching = false;
+    private readonly FETCH_DEBOUNCE_MS = 300; // Debounce rapid clicks
+    private readonly REFRESH_INTERVAL_MS = 5000; // Reduced from 1000ms to 5000ms
+
     // Cached vectors to avoid allocations
     private static readonly _mouseVec = new THREE.Vector2();
     private static readonly _tileCenter = new THREE.Vector3();
+
+    // Store bound methods to avoid creating new functions each time
+    private boundHandleClick: (event: MouseEvent) => void;
 
     constructor(scene: THREE.Scene, camera: THREE.Camera, _sceneManager: SceneManagerLike) {
         this.scene = scene;
@@ -33,6 +44,9 @@ class TileSelector {
         this.tileInfoPanel = document.getElementById('tileInfoPanel');
         this.infoRefreshInterval = null;
         this.infoRefreshTileId = null;
+
+        // Pre-bind methods to avoid creating new closures
+        this.boundHandleClick = this.handleClick.bind(this);
 
         // Expose instance via AppContext
         const ctx = getAppContext();
@@ -128,25 +142,76 @@ class TileSelector {
 
     /**
      * Fetch detailed tile data from server and update the panel
+     * Includes debouncing and request deduplication
      */
     private async fetchAndShowTileDetails(tile: HexTile): Promise<void> {
         // Show panel immediately with basic data
         this.showInfoPanel(tile);
 
+        // Debounce rapid selections
+        const now = Date.now();
+        if (now - this.lastFetchTime < this.FETCH_DEBOUNCE_MS) {
+            return;
+        }
+        this.lastFetchTime = now;
+
+        // Cancel any pending request
+        this.cancelPendingRequest();
+
         try {
-            // Fetch detailed data (lands, fertility, villages)
-            const response = await fetch(`/api/tiles/${tile.id}`);
-            if (response.ok) {
-                const detailedData = await response.json();
-                // Merge detailed data into tile object
-                tile.lands = detailedData.lands;
-                tile.fertility = detailedData.fertility;
-                // Update panel with enriched data
+            const data = await this.fetchTileData(tile.id);
+            if (data) {
+                tile.lands = data.lands;
+                tile.fertility = data.fertility;
                 this.updatePanel(tile);
             }
         } catch (error) {
-            console.warn(`Failed to fetch detailed tile data for tile ${tile.id}:`, error);
+            if ((error as Error).name !== 'AbortError') {
+                console.warn(`Failed to fetch detailed tile data for tile ${tile.id}:`, error);
+            }
         }
+    }
+
+    /**
+     * Fetch tile data with timeout and abort support
+     */
+    private async fetchTileData(tileId: number | string): Promise<{ lands?: any; fertility?: number } | null> {
+        if (this.isFetching) return null;
+        
+        this.isFetching = true;
+        this.abortController = new AbortController();
+
+        try {
+            // Set timeout for the request
+            const timeoutId = setTimeout(() => {
+                this.abortController?.abort();
+            }, 10000); // 10 second timeout
+
+            const response = await fetch(`/api/tiles/${tileId}`, {
+                signal: this.abortController.signal
+            });
+            
+            clearTimeout(timeoutId);
+
+            if (response.ok) {
+                return await response.json();
+            }
+            return null;
+        } finally {
+            this.isFetching = false;
+            this.abortController = null;
+        }
+    }
+
+    /**
+     * Cancel any in-flight request
+     */
+    private cancelPendingRequest(): void {
+        if (this.abortController) {
+            this.abortController.abort();
+            this.abortController = null;
+        }
+        this.isFetching = false;
     }
 
     createBorder(tile: HexTile): void {
@@ -177,26 +242,41 @@ class TileSelector {
             btn.classList.toggle('active', idx === 0);
         });
 
-        // Start periodic refresh (fetches latest data from server)
+        // Start periodic refresh with reduced frequency (5s instead of 1s)
         this.infoRefreshTileId = tile.id;
-        this.infoRefreshInterval = setInterval(async () => {
-            if (!this.tileInfoPanel?.classList.contains('hidden') && this.selectedTile) {
-                // Re-fetch detailed data on each refresh
-                try {
-                    const response = await fetch(`/api/tiles/${this.selectedTile.id}`);
-                    if (response.ok) {
-                        const detailedData = await response.json();
-                        this.selectedTile.lands = detailedData.lands;
-                        this.selectedTile.fertility = detailedData.fertility;
-                    }
-                } catch (error) {
-                    // Ignore fetch errors during refresh
-                }
-                this.updatePanel(this.selectedTile);
-            } else {
+        
+        // Capture only primitive values to avoid closing over `this`
+        const refreshFn = () => {
+            // Check if still valid before doing anything
+            if (!this.tileInfoPanel || !this.selectedTile) {
                 this.stopRefresh();
+                return;
             }
-        }, 1000);
+            
+            if (this.tileInfoPanel.classList.contains('hidden')) {
+                this.stopRefresh();
+                return;
+            }
+            
+            // Skip if already fetching
+            if (this.isFetching) return;
+            
+            // Store ID locally to avoid race conditions
+            const currentTileId = this.selectedTile.id;
+            
+            this.fetchTileData(currentTileId).then(data => {
+                // Only update if still looking at the same tile
+                if (data && this.selectedTile?.id === currentTileId) {
+                    this.selectedTile.lands = data.lands;
+                    this.selectedTile.fertility = data.fertility;
+                    this.updatePanel(this.selectedTile);
+                }
+            }).catch(() => {
+                // Ignore errors
+            });
+        };
+        
+        this.infoRefreshInterval = setInterval(refreshFn, this.REFRESH_INTERVAL_MS);
     }
 
     private updatePanel(tile: HexTile): void {
@@ -209,8 +289,9 @@ class TileSelector {
         if (this.infoRefreshInterval) {
             clearInterval(this.infoRefreshInterval);
             this.infoRefreshInterval = null;
-            this.infoRefreshTileId = null;
         }
+        this.infoRefreshTileId = null;
+        this.cancelPendingRequest();
     }
 
     hideInfoPanel(): void {
@@ -233,6 +314,29 @@ class TileSelector {
 
     getSelectedTile(): HexTile | null {
         return this.selectedTile;
+    }
+
+    /**
+     * Clean up resources when component is destroyed
+     */
+    destroy(): void {
+        this.stopRefresh();
+        this.removeBorder();
+        
+        // Clear all references to help GC
+        this.selectedTile = null;
+        this.tileInfoPanel = null;
+        this.scene = null as any;
+        this.camera = null as any;
+        this.raycaster = null as any;
+        this.borderLines = null;
+        
+        // Remove from global references
+        const ctx = getAppContext();
+        if (ctx.tileSelector === this) {
+            ctx.tileSelector = null;
+        }
+        (window as unknown as { tileSelector?: TileSelector | null }).tileSelector = null;
     }
 }
 

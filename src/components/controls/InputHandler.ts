@@ -1,5 +1,6 @@
 // Input Handler Module
 // Centralizes all input event handling (mouse, keyboard, touch)
+// Optimized with proper event listener cleanup
 
 import * as THREE from 'three';
 
@@ -38,6 +39,15 @@ class InputHandler {
     private mouseState: MouseState;
     private clickTolerance: number;
 
+    // Store bound event handlers so they can be removed properly
+    private boundOnMouseDown: (event: MouseEvent) => void;
+    private boundOnMouseMove: (event: MouseEvent) => void;
+    private boundOnMouseUp: (event: MouseEvent) => void;
+    private boundOnMouseLeave: (event: MouseEvent) => void;
+    private boundOnWheel: (event: WheelEvent) => void;
+    private boundOnKeyDown: (event: KeyboardEvent) => void;
+    private boundOnResize: () => void;
+
     constructor(
         renderer: THREE.WebGLRenderer,
         cameraController: CameraControllerLike,
@@ -55,26 +65,58 @@ class InputHandler {
         };
 
         this.clickTolerance = 5;
+
+        // Pre-bind event handlers so we can remove them later
+        this.boundOnMouseDown = this.onMouseDown.bind(this);
+        this.boundOnMouseMove = this.onMouseMove.bind(this);
+        this.boundOnMouseUp = this.onMouseUp.bind(this);
+        this.boundOnMouseLeave = this.onMouseLeave.bind(this);
+        this.boundOnWheel = this.onWheel.bind(this);
+        this.boundOnKeyDown = this.onKeyDown.bind(this);
+        this.boundOnResize = this.onResize.bind(this);
+
         this.setupEventListeners();
     }
 
     private setupEventListeners(): void {
         const canvas = this.renderer.domElement;
 
-        // Mouse events
-        canvas.addEventListener('mousedown', this.onMouseDown.bind(this), { passive: false });
-        canvas.addEventListener('mousemove', this.onMouseMove.bind(this), { passive: true });
-        canvas.addEventListener('mouseup', this.onMouseUp.bind(this), { passive: false });
-        canvas.addEventListener('mouseleave', this.onMouseLeave.bind(this));
+        // Mouse events - use stored bound handlers
+        canvas.addEventListener('mousedown', this.boundOnMouseDown, { passive: false });
+        canvas.addEventListener('mousemove', this.boundOnMouseMove, { passive: true });
+        canvas.addEventListener('mouseup', this.boundOnMouseUp, { passive: false });
+        canvas.addEventListener('mouseleave', this.boundOnMouseLeave);
 
         // Wheel events
-        window.addEventListener('wheel', this.onWheel.bind(this), { passive: false });
+        window.addEventListener('wheel', this.boundOnWheel, { passive: false });
 
         // Keyboard events
-        window.addEventListener('keydown', this.onKeyDown.bind(this), { passive: false });
+        window.addEventListener('keydown', this.boundOnKeyDown, { passive: false });
 
         // Window events
-        window.addEventListener('resize', this.onResize.bind(this), false);
+        window.addEventListener('resize', this.boundOnResize, false);
+    }
+
+    /**
+     * Clean up all event listeners to prevent memory leaks
+     */
+    destroy(): void {
+        const canvas = this.renderer.domElement;
+
+        // Remove all event listeners using the stored bound handlers
+        canvas.removeEventListener('mousedown', this.boundOnMouseDown);
+        canvas.removeEventListener('mousemove', this.boundOnMouseMove);
+        canvas.removeEventListener('mouseup', this.boundOnMouseUp);
+        canvas.removeEventListener('mouseleave', this.boundOnMouseLeave);
+
+        window.removeEventListener('wheel', this.boundOnWheel);
+        window.removeEventListener('keydown', this.boundOnKeyDown);
+        window.removeEventListener('resize', this.boundOnResize);
+
+        // Clear references to help GC
+        this.tileSelector = null;
+        this.cameraController = null as any;
+        this.renderer = null as any;
     }
 
     private onMouseDown(event: MouseEvent): void {

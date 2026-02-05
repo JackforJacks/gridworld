@@ -3,6 +3,11 @@
  * 
  * Provides a single shared socket connection across the entire application.
  * Eliminates duplicate connections from GridWorldApp, PopulationManager, etc.
+ * 
+ * Optimized with:
+ * - Pending listener cleanup (prevents memory leaks)
+ * - Connection timeout handling
+ * - Maximum pending listener limit
  */
 
 import { io, Socket } from 'socket.io-client';
@@ -41,6 +46,7 @@ class SocketService {
     private connectionCallbacks: Set<ConnectionCallback> = new Set();
     private pendingListeners: Map<string, Set<SocketEventCallback>> = new Map();
     private connectionPromise: Promise<void> | null = null;
+    private pendingCleanupTimeout: ReturnType<typeof setTimeout> | null = null;
 
     /** Default socket configuration */
     private static readonly DEFAULT_CONFIG: SocketConfig = {
@@ -54,6 +60,11 @@ class SocketService {
         reconnectionAttempts: 5,
         path: '/socket.io'
     };
+
+    /** Maximum number of pending listeners before cleanup */
+    private static readonly MAX_PENDING_LISTENERS = 100;
+    /** Timeout for cleaning up pending listeners if connection fails */
+    private static readonly PENDING_CLEANUP_TIMEOUT_MS = 60000; // 1 minute
 
     private constructor() {
         // Private constructor for singleton
@@ -100,6 +111,9 @@ class SocketService {
 
         const finalConfig = { ...SocketService.DEFAULT_CONFIG, ...config };
 
+        // Setup cleanup timeout for pending listeners
+        this.schedulePendingCleanup();
+
         this.connectionPromise = new Promise<void>((resolve) => {
             // Create socket connection
             this.socket = io(finalConfig.url, {
@@ -119,6 +133,7 @@ class SocketService {
                 if (!resolved) {
                     resolved = true;
                     console.warn('⚠️ SocketService: Connection timeout - continuing without socket');
+                    this.clearPendingListeners(); // Clean up pending on timeout
                     resolve();
                 }
             }, 10000);
@@ -129,6 +144,7 @@ class SocketService {
 
                 // Apply any pending listeners
                 this.applyPendingListeners();
+                this.clearPendingCleanup(); // Clear cleanup timeout on success
 
                 if (!resolved) {
                     resolved = true;
@@ -149,12 +165,43 @@ class SocketService {
                 if (!resolved) {
                     resolved = true;
                     clearTimeout(timeout);
+                    this.clearPendingListeners(); // Clean up pending on error
                     resolve(); // Resolve anyway to not block app initialization
                 }
             });
         });
 
         return this.connectionPromise;
+    }
+
+    /**
+     * Schedule cleanup of pending listeners if connection never succeeds
+     */
+    private schedulePendingCleanup(): void {
+        this.clearPendingCleanup(); // Clear any existing timeout
+        this.pendingCleanupTimeout = setTimeout(() => {
+            if (!this.isConnected) {
+                console.warn('SocketService: Cleaning up pending listeners due to connection timeout');
+                this.clearPendingListeners();
+            }
+        }, SocketService.PENDING_CLEANUP_TIMEOUT_MS);
+    }
+
+    /**
+     * Clear the pending cleanup timeout
+     */
+    private clearPendingCleanup(): void {
+        if (this.pendingCleanupTimeout) {
+            clearTimeout(this.pendingCleanupTimeout);
+            this.pendingCleanupTimeout = null;
+        }
+    }
+
+    /**
+     * Clear all pending listeners (called on connection failure)
+     */
+    private clearPendingListeners(): void {
+        this.pendingListeners.clear();
     }
 
     /**
@@ -171,6 +218,7 @@ class SocketService {
     /**
      * Register an event listener
      * If socket isn't connected yet, queues the listener for later
+     * Includes protection against memory leaks
      */
     on(event: string, callback: SocketEventCallback): void {
         if (this.socket) {
@@ -180,7 +228,25 @@ class SocketService {
             if (!this.pendingListeners.has(event)) {
                 this.pendingListeners.set(event, new Set());
             }
-            this.pendingListeners.get(event)!.add(callback);
+            
+            const eventListeners = this.pendingListeners.get(event)!;
+            
+            // Check if we're approaching the limit
+            let totalPending = 0;
+            for (const listeners of this.pendingListeners.values()) {
+                totalPending += listeners.size;
+            }
+            
+            if (totalPending >= SocketService.MAX_PENDING_LISTENERS) {
+                console.warn(`SocketService: Pending listener limit (${SocketService.MAX_PENDING_LISTENERS}) reached, clearing old listeners`);
+                // Remove oldest entry (first key)
+                const firstKey = this.pendingListeners.keys().next().value;
+                if (firstKey) {
+                    this.pendingListeners.delete(firstKey);
+                }
+            }
+            
+            eventListeners.add(callback);
         }
     }
 
@@ -210,6 +276,9 @@ class SocketService {
      * Disconnect the socket
      */
     disconnect(): void {
+        this.clearPendingCleanup();
+        this.clearPendingListeners();
+        
         if (this.socket) {
             this.socket.disconnect();
             this.socket = null;
@@ -217,6 +286,9 @@ class SocketService {
             this.connectionPromise = null;
             this.notifyConnectionCallbacks(false);
         }
+        
+        // Also clear connection callbacks to prevent memory leaks
+        this.connectionCallbacks.clear();
     }
 
     /**

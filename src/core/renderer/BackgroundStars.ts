@@ -1,4 +1,4 @@
-/* Star background generator - Standalone version */
+/* Star background generator - Optimized version */
 const STARS_CONFIG = {
     COUNT: 200,
     COLORS: ['#ffff99', '#ffffff', '#99ccff', '#ff9999'],
@@ -10,9 +10,17 @@ const STARS_CONFIG = {
     }
 };
 
+/**
+ * Create star background with optimized DOM insertion
+ * Uses DocumentFragment to batch insertions and minimize reflows
+ */
 function createStars() {
     const starsContainer = document.getElementById('stars');
     if (!starsContainer) return;
+
+    // Use DocumentFragment to batch DOM operations
+    // This reduces 200 reflows to just 1 reflow
+    const fragment = document.createDocumentFragment();
 
     for (let i = 0; i < STARS_CONFIG.COUNT; i++) {
         const star = document.createElement('div');
@@ -27,12 +35,14 @@ function createStars() {
         star.style.setProperty('--star-color', color);
         star.style.setProperty('--star-shadow-size', `${size * 2}px`);
 
-
         star.style.setProperty('--star-animation-delay', `${Math.random() * STARS_CONFIG.ANIMATION.DELAY_MAX}s`);
         star.style.setProperty('--star-animation-duration', `${STARS_CONFIG.ANIMATION.DURATION_MIN + Math.random() * (STARS_CONFIG.ANIMATION.DURATION_MAX - STARS_CONFIG.ANIMATION.DURATION_MIN)}s`);
 
-        starsContainer.appendChild(star);
+        fragment.appendChild(star);
     }
+
+    // Single DOM insertion - reduces reflow from 200 to 1
+    starsContainer.appendChild(fragment);
 }
 
 // Initialize stars when DOM is loaded (fallback)

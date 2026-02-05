@@ -111,6 +111,12 @@ class GridWorldApp {
     private camera: THREE.PerspectiveCamera | null;
     private renderer: THREE.WebGLRenderer | null;
 
+    // Animation control
+    private rafId: number | null = null;
+    private isAnimating = false;
+    private isVisible = true;
+    private visibilityHandler: (() => void) | null = null;
+
     constructor() {
         this.isInitialized = false;
         this.lastTime = Date.now();
@@ -403,7 +409,33 @@ class GridWorldApp {
     }
 
     startRenderLoop(): void {
-        const renderLoop = (): void => {
+        if (this.isAnimating) return; // Prevent multiple loops
+        
+        this.isAnimating = true;
+        this.isVisible = !document.hidden;
+        
+        // Setup visibility handling (only once)
+        if (!this.visibilityHandler) {
+            this.visibilityHandler = () => {
+                if (document.hidden) {
+                    this.pauseRenderLoop();
+                } else {
+                    this.resumeRenderLoop();
+                }
+            };
+            document.addEventListener('visibilitychange', this.visibilityHandler);
+        }
+
+        // Use arrow function to avoid binding issues
+        const renderLoop = (timestamp: number): void => {
+            if (!this.isAnimating) return;
+
+            // When hidden, stop RAF completely instead of running empty loops
+            if (!this.isVisible) {
+                // Don't schedule next frame until visible again
+                return;
+            }
+
             const currentTime = Date.now();
             const deltaTime = currentTime - this.lastTime;
 
@@ -421,16 +453,77 @@ class GridWorldApp {
                 this.sceneManager.render(this.camera);
             }
 
-            // Update stats if in debug mode
-            if (getAppContext().debug) {
+            // Update stats if in debug mode (throttled to every 60 frames ~1 second)
+            if (getAppContext().debug && timestamp % 60 < 1) {
                 this.updateDebugStats(deltaTime);
             }
 
             this.lastTime = currentTime;
-            requestAnimationFrame(renderLoop);
+            this.rafId = requestAnimationFrame(renderLoop);
         };
 
-        requestAnimationFrame(renderLoop);
+        this.rafId = requestAnimationFrame(renderLoop);
+    }
+
+    /**
+     * Pause the render loop when tab is hidden
+     * Completely stops RAF to free up CPU/GPU
+     */
+    private pauseRenderLoop(): void {
+        this.isVisible = false;
+        // Cancel current RAF so the loop stops completely
+        if (this.rafId !== null) {
+            cancelAnimationFrame(this.rafId);
+            this.rafId = null;
+        }
+    }
+
+    /**
+     * Resume the render loop when tab becomes visible
+     */
+    private resumeRenderLoop(): void {
+        if (!this.isVisible && this.isAnimating) {
+            this.isVisible = true;
+            this.lastTime = Date.now(); // Prevent large delta jump
+            // Restart the RAF loop
+            const renderLoop = (timestamp: number): void => {
+                if (!this.isAnimating) return;
+                if (!this.isVisible) return;
+
+                const currentTime = Date.now();
+                const deltaTime = currentTime - this.lastTime;
+
+                if (this.cameraController) this.cameraController.animate();
+                if (this.sceneManager && this.camera) {
+                    this.sceneManager.updateCameraLight(this.camera);
+                    this.sceneManager.render(this.camera);
+                }
+
+                if (getAppContext().debug && timestamp % 60 < 1) {
+                    this.updateDebugStats(deltaTime);
+                }
+
+                this.lastTime = currentTime;
+                this.rafId = requestAnimationFrame(renderLoop);
+            };
+            this.rafId = requestAnimationFrame(renderLoop);
+        }
+    }
+
+    /**
+     * Stop the render loop completely
+     */
+    private stopRenderLoop(): void {
+        this.isAnimating = false;
+        if (this.rafId !== null) {
+            cancelAnimationFrame(this.rafId);
+            this.rafId = null;
+        }
+        // Remove visibility handler
+        if (this.visibilityHandler) {
+            document.removeEventListener('visibilitychange', this.visibilityHandler);
+            this.visibilityHandler = null;
+        }
     }
 
     updateDebugStats(deltaTime: number): void {
@@ -486,22 +579,61 @@ class GridWorldApp {
      * Clean up application resources
      */
     destroy(): void {
+        // Stop render loop first
+        this.stopRenderLoop();
+
+        // Clean up input handler (removes window/canvas event listeners)
+        if (this.inputHandler) {
+            this.inputHandler.destroy();
+        }
+
+        // Clean up heap meter
         if (this.heapMeter) {
             this.heapMeter.destroy();
         }
 
+        // Clean up calendar display
         if (this.calendarDisplay) {
             this.calendarDisplay.destroy();
         }
 
+        // Clean up calendar manager
         if (this.calendarManager) {
             this.calendarManager.destroy();
+        }
+
+        // Clean up tile selector
+        if (this.tileSelector) {
+            this.tileSelector.destroy();
+        }
+
+        // Clean up scene manager
+        if (this.sceneManager) {
+            this.sceneManager.cleanup();
+        }
+
+        // Dispose Three.js renderer
+        if (this.renderer) {
+            this.renderer.dispose();
         }
 
         // SocketService is a singleton - disconnect it
         if (this.socketService) {
             this.socketService.disconnect();
         }
+
+        // Clear references
+        this.inputHandler = null;
+        this.tileSelector = null;
+        this.sceneManager = null;
+        this.cameraController = null;
+        this.calendarManager = null;
+        this.calendarDisplay = null;
+        this.heapMeter = null;
+        this.socketService = null;
+        this.scene = null;
+        this.camera = null;
+        this.renderer = null;
     }
 }
 

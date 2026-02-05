@@ -357,7 +357,7 @@ class CalendarService extends EventEmitter {
     /**
      * Set a specific date
      */
-    setDate(day: number, month: number, year: number): boolean {
+    async setDate(day: number, month: number, year: number): Promise<boolean> {
         // Validate inputs
         if (day < 1 || day > this.config.daysPerMonth) {
             throw new Error(`Day must be between 1 and ${this.config.daysPerMonth}`);
@@ -381,7 +381,14 @@ class CalendarService extends EventEmitter {
             currentDate: { ...this.currentDate }
         });
 
-        this.saveStateToDB();
+        // Save to database with proper error handling
+        try {
+            await this.saveStateToDB();
+        } catch (error) {
+            console.error('Failed to save calendar state to database:', error);
+            // Continue with in-memory state even if DB save fails
+            // This prevents the application from crashing due to DB issues
+        }
 
         return true;
     }

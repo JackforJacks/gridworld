@@ -1,6 +1,12 @@
 /**
  * HeapMeter - Simple memory display with emojis
  * 🖥️ Client heap (Chrome only) | ☁️ Server heap
+ * 
+ * Optimized with:
+ * - Visibility-aware polling (pauses when tab hidden)
+ * - Proper cleanup of all intervals
+ * - Reduced polling frequency (5s instead of 1s)
+ * - Request deduplication
  */
 
 declare global {
@@ -11,8 +17,13 @@ declare global {
 
 class HeapMeter {
     private el: HTMLDivElement;
-    private timer: ReturnType<typeof setInterval>;
+    private displayTimer: ReturnType<typeof setInterval> | null = null;
+    private serverTimer: ReturnType<typeof setInterval> | null = null;
     private serverHeap = 0;
+    private isVisible = true;
+    private isFetching = false;
+    private readonly SERVER_FETCH_INTERVAL_MS = 5000; // Reduced from 1000ms
+    private readonly DISPLAY_UPDATE_INTERVAL_MS = 2000;
 
     constructor() {
         this.el = document.createElement('div');
@@ -21,9 +32,56 @@ class HeapMeter {
         document.body.appendChild(this.el);
 
         this.update();
-        this.timer = setInterval(() => this.update(), 2000);
+        this.startTimers();
+        this.setupVisibilityHandling();
+    }
+
+    /**
+     * Start all timers
+     */
+    private startTimers(): void {
+        // Update display every 2 seconds
+        this.displayTimer = setInterval(() => this.update(), this.DISPLAY_UPDATE_INTERVAL_MS);
+        
+        // Fetch server data every 5 seconds (reduced from 1s to save battery/network)
         this.fetchServer();
-        setInterval(() => this.fetchServer(), 1000);
+        this.serverTimer = setInterval(() => this.fetchServer(), this.SERVER_FETCH_INTERVAL_MS);
+    }
+
+    /**
+     * Pause timers when tab is hidden to save battery/network
+     */
+    private setupVisibilityHandling(): void {
+        document.addEventListener('visibilitychange', () => {
+            if (document.hidden) {
+                this.pause();
+            } else {
+                this.resume();
+            }
+        });
+    }
+
+    /**
+     * Pause polling when tab is not visible
+     */
+    private pause(): void {
+        this.isVisible = false;
+        if (this.serverTimer) {
+            clearInterval(this.serverTimer);
+            this.serverTimer = null;
+        }
+    }
+
+    /**
+     * Resume polling when tab becomes visible
+     */
+    private resume(): void {
+        if (!this.isVisible) {
+            this.isVisible = true;
+            // Immediate fetch on resume for fresh data
+            this.fetchServer();
+            this.serverTimer = setInterval(() => this.fetchServer(), this.SERVER_FETCH_INTERVAL_MS);
+        }
     }
 
     private fmt(b: number): string {
@@ -36,16 +94,47 @@ class HeapMeter {
         this.el.textContent = [client, server].filter(Boolean).join(' ');
     }
 
+    /**
+     * Fetch server memory with request deduplication
+     * Prevents multiple concurrent requests
+     */
     private async fetchServer(): Promise<void> {
+        if (this.isFetching) return; // Skip if already fetching
+        
+        this.isFetching = true;
         try {
-            const r = await fetch('/api/system/memory');
-            const d = await r.json();
-            if (d.data?.heapUsed) this.serverHeap = d.data.heapUsed;
-        } catch { /* ignore */ }
+            const controller = new AbortController();
+            const timeoutId = setTimeout(() => controller.abort(), 5000); // 5s timeout
+            
+            const r = await fetch('/api/system/memory', { 
+                signal: controller.signal 
+            });
+            clearTimeout(timeoutId);
+            
+            if (r.ok) {
+                const d = await r.json();
+                if (d.data?.heapUsed) this.serverHeap = d.data.heapUsed;
+            }
+        } catch { 
+            // Ignore fetch errors silently
+        } finally {
+            this.isFetching = false;
+        }
     }
 
+    /**
+     * Clean up all resources
+     * Call this when component is destroyed
+     */
     destroy(): void {
-        clearInterval(this.timer);
+        if (this.displayTimer) {
+            clearInterval(this.displayTimer);
+            this.displayTimer = null;
+        }
+        if (this.serverTimer) {
+            clearInterval(this.serverTimer);
+            this.serverTimer = null;
+        }
         this.el.remove();
     }
 }
