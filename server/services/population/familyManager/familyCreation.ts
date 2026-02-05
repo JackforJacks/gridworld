@@ -47,6 +47,7 @@ export async function createFamily(
 
         // Validate sex
         if (!isMale(husband.sex) || !isFemale(wife.sex)) {
+            console.warn(`[createFamily] Sex validation failed - husband.sex=${husband.sex} (type: ${typeof husband.sex}), wife.sex=${wife.sex} (type: ${typeof wife.sex})`);
             return { family: null, failureReason: 'invalid_sex' as const };
         }
 

@@ -11,6 +11,7 @@ export interface ApiResponse<T = unknown> {
     data?: T;
     error?: string;
     message?: string;
+    skipped?: boolean;
 }
 
 /** Calendar state from API */
@@ -398,7 +399,10 @@ class ApiClient {
      * Restart the world (regenerate everything)
      */
     async worldRestart(): Promise<ApiResponse> {
-        return this.request<ApiResponse>('/api/worldrestart', { method: 'POST' });
+        return this.request<ApiResponse>('/api/worldrestart', { 
+            method: 'POST',
+            body: JSON.stringify({ confirm: 'DELETE_ALL_DATA' })
+        });
     }
 
     /**

@@ -91,7 +91,7 @@ interface StoredTileData {
 interface Person {
     id: number;
     tile_id: number;
-    sex: 'M' | 'F';
+    sex: boolean; // true=male, false=female
     date_of_birth: string;
     residency: number | null;
     family_id: number | null;
@@ -128,7 +128,7 @@ interface IntegrityResult {
 
 const POPULATED_TILE_RATIO = 0.6; // Seed 60% of habitable tiles
 const PEOPLE_PER_TILE_MIN = 0;
-const PEOPLE_PER_TILE_MAX = 3000;
+const PEOPLE_PER_TILE_MAX = 100;
 const CALENDAR_START_YEAR = 4000;
 
 // Village names pool
@@ -504,7 +504,7 @@ async function createPopulation(seed: number, tileCount: number): Promise<Popula
 
         for (let i = 0; i < peopleCount; i++) {
             const personId = allPersonIds[personIdIndex++];
-            const sex = rng() < 0.5 ? 'M' : 'F';
+            const isMale = rng() < 0.5; // true=male, false=female
             const age = 18 + Math.floor(rng() * 40); // 18-57 years old
             const birthYear = CALENDAR_START_YEAR - age;
             const birthMonth = 1 + Math.floor(rng() * 12);
@@ -513,7 +513,7 @@ async function createPopulation(seed: number, tileCount: number): Promise<Popula
             const person: Person = {
                 id: personId,
                 tile_id: tileId,
-                sex: sex as 'M' | 'F',
+                sex: isMale,
                 date_of_birth: `${birthYear}-${String(birthMonth).padStart(2, '0')}-${String(birthDay).padStart(2, '0')}`,
                 residency: null,
                 family_id: null
@@ -521,7 +521,13 @@ async function createPopulation(seed: number, tileCount: number): Promise<Popula
 
             allPeople.push(person);
             pipeline.hset('person', personId.toString(), JSON.stringify(person));
-            pipelineCount++;
+            
+            // Add to eligible sets for matchmaking (all new adults without families are eligible)
+            const eligibleSetKey = isMale ? `eligible:males:tile:${tileId}` : `eligible:females:tile:${tileId}`;
+            const tilesSetKey = isMale ? 'tiles_with_eligible_males' : 'tiles_with_eligible_females';
+            pipeline.sadd(eligibleSetKey, personId.toString());
+            pipeline.sadd(tilesSetKey, tileId.toString());
+            pipelineCount += 3; // Count all 3 commands
 
             // Flush pipeline in chunks to avoid memory issues
             if (pipelineCount >= PIPELINE_CHUNK_SIZE) {
@@ -537,7 +543,28 @@ async function createPopulation(seed: number, tileCount: number): Promise<Popula
         await pipeline.exec();
     }
 
-    console.log(`   Created ${allPeople.length} people on ${selectedTiles.length} tiles`);
+    // DEBUG: Verify a sample of eligible sets are correctly populated
+    const sampleTile = selectedTiles[0];
+    const maleSetMembers = await storage.smembers(`eligible:males:tile:${sampleTile}`) || [];
+    const femaleSetMembers = await storage.smembers(`eligible:females:tile:${sampleTile}`) || [];
+    
+    if (maleSetMembers.length > 0) {
+        const sampleMaleJson = await storage.hget('person', maleSetMembers[0]);
+        if (sampleMaleJson) {
+            const sampleMale = JSON.parse(sampleMaleJson);
+            console.log(`   [WorldRestart] Verify males set: person ${maleSetMembers[0]} has sex=${sampleMale.sex} (expected: true)`);
+        }
+    }
+    if (femaleSetMembers.length > 0) {
+        const sampleFemaleJson = await storage.hget('person', femaleSetMembers[0]);
+        if (sampleFemaleJson) {
+            const sampleFemale = JSON.parse(sampleFemaleJson);
+            console.log(`   [WorldRestart] Verify females set: person ${femaleSetMembers[0]} has sex=${sampleFemale.sex} (expected: false)`);
+        }
+    }
+    console.log(`   [WorldRestart] Tile ${sampleTile}: ${maleSetMembers.length} in males set, ${femaleSetMembers.length} in females set`);
+
+    console.log(`   Created ${allPeople.length} people on ${selectedTiles.length} tiles (added to eligible sets)`);
 
     return {
         habitableTiles: habitableTileIds.length,

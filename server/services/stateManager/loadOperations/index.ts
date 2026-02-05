@@ -1,9 +1,7 @@
 // Load Operations - Main Orchestrator Module
-// Redis-first: Uses unified WorldRestart service for initialization
-// Postgres is only used for explicit save/load/autosave operations
+// Handles loading saved state from PostgreSQL into Redis
 
 import storage from '../../storage';
-import { restartWorld } from '../../worldRestart';
 import { LoadContext, LoadResult, SeedWorldResult, Pipeline } from './types';
 import { clearExistingStorageState } from './storageClear';
 import { fetchTiles, fetchTilesLands, TileLoadResult, LandLoadResult } from './tileLoader';
@@ -22,42 +20,89 @@ import { loadFamilies } from './familyLoader';
 const PIPELINE_CHUNK_SIZE = 2000;
 
 /**
- * Initialize state on server startup (Redis-only, no Postgres)
- * Uses unified WorldRestart service for clean, optimized initialization
- * Postgres is only used for explicit save/load/autosave operations
+ * Load state from PostgreSQL into Redis
+ * This is used when explicitly clicking "Load" to restore saved state
  * @param context - StateManager context with calendarService, io
  * @returns Load results
  */
 export async function loadFromDatabase(context: LoadContext): Promise<LoadResult> {
     if (!storage.isAvailable()) {
-        console.warn('⚠️ storage not available, skipping state load');
-        return { villages: 0, people: 0, families: 0, skipped: true };
+        console.warn('⚠️ storage not available, cannot load from database');
+        throw new Error('Storage not available - cannot load from database');
     }
 
-    // Use unified WorldRestart service for initialization
-    const result = await restartWorld({
-        skipCalendarReset: false,
-        context: {
-            calendarService: context.calendarService,
-            io: context.io
+    console.log('📂 [LoadOperations] Loading state from PostgreSQL...');
+    const startTime = Date.now();
+
+    // Pause calendar during load
+    const calendarWasRunning = pauseCalendar(context);
+
+    try {
+        // Clear existing Redis state
+        await clearExistingStorageState();
+
+        // Fetch tiles, lands, villages first (needed for people lookup)
+        const [tilesResult, landsResult, villagesResult] = await Promise.all([
+            fetchTiles(),
+            fetchTilesLands(),
+            fetchVillages()
+        ]);
+
+        // Fetch people and families (people needs village lookup)
+        const [peopleResult, familiesResult, landCountsResult] = await Promise.all([
+            fetchPeople(villagesResult.villageLookup),
+            fetchFamilies(),
+            fetchClearedLandCounts()
+        ]);
+
+        console.log(`   Fetched: ${tilesResult.tiles.length} tiles, ${villagesResult.villages.length} villages, ${peopleResult.people.length} people, ${familiesResult.families.length} families`);
+
+        // If database is empty, fail with clear error message
+        if (tilesResult.tiles.length === 0) {
+            resumeCalendar(context, calendarWasRunning);
+            throw new Error('Database is empty - no saved data to load. Use Reset to create a new world first.');
         }
-    });
 
-    if (!result.success) {
-        console.error('❌ World restart failed:', result.error);
-        return { villages: 0, people: 0, families: 0, skipped: true };
+        if (peopleResult.people.length === 0) {
+            resumeCalendar(context, calendarWasRunning);
+            throw new Error('No population data found in database. Use Reset to create a new world first.');
+        }
+
+        // Write all data to Redis in batched pipeline
+        await executeChunkedPipeline(tilesResult, landsResult, villagesResult, peopleResult, familiesResult, landCountsResult);
+
+        // Validate and repair village consistency if needed
+        await validateAndRepairVillages(peopleResult.people);
+
+        // Populate eligible sets for matchmaking
+        await populateEligibleSets(peopleResult.people, context.calendarService, familiesResult.families);
+
+        // Populate fertile families sets
+        await populateFertileFamilies(familiesResult.families, peopleResult.people, context.calendarService);
+
+        // Reload calendar state from DB
+        await reloadCalendarState(context);
+
+        // Resume calendar if it was running
+        resumeCalendar(context, calendarWasRunning);
+
+        const elapsed = Date.now() - startTime;
+        console.log(`✅ [LoadOperations] Loaded from PostgreSQL in ${elapsed}ms — ${tilesResult.tiles.length} tiles, ${villagesResult.villages.length} villages, ${peopleResult.people.length} people, ${familiesResult.families.length} families`);
+
+        return {
+            villages: villagesResult.villages.length,
+            people: peopleResult.people.length,
+            families: familiesResult.families.length,
+            male: peopleResult.maleCount,
+            female: peopleResult.femaleCount,
+            tiles: tilesResult.tiles.length,
+            tilesLands: landsResult.count
+        };
+    } catch (error) {
+        console.error('❌ [LoadOperations] Failed to load from PostgreSQL:', error);
+        resumeCalendar(context, calendarWasRunning);
+        throw error;
     }
-
-    return {
-        villages: result.villages,
-        people: result.people,
-        families: 0,
-        male: 0,
-        female: 0,
-        tiles: result.tiles,
-        tilesLands: 0,
-        seeded: true
-    };
 }
 
 /**

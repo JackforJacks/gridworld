@@ -103,8 +103,8 @@ export async function batchRemovePersons(personIds: number[], markDeleted: boole
             else removePipeline.hincrby('counts:global', 'female', -1);
 
             if (person.tile_id) {
-                const sex = checkIsMale(person.sex) ? 'male' : 'female';
-                removePipeline.srem(`eligible:${sex}:${person.tile_id}`, personIdStr);
+                const setKey = checkIsMale(person.sex) ? `eligible:males:tile:${person.tile_id}` : `eligible:females:tile:${person.tile_id}`;
+                removePipeline.srem(setKey, personIdStr);
             }
 
             removePipeline.hdel('person', personIdStr);
@@ -335,11 +335,11 @@ export async function reassignIds(mappings: IdMapping[]): Promise<void> {
                 writePipeline.sadd(`village:${person.tile_id}:${person.residency}:people`, newId.toString());
             }
 
-            const sex = checkIsMale(person.sex) ? 'male' : 'female';
             if (person.tile_id) {
-                writePipeline.srem(`eligible:${sex}:${person.tile_id}`, tempId.toString());
+                const setKey = checkIsMale(person.sex) ? `eligible:males:tile:${person.tile_id}` : `eligible:females:tile:${person.tile_id}`;
+                writePipeline.srem(setKey, tempId.toString());
                 if (!person.family_id) {
-                    writePipeline.sadd(`eligible:${sex}:${person.tile_id}`, newId.toString());
+                    writePipeline.sadd(setKey, newId.toString());
                 }
             }
 

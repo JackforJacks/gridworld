@@ -489,6 +489,16 @@ kbd {
     background: #4CAF50;
 }
 
+.load-button.loaded {
+    background: #4CAF50;
+}
+
+.save-button.error,
+.load-button.error {
+    background: #f44336;
+    color: white;
+}
+
 /* Tile Search */
 .tile-search-container {
     display: inline-flex;

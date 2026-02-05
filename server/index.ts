@@ -162,7 +162,23 @@ class GridWorldServer {
                 console.warn('⚠️ Failed to setup periodic population integrity monitor:', error?.message || e);
             }
         } catch (err: unknown) {
-            console.error('❌ Failed to initialize Redis state, falling back to PostgreSQL:', (err as Error).message);
+            console.error('❌ Failed to load state from PostgreSQL:', (err as Error).message);
+            console.log('🌍 Creating fresh world instead...');
+            
+            // Create a fresh world so the app is usable
+            try {
+                const { restartWorld } = await import('./services/worldRestart');
+                await restartWorld({
+                    skipCalendarReset: false,
+                    context: {
+                        calendarService: calendarServiceInstance,
+                        io: this.io
+                    }
+                });
+                console.log('✅ Fresh world created successfully');
+            } catch (restartErr: unknown) {
+                console.error('❌ Failed to create fresh world:', (restartErr as Error).message);
+            }
         }
 
         // Setup food production on calendar ticks (instead of interval timer)

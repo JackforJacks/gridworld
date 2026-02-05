@@ -163,8 +163,8 @@ module.exports = (env, argv) => {
           context: ['/api'],
           target: 'http://localhost:3000',
           changeOrigin: true,
-          timeout: 60000,
-          proxyTimeout: 60000,
+          timeout: 300000,      // 5 minutes for long save operations
+          proxyTimeout: 300000, // 5 minutes for long save operations
           onError: (err, req, res) => {
             // Silently handle connection resets - common with long-polling
             if (err.code !== 'ECONNRESET') {

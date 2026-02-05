@@ -31,7 +31,7 @@ interface Village {
 interface Person {
     id: number;
     tile_id: number | null;
-    sex: 'M' | 'F';
+    sex: boolean; // true=male, false=female
     date_of_birth: string;
     residency: number | null;
     family_id: number | null;
@@ -153,6 +153,11 @@ async function ensureVillagesForPopulatedTiles(options: EnsureVillagesOptions = 
         let totalCreated = 0;
         let skippedNoLands = 0;
         const allVillages: Village[] = [];
+        const totalTiles = populatedTileIds.length;
+        let processedTiles = 0;
+        const logInterval = Math.max(1, Math.floor(totalTiles / 10)); // Log every 10%
+
+        console.log(`[VillageManager] Processing ${totalTiles} populated tiles...`);
 
         for (const tileIdStr of populatedTileIds) {
             const tileId = parseInt(tileIdStr);
@@ -229,7 +234,14 @@ async function ensureVillagesForPopulatedTiles(options: EnsureVillagesOptions = 
             if (!force) {
                 allVillages.push(...existingVillages);
             }
+
+            processedTiles++;
+            if (processedTiles % logInterval === 0 || processedTiles === totalTiles) {
+                console.log(`[VillageManager] Progress: ${processedTiles}/${totalTiles} tiles processed...`);
+            }
         }
+
+        console.log(`[VillageManager] Tile processing complete. Starting residency assignment...`);
 
         // Step 4: Assign residency to all people (only for tiles with villages)
         const tilesWithVillages = populatedTileIds.filter(tid => {
@@ -371,6 +383,8 @@ async function createClearedChunksForTile(tileId: number, count: number): Promis
  * Assign residency to all people on populated tiles
  */
 async function assignResidencyToAllPeople(populatedTileIds: string[], allVillages: Village[], peopleByTile: PeopleByTile): Promise<number> {
+    console.log(`[VillageManager] assignResidencyToAllPeople: ${populatedTileIds.length} tiles, ${allVillages.length} villages`);
+    
     // Group villages by tile for quick lookup
     const villagesByTile: VillagesByTile = {};
     for (const v of allVillages) {
@@ -400,14 +414,18 @@ async function assignResidencyToAllPeople(populatedTileIds: string[], allVillage
             }
         }
     }
+    console.log('[VillageManager] Executing removePipeline...');
     await removePipeline.exec();
+    console.log('[VillageManager] removePipeline done.');
 
     // Now clear the target sets to ensure they're empty before we populate
     const clearPipeline = storage.pipeline();
     for (const key of newSetKeys) {
         clearPipeline.del(key);
     }
+    console.log('[VillageManager] Executing clearPipeline...');
     await clearPipeline.exec();
+    console.log('[VillageManager] clearPipeline done. Starting assignments...');
 
     let totalAssigned = 0;
     const personPipeline = storage.pipeline();
@@ -470,9 +488,13 @@ async function assignResidencyToAllPeople(populatedTileIds: string[], allVillage
     }
 
     // Execute all updates
+    console.log(`[VillageManager] Executing final pipelines (${totalAssigned} assignments made)...`);
     await personPipeline.exec();
+    console.log('[VillageManager] personPipeline done.');
     await villagePipeline.exec();
+    console.log('[VillageManager] villagePipeline done.');
     await membershipPipeline.exec();
+    console.log('[VillageManager] membershipPipeline done.');
 
     return totalAssigned;
 }
@@ -545,11 +567,107 @@ async function repairVillageConsistency() {
     // Force regenerate all villages
     const result = await ensureVillagesForPopulatedTiles({ force: true });
 
+    // Rebuild eligible sets for all people without families
+    await rebuildEligibleSets();
+
     return {
         repaired: true,
         issues: validation.issues,
         result
     };
+}
+
+/**
+ * Rebuild eligible sets from scratch for all people without families
+ */
+async function rebuildEligibleSets(): Promise<void> {
+    console.log('[VillageManager] Rebuilding eligible sets...');
+    
+    // Clear existing eligible sets
+    const eligibleKeys = await storage.keys('eligible:*');
+    const tileKeys = await storage.keys('tiles_with_eligible_*');
+    const pipeline = storage.pipeline();
+    
+    for (const key of [...eligibleKeys, ...tileKeys]) {
+        pipeline.del(key);
+    }
+    await pipeline.exec();
+    
+    // Get all people
+    const peopleRaw = await storage.hgetall('person') || {};
+    let added = 0;
+    let malesAdded = 0;
+    let femalesAdded = 0;
+    
+    const addPipeline = storage.pipeline();
+    const tilesWithMales = new Set<string>();
+    const tilesWithFemales = new Set<string>();
+    
+    for (const [id, json] of Object.entries(peopleRaw)) {
+        try {
+            const person = JSON.parse(json as string) as Person;
+            // Only add people without families (eligible for matchmaking)
+            if (person.family_id === null || person.family_id === undefined) {
+                const tileId = person.tile_id;
+                if (tileId !== null && tileId !== undefined) {
+                    // Handle all sex formats: true/'true'/'M'/1/'t' = male, false/'false'/'F'/0/'f' = female
+                    const sex = person.sex;
+                    const isMale = sex === true || sex === 'true' || sex === 1 || sex === 't' || sex === 'M';
+                    const setKey = isMale ? `eligible:males:tile:${tileId}` : `eligible:females:tile:${tileId}`;
+                    addPipeline.sadd(setKey, id);
+                    if (isMale) {
+                        tilesWithMales.add(String(tileId));
+                        malesAdded++;
+                    } else {
+                        tilesWithFemales.add(String(tileId));
+                        femalesAdded++;
+                    }
+                    added++;
+                }
+            }
+        } catch (e: unknown) {
+            // Skip invalid JSON
+        }
+    }
+    
+    console.log(`[VillageManager] rebuildEligibleSets: ${malesAdded} males, ${femalesAdded} females to add`);
+    
+    // Add tile set entries
+    for (const tileId of tilesWithMales) {
+        addPipeline.sadd('tiles_with_eligible_males', tileId);
+    }
+    for (const tileId of tilesWithFemales) {
+        addPipeline.sadd('tiles_with_eligible_females', tileId);
+    }
+    
+    await addPipeline.exec();
+    console.log('[VillageManager] rebuildEligibleSets: addPipeline executed.');
+    
+    // Verify a sample of entries to ensure correct sex assignment
+    const sampleMaleTile = Array.from(tilesWithMales)[0];
+    const sampleFemaleTile = Array.from(tilesWithFemales)[0];
+    if (sampleMaleTile) {
+        const maleSetMembers = await storage.smembers(`eligible:males:tile:${sampleMaleTile}`);
+        if (maleSetMembers && maleSetMembers.length > 0) {
+            const samplePersonJson = await storage.hget('person', maleSetMembers[0]);
+            if (samplePersonJson) {
+                const samplePerson = JSON.parse(samplePersonJson);
+                console.log(`[VillageManager] Verify males set: person ${maleSetMembers[0]} has sex=${samplePerson.sex} (type: ${typeof samplePerson.sex})`);
+            }
+        }
+    }
+    if (sampleFemaleTile) {
+        const femaleSetMembers = await storage.smembers(`eligible:females:tile:${sampleFemaleTile}`);
+        if (femaleSetMembers && femaleSetMembers.length > 0) {
+            const samplePersonJson = await storage.hget('person', femaleSetMembers[0]);
+            if (samplePersonJson) {
+                const samplePerson = JSON.parse(samplePersonJson);
+                console.log(`[VillageManager] Verify females set: person ${femaleSetMembers[0]} has sex=${samplePerson.sex} (type: ${typeof samplePerson.sex})`);
+            }
+        }
+    }
+    
+    console.log(`[VillageManager] Added ${added} people to eligible sets`);
 }
 
 export {

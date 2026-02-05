@@ -441,7 +441,8 @@ class UIManager {
         try {
             const result = await getApiClient().syncGame();
 
-            if (result.success) {
+            // Check for explicit failure or skipped load
+            if (result.success && !result.skipped) {
                 loadButton.classList.remove('loading');
                 loadButton.classList.add('loaded');
                 loadButton.innerHTML = '✅ Loaded!';
@@ -452,17 +453,20 @@ class UIManager {
                     window.location.reload();
                 }, 500);
             } else {
-                throw new Error(result.error || 'Load failed');
+                // Either success:false or skipped:true means load didn't complete properly
+                throw new Error(result.error || (result.skipped ? 'Load skipped - storage unavailable' : 'Load failed'));
             }
         } catch (error: unknown) {
             console.error('❌ Load failed:', error);
             loadButton.classList.remove('loading');
-            loadButton.innerHTML = '❌ Failed';
+            loadButton.classList.add('error');
+            loadButton.innerHTML = '❌ Load Failed';
 
             setTimeout(() => {
                 loadButton.innerHTML = originalText;
+                loadButton.classList.remove('error');
                 loadButton.disabled = false;
-            }, 2000);
+            }, 3000);
         }
     }
 

@@ -36,29 +36,34 @@ npm install
 Create a `.env` file in the project root:
 
 ```env
-# Server
-PORT=3000
-NODE_ENV=development
-
-# PostgreSQL
+# PostgreSQL Database Connection
+DB_USER=your_postgres_user
 DB_HOST=localhost
-DB_PORT=5432
 DB_NAME=gridworld
-DB_USER=postgres
-DB_PASSWORD=password
+DB_PASSWORD=your_postgres_password
+DB_PORT=5432
 
-# Redis (defaults to localhost:6379)
-REDIS_HOST=localhost
-REDIS_PORT=6379
+# World generation seed (change this to get a different world)
+WORLD_SEED=12345
 
-# Hexasphere Configuration
-HEXASPHERE_RADIUS=30
-HEXASPHERE_SUBDIVISIONS=3
+# Hexasphere Generation Parameters
+# RADIUS: Size of the sphere (default: 50)
+# SUBDIVISIONS: Detail level - tiles = 10n² + 2 (12 = 1,442 tiles)
+# TILE_WIDTH_RATIO: Gap between tiles (1 = touching)
+HEXASPHERE_RADIUS=50
+HEXASPHERE_SUBDIVISIONS=12
 HEXASPHERE_TILE_WIDTH_RATIO=1
 
-# Optional Features
-VERBOSE_LOGS=false
-AUTO_SAVE_ENABLED=false
+# Custom Calendar Configuration
+# 8 days per month, 12 months per year = 96 days/year
+CALENDAR_DAYS_PER_MONTH=8
+CALENDAR_MONTHS_PER_YEAR=12
+CALENDAR_START_YEAR=4000
+CALENDAR_START_MONTH=1
+CALENDAR_START_DAY=1
+CALENDAR_AUTO_START=true
+CALENDAR_DEFAULT_SPEED=1_day
+CALENDAR_TICK_INTERVAL_MS=1000
 ```
 
 ### 3. Initialize Database

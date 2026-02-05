@@ -545,8 +545,8 @@ async function createInitialTilesRedisFirst(): Promise<InitialTile[]> {
  */
 async function createInitialPopulationRedisFirst(tileId: number): Promise<number> {
     // PopulationState is imported at the top of the file
-    // Add 100-200 people per tile
-    const peopleCount: number = 100 + Math.floor(Math.random() * 100);
+    // Add 0-100 people per tile
+    const peopleCount: number = Math.floor(Math.random() * 101);
     const people: Person[] = [];
 
     for (let i = 0; i < peopleCount; i++) {
@@ -568,6 +568,12 @@ async function createInitialPopulationRedisFirst(tileId: number): Promise<number
 
     // Batch add all people
     await PopulationState.batchAddPersons(people, true);
+
+    // Add adults to eligible sets for matchmaking (people without families are eligible)
+    for (const person of people) {
+        const isMale = person.sex === true;
+        await PopulationState.addEligiblePerson(person.id, isMale, tileId);
+    }
 
     return peopleCount;
 }

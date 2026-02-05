@@ -80,7 +80,7 @@ export interface VillageData {
 export interface PersonData {
     id: number;
     tile_id: number | null;
-    sex: 'M' | 'F';
+    sex: boolean; // true=male, false=female
     date_of_birth: string;
     residency: number | null;
     family_id: number | null;

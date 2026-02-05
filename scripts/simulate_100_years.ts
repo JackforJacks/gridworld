@@ -371,9 +371,8 @@ async function gatherStats(
     let minors = 0, adults = 0, elderly = 0;
 
     for (const person of people) {
-        // Handle both boolean and string sex formats
-        const isMale = person.sex === true || person.sex === 'M';
-        if (isMale) males++; else females++;
+        // sex is boolean: true=male, false=female
+        if (person.sex === true) males++; else females++;
 
         if (person.date_of_birth) {
             const age = calculateAge(person.date_of_birth, year, month, day);
