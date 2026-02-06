@@ -196,6 +196,7 @@ class CameraController {
     handleResize(width: number, height: number): void {
         this.camera.aspect = width / height;
         this.camera.updateProjectionMatrix();
+        if (this.onChange) this.onChange();
     }
 }
 

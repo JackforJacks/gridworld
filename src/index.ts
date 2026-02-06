@@ -520,7 +520,7 @@ class GridWorldApp {
         if (!this.isVisible && this.isAnimating) {
             this.isVisible = true;
             this.lastTime = Date.now(); // Prevent large delta jump
-            // Restart the RAF loop
+            // Restart the RAF loop with render-on-demand
             const renderLoop = (timestamp: number): void => {
                 if (!this.isAnimating) return;
                 if (!this.isVisible) return;
@@ -528,10 +528,21 @@ class GridWorldApp {
                 const currentTime = Date.now();
                 const deltaTime = currentTime - this.lastTime;
 
-                if (this.cameraController) this.cameraController.animate();
-                if (this.sceneManager && this.camera) {
+                // Update camera controller - returns true if camera moved
+                let cameraMoved = false;
+                if (this.cameraController) {
+                    cameraMoved = this.cameraController.animate();
+                }
+
+                // Determine if we need to render (render-on-demand)
+                const shouldRender = this.needsRender || 
+                                     cameraMoved || 
+                                     (this.cameraController?.isAutoRotating() ?? false);
+
+                if (shouldRender && this.sceneManager && this.camera) {
                     this.sceneManager.updateCameraLight(this.camera);
                     this.sceneManager.render(this.camera);
+                    this.needsRender = false; // Reset dirty flag
                 }
 
                 if (getAppContext().debug && timestamp % 60 < 1) {
