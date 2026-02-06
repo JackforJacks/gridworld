@@ -1,5 +1,5 @@
 // Scene Manager - Tile Overlays
-// Merged overlay system - all population overlays in single BufferGeometry (1 draw call)
+// Handles population overlay meshes on tiles
 import * as THREE from 'three';
 import { BoundaryPoint, HexTile, AnyPoint } from './types';
 import { normalizePoint } from './geometryBuilder';
@@ -23,12 +23,57 @@ const FLASH_CONFIG = {
 };
 
 /**
- * Merged overlay mesh data
+ * Create an overlay mesh for a tile
  */
-interface MergedOverlayData {
-    mesh: THREE.Mesh;
-    geometry: THREE.BufferGeometry;
-    tileIndices: Map<string, { start: number; count: number }>;
+export function createTileOverlay(tile: HexTile): THREE.Mesh | null {
+    // Build overlay geometry from tile boundary
+    const center = normalizePoint(tile.centerPoint);
+    const boundaryPoints = tile.boundary.map((p: AnyPoint) => {
+        const pt = normalizePoint(p);
+        const scale = 1.0; // Same size as tile
+        const x = center.x + (pt.x - center.x) * scale;
+        const y = center.y + (pt.y - center.y) * scale;
+        const z = center.z + (pt.z - center.z) * scale;
+        return new THREE.Vector3(x, y, z);
+    });
+
+    if (boundaryPoints.length < 3) return null;
+
+    const geometry = new THREE.BufferGeometry();
+    const vertices: number[] = [];
+
+    // Triangle fan triangulation
+    for (let i = 1; i < boundaryPoints.length - 1; i++) {
+        const p0 = boundaryPoints[0];
+        const p1 = boundaryPoints[i];
+        const p2 = boundaryPoints[i + 1];
+        vertices.push(p0.x, p0.y, p0.z);
+        vertices.push(p1.x, p1.y, p1.z);
+        vertices.push(p2.x, p2.y, p2.z);
+    }
+
+    geometry.setAttribute('position', new THREE.Float32BufferAttribute(vertices, 3));
+    geometry.computeVertexNormals();
+
+    const material = new THREE.MeshBasicMaterial({
+        color: OVERLAY_CONFIG.color,
+        transparent: true,
+        opacity: OVERLAY_CONFIG.opacity,
+        depthWrite: true
+    });
+
+    const overlayMesh = new THREE.Mesh(geometry, material);
+    overlayMesh.renderOrder = OVERLAY_CONFIG.renderOrder;
+
+    return overlayMesh;
+}
+
+/**
+ * Dispose of an overlay (mesh or line) properly
+ */
+export function disposeOverlay(overlay: THREE.Mesh | THREE.Line): void {
+    overlay.geometry.dispose();
+    (overlay.material as THREE.Material).dispose();
 }
 
 /**
@@ -71,159 +116,69 @@ export function createFlashOverlay(tile: HexTile): THREE.Line | null {
 }
 
 /**
- * Builds merged overlay geometry from multiple tiles
- * Returns single BufferGeometry containing all tile overlays
- */
-function buildMergedOverlayGeometry(tiles: HexTile[]): THREE.BufferGeometry | null {
-    if (tiles.length === 0) return null;
-
-    const allVertices: number[] = [];
-    const tileIndices = new Map<string, { start: number; count: number }>();
-
-    for (const tile of tiles) {
-        const center = normalizePoint(tile.centerPoint);
-        const boundaryPoints = tile.boundary.map((p: AnyPoint) => {
-            const pt = normalizePoint(p);
-            const scale = 1.0;
-            const x = center.x + (pt.x - center.x) * scale;
-            const y = center.y + (pt.y - center.y) * scale;
-            const z = center.z + (pt.z - center.z) * scale;
-            return new THREE.Vector3(x, y, z);
-        });
-
-        if (boundaryPoints.length < 3) continue;
-
-        const startIndex = allVertices.length / 3;
-        let triangleCount = 0;
-
-        // Triangle fan triangulation for this tile
-        for (let i = 1; i < boundaryPoints.length - 1; i++) {
-            const p0 = boundaryPoints[0];
-            const p1 = boundaryPoints[i];
-            const p2 = boundaryPoints[i + 1];
-            allVertices.push(p0.x, p0.y, p0.z);
-            allVertices.push(p1.x, p1.y, p1.z);
-            allVertices.push(p2.x, p2.y, p2.z);
-            triangleCount++;
-        }
-
-        tileIndices.set(String(tile.id), {
-            start: startIndex,
-            count: triangleCount * 3
-        });
-    }
-
-    if (allVertices.length === 0) return null;
-
-    const geometry = new THREE.BufferGeometry();
-    geometry.setAttribute('position', new THREE.Float32BufferAttribute(allVertices, 3));
-    geometry.computeVertexNormals();
-
-    // Store tile indices for potential future use
-    (geometry as unknown as { userData: { tileIndices: Map<string, { start: number; count: number }> } }).userData = { tileIndices };
-
-    return geometry;
-}
-
-/**
- * Manages tile overlay state with merged geometry (single draw call)
+ * Manages tile overlay state
  */
 export class TileOverlayManager {
     private scene: THREE.Scene;
-    private mergedOverlay: MergedOverlayData | null = null;
+    private overlays: Map<string, THREE.Mesh> = new Map();
     private flashOverlays: Map<string, THREE.Line> = new Map();
     private flashTimers: Map<string, { timeout: ReturnType<typeof setTimeout>; interval: ReturnType<typeof setInterval> }> = new Map();
-    private tileIds: Set<string> = new Set();
 
     constructor(scene: THREE.Scene) {
         this.scene = scene;
     }
 
     /**
-     * Rebuild merged overlay with all populated tiles
-     * Call this after population changes instead of individual add/remove
+     * Add overlay for a tile
      */
-    rebuild(tiles: HexTile[]): void {
-        // Dispose old merged overlay
-        if (this.mergedOverlay) {
-            this.scene.remove(this.mergedOverlay.mesh);
-            this.mergedOverlay.geometry.dispose();
-            (this.mergedOverlay.mesh.material as THREE.Material).dispose();
-            this.mergedOverlay = null;
-        }
+    add(tile: HexTile): void {
+        const tileId = String(tile.id);
 
-        if (tiles.length === 0) return;
+        // Remove existing overlay first
+        this.remove(tileId);
 
-        // Build new merged geometry
-        const geometry = buildMergedOverlayGeometry(tiles);
-        if (!geometry) return;
-
-        const material = new THREE.MeshBasicMaterial({
-            color: OVERLAY_CONFIG.color,
-            transparent: true,
-            opacity: OVERLAY_CONFIG.opacity,
-            depthWrite: true
-        });
-
-        const mesh = new THREE.Mesh(geometry, material);
-        mesh.renderOrder = OVERLAY_CONFIG.renderOrder;
-
-        this.scene.add(mesh);
-
-        this.mergedOverlay = {
-            mesh,
-            geometry,
-            tileIndices: (geometry as unknown as { userData: { tileIndices: Map<string, { start: number; count: number }> } }).userData.tileIndices
-        };
-
-        // Track tile IDs
-        this.tileIds.clear();
-        for (const tile of tiles) {
-            this.tileIds.add(String(tile.id));
+        const overlay = createTileOverlay(tile);
+        if (overlay) {
+            this.scene.add(overlay);
+            this.overlays.set(tileId, overlay);
         }
     }
 
     /**
-     * Legacy: Add overlay for a tile (no-op in merged system - use rebuild)
-     * Kept for API compatibility
+     * Remove overlay for a tile
      */
-    add(_tile: HexTile): void {
-        // Merged system requires rebuild() - individual add not supported
-    }
-
-    /**
-     * Legacy: Remove overlay for a tile (no-op in merged system - use rebuild)
-     * Kept for API compatibility
-     */
-    remove(_tileId: string): void {
-        // Merged system requires rebuild() - individual remove not supported
+    remove(tileId: string): void {
+        const overlay = this.overlays.get(tileId);
+        if (overlay) {
+            this.scene.remove(overlay);
+            disposeOverlay(overlay);
+            this.overlays.delete(tileId);
+        }
     }
 
     /**
      * Check if tile has an overlay
      */
     has(tileId: string): boolean {
-        return this.tileIds.has(tileId);
+        return this.overlays.has(tileId);
     }
 
     /**
      * Clear all overlays
      */
     clear(): void {
-        if (this.mergedOverlay) {
-            this.scene.remove(this.mergedOverlay.mesh);
-            this.mergedOverlay.geometry.dispose();
-            (this.mergedOverlay.mesh.material as THREE.Material).dispose();
-            this.mergedOverlay = null;
-        }
-        this.tileIds.clear();
+        this.overlays.forEach((overlay, _tileId) => {
+            this.scene.remove(overlay);
+            disposeOverlay(overlay);
+        });
+        this.overlays.clear();
     }
 
     /**
      * Get overlay count
      */
     get size(): number {
-        return this.tileIds.size;
+        return this.overlays.size;
     }
 
     /**
@@ -272,8 +227,7 @@ export class TileOverlayManager {
         const flashOverlay = this.flashOverlays.get(tileId);
         if (flashOverlay) {
             this.scene.remove(flashOverlay);
-            flashOverlay.geometry.dispose();
-            (flashOverlay.material as THREE.Material).dispose();
+            disposeOverlay(flashOverlay);
             this.flashOverlays.delete(tileId);
         }
     }

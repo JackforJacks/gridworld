@@ -261,10 +261,10 @@ class GridWorldApp {
                 import('./core/scene/init')
             ]);
 
-            // Initialize background stars - DISABLED for memory testing
-            // if (typeof initStars === 'function') {
-            //     initStars();
-            // }
+            // Initialize background stars
+            if (typeof initStars === 'function') {
+                initStars();
+            }
 
             // Create the hexasphere using server environment variables (with timing)
             console.log('🌐 Starting sphere initialization...');
@@ -422,45 +422,6 @@ class GridWorldApp {
         this.needsRender = true;
     }
 
-    /**
-     * Shared render frame logic - called by both startRenderLoop and resumeRenderLoop
-     * @param timestamp - RAF timestamp
-     * @param currentTime - Date.now() for consistency
-     * @returns deltaTime for diagnostics
-     */
-    private renderFrame(timestamp: number, currentTime: number): number {
-        const deltaTime = currentTime - this.lastTime;
-
-        // Update camera controller - returns true if camera moved
-        let cameraMoved = false;
-        if (this.cameraController) {
-            cameraMoved = this.cameraController.animate();
-        }
-
-        // Determine if we need to render
-        // Render if: explicitly requested, camera moved, or auto-rotating
-        const shouldRender = this.needsRender || 
-                             cameraMoved || 
-                             (this.cameraController?.isAutoRotating() ?? false);
-
-        if (shouldRender && this.sceneManager && this.camera) {
-            // Update camera-bound light
-            this.sceneManager.updateCameraLight(this.camera);
-            // Render the scene
-            this.sceneManager.render(this.camera);
-            // Reset the dirty flag
-            this.needsRender = false;
-        }
-
-        // Update stats if in debug mode (throttled to every 60 frames ~1 second)
-        if (getAppContext().debug && timestamp % 60 < 1) {
-            this.updateDebugStats(deltaTime);
-        }
-
-        this.lastTime = currentTime;
-        return deltaTime;
-    }
-
     startRenderLoop(): void {
         if (this.isAnimating) return; // Prevent multiple loops
         
@@ -493,6 +454,7 @@ class GridWorldApp {
             }
 
             const currentTime = Date.now();
+            const deltaTime = currentTime - this.lastTime;
             frameCount++;
 
             // Log memory every 10 seconds
@@ -505,9 +467,33 @@ class GridWorldApp {
                 lastMemoryLog = currentTime;
             }
 
-            // Use shared render frame logic
-            this.renderFrame(timestamp, currentTime);
+            // Update camera controller - returns true if camera moved
+            let cameraMoved = false;
+            if (this.cameraController) {
+                cameraMoved = this.cameraController.animate();
+            }
 
+            // Determine if we need to render
+            // Render if: explicitly requested, camera moved, or auto-rotating
+            const shouldRender = this.needsRender || 
+                                 cameraMoved || 
+                                 (this.cameraController?.isAutoRotating() ?? false);
+
+            if (shouldRender && this.sceneManager && this.camera) {
+                // Update camera-bound light
+                this.sceneManager.updateCameraLight(this.camera);
+                // Render the scene
+                this.sceneManager.render(this.camera);
+                // Reset the dirty flag
+                this.needsRender = false;
+            }
+
+            // Update stats if in debug mode (throttled to every 60 frames ~1 second)
+            if (getAppContext().debug && timestamp % 60 < 1) {
+                this.updateDebugStats(deltaTime);
+            }
+
+            this.lastTime = currentTime;
             this.rafId = requestAnimationFrame(renderLoop);
         };
 
@@ -534,16 +520,25 @@ class GridWorldApp {
         if (!this.isVisible && this.isAnimating) {
             this.isVisible = true;
             this.lastTime = Date.now(); // Prevent large delta jump
-            // Restart the RAF loop with shared render logic
+            // Restart the RAF loop
             const renderLoop = (timestamp: number): void => {
                 if (!this.isAnimating) return;
                 if (!this.isVisible) return;
 
                 const currentTime = Date.now();
+                const deltaTime = currentTime - this.lastTime;
 
-                // Use shared render frame logic
-                this.renderFrame(timestamp, currentTime);
+                if (this.cameraController) this.cameraController.animate();
+                if (this.sceneManager && this.camera) {
+                    this.sceneManager.updateCameraLight(this.camera);
+                    this.sceneManager.render(this.camera);
+                }
 
+                if (getAppContext().debug && timestamp % 60 < 1) {
+                    this.updateDebugStats(deltaTime);
+                }
+
+                this.lastTime = currentTime;
                 this.rafId = requestAnimationFrame(renderLoop);
             };
             this.rafId = requestAnimationFrame(renderLoop);
