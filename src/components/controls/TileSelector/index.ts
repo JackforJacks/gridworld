@@ -34,6 +34,8 @@ class TileSelector {
 
     // Store bound methods to avoid creating new functions each time
     private boundHandleClick: (event: MouseEvent) => void;
+    private boundDocumentClick: ((e: Event) => void) | null = null;
+    private boundDocumentKeydown: ((e: KeyboardEvent) => void) | null = null;
 
     // Render-on-demand callback
     private onChange: (() => void) | null = null;
@@ -57,26 +59,22 @@ class TileSelector {
         ctx.tileSelector = this;
         (window as unknown as { tileSelector: TileSelector }).tileSelector = this;
 
-        // Single event delegation for close button
-        if (!ctx.tileSelectorCloseHandlerAttached) {
-            document.addEventListener('click', (e: Event) => {
-                const target = e.target as HTMLElement;
-                if (target?.closest('#closeInfoPanel, .close-info-panel')) {
-                    e.preventDefault();
-                    e.stopPropagation();
-                    getAppContext().tileSelector?.deselectAll();
-                }
-            }, true);
-
-            // Escape key to close
-            document.addEventListener('keydown', (e: KeyboardEvent) => {
-                if (e.key === 'Escape') {
-                    getAppContext().tileSelector?.deselectAll();
-                }
-            });
-
-            ctx.tileSelectorCloseHandlerAttached = true;
-        }
+        // Single event delegation for close button (store references for cleanup)
+        this.boundDocumentClick = (e: Event) => {
+            const target = e.target as HTMLElement;
+            if (target?.closest('#closeInfoPanel, .close-info-panel')) {
+                e.preventDefault();
+                e.stopPropagation();
+                getAppContext().tileSelector?.deselectAll();
+            }
+        };
+        this.boundDocumentKeydown = (e: KeyboardEvent) => {
+            if (e.key === 'Escape') {
+                getAppContext().tileSelector?.deselectAll();
+            }
+        };
+        document.addEventListener('click', this.boundDocumentClick, true);
+        document.addEventListener('keydown', this.boundDocumentKeydown);
     }
 
     handleClick(event: MouseEvent): void {
@@ -354,7 +352,17 @@ class TileSelector {
     destroy(): void {
         this.stopRefresh();
         this.removeBorder();
-        
+
+        // Remove document event listeners to prevent memory leaks
+        if (this.boundDocumentClick) {
+            document.removeEventListener('click', this.boundDocumentClick, true);
+            this.boundDocumentClick = null;
+        }
+        if (this.boundDocumentKeydown) {
+            document.removeEventListener('keydown', this.boundDocumentKeydown);
+            this.boundDocumentKeydown = null;
+        }
+
         // Clear all references to help GC
         this.selectedTile = null;
         this.tileInfoPanel = null;
@@ -362,7 +370,8 @@ class TileSelector {
         this.camera = null as any;
         this.raycaster = null as any;
         this.borderLines = null;
-        
+        this.onChange = null;
+
         // Remove from global references
         const ctx = getAppContext();
         if (ctx.tileSelector === this) {

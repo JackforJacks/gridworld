@@ -194,6 +194,11 @@ class SceneManager {
         this.scene!.add(mesh);
         getAppContext().currentTiles = this.currentTiles;
 
+        // Create thin black borders between tiles
+        if (this.overlayManager && this.hexasphere?.tiles) {
+            this.overlayManager.createBorders(this.hexasphere.tiles);
+        }
+
         // Apply population data
         updateTilePopulations(this.hexasphere);
         if (this.overlayManager) {
@@ -219,6 +224,11 @@ class SceneManager {
         this.currentTiles.push(mesh);
         this.scene!.add(mesh);
         getAppContext().currentTiles = this.currentTiles;
+
+        // Create thin black borders between tiles
+        if (this.overlayManager && this.hexasphere?.tiles) {
+            this.overlayManager.createBorders(this.hexasphere.tiles);
+        }
 
         // Apply population data
         updateTilePopulations(this.hexasphere);
@@ -443,6 +453,7 @@ class SceneManager {
         if (this.currentTiles?.length > 0) {
             for (const tileMesh of this.currentTiles) {
                 this.scene!.remove(tileMesh);
+                tileMesh.userData = {};  // Release hexasphere reference for GC
                 if (tileMesh.geometry) tileMesh.geometry.dispose();
                 if (tileMesh.material) {
                     if (Array.isArray(tileMesh.material)) {
@@ -457,6 +468,7 @@ class SceneManager {
 
         if (this.hexasphereMesh) {
             this.scene!.remove(this.hexasphereMesh);
+            this.hexasphereMesh.userData = {};  // Release hexasphere reference for GC
             if (this.hexasphereMesh.geometry) this.hexasphereMesh.geometry.dispose();
             if (this.hexasphereMesh.material) {
                 if (Array.isArray(this.hexasphereMesh.material)) {
@@ -467,7 +479,16 @@ class SceneManager {
             }
             this.hexasphereMesh = null;
         }
+
+        // Clear tile borders
+        if (this.overlayManager) {
+            this.overlayManager.clearBorders();
+        }
+
         this.tileColorIndices.clear();
+
+        // Clear global reference to prevent retained mesh refs
+        getAppContext().currentTiles = [];
     }
 
     addLighting(camera: THREE.Camera, sphereRadius: number = 30): void {

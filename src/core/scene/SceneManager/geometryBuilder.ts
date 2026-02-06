@@ -375,7 +375,7 @@ export function createHexasphereMesh(geometry: THREE.BufferGeometry, hexasphere:
     // Use standard Phong material with vertex colors - works with Three.js lighting system
     const material = new THREE.MeshPhongMaterial({
         vertexColors: true,
-        side: THREE.DoubleSide,
+        side: THREE.FrontSide,
         shininess: 10  // Low shininess for matte planet look
     });
 

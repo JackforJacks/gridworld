@@ -728,25 +728,64 @@ function forceCleanup(): void {
 // Run cleanup before anything else
 forceCleanup();
 
-// Create and initialize the application
-const app = new GridWorldApp();
+// Store app reference globally so HMR can clean it up
+let app: GridWorldApp | null = null;
 
-// Initialize when DOM is ready
-window.addEventListener('load', async () => {
-    const success = await app.initialize();
-    if (success) {
-        app.startRenderLoop();
+// Destroy previous instance if it exists (HMR reload)
+if ((window as { __gridworld_app?: GridWorldApp }).__gridworld_app) {
+    console.log('[HMR] Destroying previous app instance');
+    (window as { __gridworld_app?: GridWorldApp }).__gridworld_app!.destroy();
+    (window as { __gridworld_app?: GridWorldApp }).__gridworld_app = undefined;
+}
 
-        // Expose app instance globally for debugging
-        (window as { GridWorldApp?: unknown }).GridWorldApp = app;
+app = new GridWorldApp();
+(window as { __gridworld_app?: GridWorldApp }).__gridworld_app = app;
+
+// Initialize app (handles both fresh load and HMR reload)
+async function initApp(): Promise<void> {
+    const currentApp = app;
+    if (!currentApp) return;
+    const success = await currentApp.initialize();
+    if (success && app === currentApp) {
+        currentApp.startRenderLoop();
+        (window as { GridWorldApp?: unknown }).GridWorldApp = currentApp;
     }
-});
+}
+
+if (document.readyState === 'complete') {
+    // HMR reload: page already loaded, initialize immediately
+    initApp();
+} else {
+    // Fresh load: wait for DOM
+    window.addEventListener('load', initApp);
+}
+
+// HMR: Properly dispose all GPU resources before module is replaced
+const hot = (module as unknown as { hot?: { dispose: (cb: () => void) => void; accept: () => void } }).hot;
+if (hot) {
+    hot.dispose(() => {
+        console.log('[HMR] Module disposing - cleaning up GPU resources');
+        if (app) {
+            app.destroy();
+            app = null;
+        }
+        // Force WebGL context loss on all canvases
+        document.querySelectorAll('canvas').forEach(canvas => {
+            const gl = canvas.getContext('webgl') || canvas.getContext('webgl2');
+            if (gl) {
+                const ext = gl.getExtension('WEBGL_lose_context');
+                if (ext) ext.loseContext();
+            }
+        });
+    });
+    hot.accept();
+}
 
 // FORCE CLEANUP on page unload/refresh to prevent memory retention
 window.addEventListener('beforeunload', () => {
     console.log('[Cleanup] beforeunload - forcing cleanup');
-    app.destroy();
-    
+    if (app) app.destroy();
+
     // Aggressive cleanup to prevent 2GB memory retention
     const canvases = document.querySelectorAll('canvas');
     canvases.forEach(canvas => {
@@ -768,13 +807,13 @@ window.addEventListener('beforeunload', () => {
 // Also cleanup on page hide (mobile)
 document.addEventListener('pagehide', () => {
     console.log('[Cleanup] pagehide - forcing cleanup');
-    app.destroy();
+    if (app) app.destroy();
 });
 
 // Expose key functions globally for compatibility
 window.createScene = async (...args: unknown[]): Promise<unknown> => {
     console.warn('createScene is deprecated. Use GridWorldApp instance instead.');
-    return app['sceneManager'] ? await (app as unknown as { sceneManager: SceneManager })['sceneManager'].createHexasphere() : null;
+    return app?.['sceneManager'] ? await (app as unknown as { sceneManager: SceneManager })['sceneManager'].createHexasphere() : null;
 };
 
 export default GridWorldApp;

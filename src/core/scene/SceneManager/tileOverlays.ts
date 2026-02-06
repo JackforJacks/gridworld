@@ -128,62 +128,182 @@ function buildMergedOverlayGeometry(tiles: HexTile[]): THREE.BufferGeometry | nu
     return geometry;
 }
 
+/** Border configuration */
+const BORDER_CONFIG = {
+    color: 0x000000,  // Black borders
+    opacity: 0.15,    // Very transparent - barely visible
+    lineWidth: 1,     // Minimum width
+    renderOrder: 5,   // Below overlays but above tiles
+    offset: 0.002     // Minimal offset to prevent z-fighting
+};
+
+/**
+ * Builds merged border geometry for all tiles
+ * Creates thin black lines along tile boundaries
+ */
+export function buildMergedBorderGeometry(tiles: HexTile[]): THREE.BufferGeometry | null {
+    if (tiles.length === 0) return null;
+
+    const allPoints: number[] = [];
+
+    for (const tile of tiles) {
+        const boundaryPoints = tile.boundary.map((p: AnyPoint) => {
+            const pt = normalizePoint(p);
+            // Offset slightly outward to prevent z-fighting with tile surface
+            const normal = new THREE.Vector3(pt.x, pt.y, pt.z).normalize();
+            return new THREE.Vector3(
+                pt.x + normal.x * BORDER_CONFIG.offset,
+                pt.y + normal.y * BORDER_CONFIG.offset,
+                pt.z + normal.z * BORDER_CONFIG.offset
+            );
+        });
+
+        if (boundaryPoints.length < 3) continue;
+
+        // Create line loop for this tile (each edge is a line segment)
+        for (let i = 0; i < boundaryPoints.length; i++) {
+            const current = boundaryPoints[i];
+            const next = boundaryPoints[(i + 1) % boundaryPoints.length];
+            
+            // Add line segment: current -> next
+            allPoints.push(current.x, current.y, current.z);
+            allPoints.push(next.x, next.y, next.z);
+        }
+    }
+
+    if (allPoints.length === 0) return null;
+
+    const geometry = new THREE.BufferGeometry();
+    geometry.setAttribute('position', new THREE.Float32BufferAttribute(allPoints, 3));
+
+    return geometry;
+}
+
 /**
  * Manages tile overlay state with merged geometry (single draw call)
  */
 export class TileOverlayManager {
     private scene: THREE.Scene;
     private mergedOverlay: MergedOverlayData | null = null;
+    private overlayMaterial: THREE.MeshBasicMaterial | null = null;
+    private overlayMesh: THREE.Mesh | null = null;
+    private borderLines: THREE.LineSegments | null = null;
     private flashOverlays: Map<string, THREE.Line> = new Map();
     private flashTimers: Map<string, { timeout: ReturnType<typeof setTimeout>; interval: ReturnType<typeof setInterval> }> = new Map();
     private tileIds: Set<string> = new Set();
 
     constructor(scene: THREE.Scene) {
         this.scene = scene;
-    }
-
-    /**
-     * Rebuild merged overlay with all populated tiles
-     * Call this after population changes instead of individual add/remove
-     */
-    rebuild(tiles: HexTile[]): void {
-        // Dispose old merged overlay
-        if (this.mergedOverlay) {
-            this.scene.remove(this.mergedOverlay.mesh);
-            this.mergedOverlay.geometry.dispose();
-            (this.mergedOverlay.mesh.material as THREE.Material).dispose();
-            this.mergedOverlay = null;
-        }
-
-        if (tiles.length === 0) return;
-
-        // Build new merged geometry
-        const geometry = buildMergedOverlayGeometry(tiles);
-        if (!geometry) return;
-
-        const material = new THREE.MeshBasicMaterial({
+        // Create material once and reuse
+        this.overlayMaterial = new THREE.MeshBasicMaterial({
             color: OVERLAY_CONFIG.color,
             transparent: true,
             opacity: OVERLAY_CONFIG.opacity,
             depthWrite: false
         });
+    }
 
-        const mesh = new THREE.Mesh(geometry, material);
-        mesh.renderOrder = OVERLAY_CONFIG.renderOrder;
+    /**
+     * Create thin black borders for all tiles
+     * Call once when tiles are created
+     */
+    createBorders(tiles: HexTile[]): void {
+        // Dispose old borders
+        if (this.borderLines) {
+            this.scene.remove(this.borderLines);
+            this.borderLines.geometry.dispose();
+            (this.borderLines.material as THREE.Material).dispose();
+            this.borderLines = null;
+        }
 
-        this.scene.add(mesh);
+        const geometry = buildMergedBorderGeometry(tiles);
+        if (!geometry) return;
+
+        const material = new THREE.LineBasicMaterial({
+            color: BORDER_CONFIG.color,
+            transparent: true,
+            opacity: BORDER_CONFIG.opacity,
+            depthWrite: false
+        });
+
+        this.borderLines = new THREE.LineSegments(geometry, material);
+        this.borderLines.renderOrder = BORDER_CONFIG.renderOrder;
+        this.scene.add(this.borderLines);
+    }
+
+    /**
+     * Clear borders (call when tiles are cleared)
+     */
+    clearBorders(): void {
+        if (this.borderLines) {
+            this.scene.remove(this.borderLines);
+            this.borderLines.geometry.dispose();
+            (this.borderLines.material as THREE.Material).dispose();
+            this.borderLines = null;
+        }
+    }
+
+    /**
+     * Rebuild merged overlay with all populated tiles
+     * Skips rebuild if the set of populated tiles hasn't changed.
+     * Reuses material and mesh object to avoid GPU memory churn.
+     */
+    rebuild(tiles: HexTile[]): void {
+        // Build new tile ID set and check if anything changed
+        const newTileIds = new Set<string>();
+        for (const tile of tiles) {
+            newTileIds.add(String(tile.id));
+        }
+
+        // Skip rebuild if populated tile set is identical
+        if (newTileIds.size === this.tileIds.size) {
+            let same = true;
+            for (const id of newTileIds) {
+                if (!this.tileIds.has(id)) { same = false; break; }
+            }
+            if (same) return;
+        }
+
+        // Dispose old geometry only (keep material and mesh for reuse)
+        if (this.mergedOverlay) {
+            // Clear tileIndices Map and userData to release references for GC
+            this.mergedOverlay.tileIndices.clear();
+            (this.mergedOverlay.geometry as unknown as { userData: unknown }).userData = null;
+            this.mergedOverlay.geometry.dispose();
+            this.mergedOverlay = null;
+        }
+
+        this.tileIds = newTileIds;
+
+        if (tiles.length === 0) {
+            // Hide mesh if no tiles
+            if (this.overlayMesh) this.overlayMesh.visible = false;
+            return;
+        }
+
+        // Build new merged geometry
+        const geometry = buildMergedOverlayGeometry(tiles);
+        if (!geometry) {
+            if (this.overlayMesh) this.overlayMesh.visible = false;
+            return;
+        }
+
+        if (this.overlayMesh) {
+            // Reuse existing mesh — just swap geometry
+            this.overlayMesh.geometry = geometry;
+            this.overlayMesh.visible = true;
+        } else {
+            // First time: create mesh and add to scene
+            this.overlayMesh = new THREE.Mesh(geometry, this.overlayMaterial!);
+            this.overlayMesh.renderOrder = OVERLAY_CONFIG.renderOrder;
+            this.scene.add(this.overlayMesh);
+        }
 
         this.mergedOverlay = {
-            mesh,
+            mesh: this.overlayMesh,
             geometry,
             tileIndices: (geometry as unknown as { userData: { tileIndices: Map<string, { start: number; count: number }> } }).userData.tileIndices
         };
-
-        // Track tile IDs
-        this.tileIds.clear();
-        for (const tile of tiles) {
-            this.tileIds.add(String(tile.id));
-        }
     }
 
     /**
@@ -210,14 +330,22 @@ export class TileOverlayManager {
     }
 
     /**
-     * Clear all overlays
+     * Clear all overlays and dispose all GPU resources
      */
     clear(): void {
         if (this.mergedOverlay) {
-            this.scene.remove(this.mergedOverlay.mesh);
+            this.mergedOverlay.tileIndices.clear();
+            (this.mergedOverlay.geometry as unknown as { userData: unknown }).userData = null;
             this.mergedOverlay.geometry.dispose();
-            (this.mergedOverlay.mesh.material as THREE.Material).dispose();
             this.mergedOverlay = null;
+        }
+        if (this.overlayMesh) {
+            this.scene.remove(this.overlayMesh);
+            this.overlayMesh = null;
+        }
+        if (this.overlayMaterial) {
+            this.overlayMaterial.dispose();
+            this.overlayMaterial = null;
         }
         this.tileIds.clear();
     }
