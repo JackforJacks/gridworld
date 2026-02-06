@@ -202,12 +202,12 @@ class CalendarManager {
     }
 
     /**
-     * Update internal state and notify listeners
+     * Update internal state and notify listeners.
+     * Avoids creating an oldState copy (no consumers use it).
      */
     private updateState(newState: CalendarState): void {
-        const oldState = { ...this.state };
         this.state = { ...newState };
-        this.emit('stateChanged', this.state, oldState);
+        this.emit('stateChanged', this.state);
     }
 
     /**

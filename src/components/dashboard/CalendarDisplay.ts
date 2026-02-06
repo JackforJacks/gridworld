@@ -49,6 +49,10 @@ class CalendarDisplay {
     private tickHandler: StateChangeHandler | null;
     private stopButton: HTMLButtonElement | null;
     private calendarMode: 'stopped' | 'running' | 'fast';
+    private monthStepElements: HTMLDivElement[] = [];
+    private lastDisplayedMonth: number = -1;
+    private lastDisplayedDay: number = -1;
+    private lastDisplayedYear: number = -1;
 
     constructor(calendarManager: CalendarManager) {
         this.calendarManager = calendarManager;
@@ -301,56 +305,50 @@ class CalendarDisplay {
     }
 
     /**
-     * Draw the 12-step circular month progress indicator
+     * Draw the 12-step circular month progress indicator.
+     * Elements are created once and cached; subsequent calls only toggle CSS classes.
      * @param currentMonth - Current month (1-12)
      * @param _day - Current day of month (unused)
      * @param _year - Current year (unused)
      */
     private drawMonthSteps(currentMonth: number, _day: number, _year: number): void {
-        const steps = 12; // 12 months
-        const radius = this.monthStepRadius;
-        const size = this.monthDotSize;
-        const centerPoint = this.calendarSize / 2;
+        // Skip if month hasn't changed
+        if (currentMonth === this.lastDisplayedMonth && this.monthStepElements.length === 12) return;
+        this.lastDisplayedMonth = currentMonth;
 
-        const container = document.getElementById('calendar-month-steps');
-        if (!container) return;
+        // Build elements once, then reuse
+        if (this.monthStepElements.length !== 12) {
+            const container = document.getElementById('calendar-month-steps');
+            if (!container) return;
 
-        // Clear previous month steps
-        container.innerHTML = '';
+            container.innerHTML = '';
+            this.monthStepElements = [];
 
-        // Create month indicator dots
-        for (let i = 0; i < steps; i++) {
-            const monthNumber = i + 1;
-            const isCurrentMonth = monthNumber === currentMonth;
+            const steps = 12;
+            const radius = this.monthStepRadius;
+            const size = this.monthDotSize;
+            const centerPoint = this.calendarSize / 2;
 
-            // Calculate position around the circle
-            const angle = (i / steps) * 2 * Math.PI - Math.PI / 2; // Start from top (12 o'clock)
-            const x = Math.cos(angle) * radius + centerPoint - size / 2;
-            const y = Math.sin(angle) * radius + centerPoint - size / 2;
+            for (let i = 0; i < steps; i++) {
+                const angle = (i / steps) * 2 * Math.PI - Math.PI / 2;
+                const x = Math.cos(angle) * radius + centerPoint - size / 2;
+                const y = Math.sin(angle) * radius + centerPoint - size / 2;
 
-            // Create the step dot
-            const step = this.createMonthStep(x, y, size, isCurrentMonth);
-            container.appendChild(step);
+                const step = document.createElement('div');
+                step.style.left = `${x}px`;
+                step.style.top = `${y}px`;
+                container.appendChild(step);
+                this.monthStepElements.push(step);
+            }
         }
-    }
 
-    /**
-     * Create a single month step indicator dot
-     * @param x - X position
-     * @param y - Y position
-     * @param _size - Dot size (unused, controlled by CSS)
-     * @param isActive - Whether this is the current month
-     * @returns The created dot element
-     */
-    private createMonthStep(x: number, y: number, _size: number, isActive: boolean): HTMLDivElement {
-        const step = document.createElement('div');
-        step.className = isActive ? 'month-step month-step-active' : 'month-step month-step-inactive';
-
-        // Set position using styles
-        step.style.left = `${x}px`;
-        step.style.top = `${y}px`;
-
-        return step;
+        // Toggle active class on cached elements
+        for (let i = 0; i < 12; i++) {
+            const isActive = i + 1 === currentMonth;
+            this.monthStepElements[i].className = isActive
+                ? 'month-step month-step-active'
+                : 'month-step month-step-inactive';
+        }
     }
 
     /**
@@ -359,22 +357,19 @@ class CalendarDisplay {
     private setupEventListeners(): void {
         if (!this.calendarManager) return;
 
-        // Store handlers so we can remove them later in destroy()
+        // Store handler so we can remove it later in destroy()
+        // Only subscribe to stateChanged – calendarTick already triggers
+        // updateState() inside CalendarManager which emits stateChanged,
+        // so subscribing to both would call updateDateDisplay twice per tick.
         this.stateChangedHandler = (...args: unknown[]): void => {
             const state = args[0] as CalendarState;
             this.updateDateDisplay(state);
         };
 
-        this.tickHandler = (...args: unknown[]): void => {
-            const state = args[0] as CalendarState;
-            this.updateDateDisplay(state);
-        };
+        this.tickHandler = null; // Not used – stateChanged covers ticks
 
-        // Listen for calendar state changes
+        // Listen for calendar state changes (fires on every tick + manual actions)
         this.calendarManager.on('stateChanged', this.stateChangedHandler);
-
-        // Listen for calendar tick events
-        this.calendarManager.on('tick', this.tickHandler);
     }
 
     /**
@@ -425,6 +420,15 @@ class CalendarDisplay {
 
         // Extract date information
         const { year, month, day } = this.extractDateInfo(state);
+
+        // Skip redundant DOM writes when nothing changed
+        if (day === this.lastDisplayedDay && month === this.lastDisplayedMonth && year === this.lastDisplayedYear) {
+            // Only update control buttons (isRunning may have toggled)
+            this.updateControlButtons(state);
+            return;
+        }
+        this.lastDisplayedDay = day;
+        // lastDisplayedMonth and lastDisplayedYear updated in their respective methods
 
         // Get moon phase emoji based on day
         const moonEmoji = this.getMoonPhaseEmoji(day);
@@ -478,6 +482,9 @@ class CalendarDisplay {
      * @param month - Current month (1-12)
      */
     private updateYearLabel(year: number, month: number): void {
+        if (year === this.lastDisplayedYear && month === this.lastDisplayedMonth) return;
+        this.lastDisplayedYear = year;
+
         const yearLabel = document.getElementById('calendar-year-inline');
         if (yearLabel) {
             yearLabel.textContent = `${this.getSeasonEmoji(month)} ${year}`;

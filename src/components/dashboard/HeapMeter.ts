@@ -26,6 +26,7 @@ class HeapMeter {
     private isFetching = false;
     private readonly SERVER_FETCH_INTERVAL_MS = 5000; // Reduced from 1000ms
     private readonly DISPLAY_UPDATE_INTERVAL_MS = 2000;
+    private boundVisibilityHandler: () => void;
 
     constructor() {
         this.el = document.createElement('div');
@@ -54,13 +55,14 @@ class HeapMeter {
      * Pause timers when tab is hidden to save battery/network
      */
     private setupVisibilityHandling(): void {
-        document.addEventListener('visibilitychange', () => {
+        this.boundVisibilityHandler = () => {
             if (document.hidden) {
                 this.pause();
             } else {
                 this.resume();
             }
-        });
+        };
+        document.addEventListener('visibilitychange', this.boundVisibilityHandler);
     }
 
     /**
@@ -147,6 +149,9 @@ class HeapMeter {
         if (this.serverTimer) {
             clearInterval(this.serverTimer);
             this.serverTimer = null;
+        }
+        if (this.boundVisibilityHandler) {
+            document.removeEventListener('visibilitychange', this.boundVisibilityHandler);
         }
         this.el.remove();
     }

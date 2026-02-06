@@ -790,7 +790,13 @@ class UIManager {
     }
 
     // Update the Rust ECS population display in real-time
+    // Only touches the DOM when the value actually changes
+    private lastDisplayedRustPop: number = -1;
+
     updateRustPopulationDisplay(data: RustTickData): void {
+        if (data.population === this.lastDisplayedRustPop) return;
+        this.lastDisplayedRustPop = data.population;
+
         const rustPopEl = document.getElementById('rust-pop-value');
         if (rustPopEl) {
             rustPopEl.textContent = data.population.toLocaleString();
