@@ -40,6 +40,10 @@ class SceneManager {
     private overlayManager: TileOverlayManager | null;
     private populationUnsubscribe: (() => void) | null;
 
+    // Population update batching (RAF-throttled)
+    private populationUpdatePending: boolean = false;
+    private populationUpdateRafId: number | null = null;
+
     constructor() {
         this.scene = null;
         this.renderer = null;
@@ -52,6 +56,8 @@ class SceneManager {
         this.habitableTileIds = [];
         this.sphereRadius = 30;
         this.overlayManager = null;
+        this.populationUpdatePending = false;
+        this.populationUpdateRafId = null;
 
         // Pre-cache all biome and terrain colors
         initializeColorCaches();
@@ -66,13 +72,51 @@ class SceneManager {
 
         this.populationUnsubscribe = populationManager.subscribe((eventType: PopulationEventType, _data: unknown) => {
             if (eventType === 'populationUpdate') {
-                updateTilePopulations(this.hexasphere);
-                if (this.overlayManager) {
-                    checkPopulationThresholds(this.hexasphere, this.tileColorIndices, this.overlayManager);
-                }
+                this.schedulePopulationUpdate();
             }
         });
         return { scene: this.scene, renderer: this.renderer };
+    }
+
+    /**
+     * Schedule population update with RAF batching
+     * At most one update per rendered frame, combined with render-on-demand
+     */
+    private schedulePopulationUpdate(): void {
+        // Mark that an update is needed
+        this.populationUpdatePending = true;
+
+        // If already scheduled, don't schedule again (batching)
+        if (this.populationUpdateRafId !== null) return;
+
+        // Schedule update on next frame
+        this.populationUpdateRafId = requestAnimationFrame(() => {
+            this.populationUpdateRafId = null;
+
+            // Only process if still pending (might have been cancelled)
+            if (!this.populationUpdatePending) return;
+            this.populationUpdatePending = false;
+
+            // Perform the actual update (iterates all tiles twice)
+            updateTilePopulations(this.hexasphere);
+            if (this.overlayManager) {
+                checkPopulationThresholds(this.hexasphere, this.tileColorIndices, this.overlayManager);
+            }
+
+            // Trigger render via AppContext (render-on-demand)
+            getAppContext().requestRender();
+        });
+    }
+
+    /**
+     * Cancel pending population update (e.g., during cleanup)
+     */
+    private cancelPendingPopulationUpdate(): void {
+        this.populationUpdatePending = false;
+        if (this.populationUpdateRafId !== null) {
+            cancelAnimationFrame(this.populationUpdateRafId);
+            this.populationUpdateRafId = null;
+        }
     }
 
     async createHexasphere(radius: number | null = null, subdivisions: number | null = null, tileWidthRatio: number | null = null, forceRegenerate: boolean = false): Promise<void> {
@@ -437,6 +481,14 @@ class SceneManager {
     }
 
     render(camera: THREE.Camera): void {
+        // Log renderer info periodically to detect leaks
+        if (this.renderer && Math.random() < 0.001) { // ~once per 1000 frames
+            const info = this.renderer.info;
+            console.log('[Three.js] Geometries:', info.memory.geometries, 
+                        'Textures:', info.memory.textures,
+                        'Calls:', info.render.calls,
+                        'Triangles:', info.render.triangles);
+        }
         this.renderer!.render(this.scene!, camera);
     }
 
@@ -466,6 +518,9 @@ class SceneManager {
     }
 
     cleanup(): void {
+        // Cancel any pending population update RAF
+        this.cancelPendingPopulationUpdate();
+
         if (this.populationUnsubscribe) {
             this.populationUnsubscribe();
             this.populationUnsubscribe = null;
@@ -475,6 +530,19 @@ class SceneManager {
         }
         this.overlayManager?.clear();
         this.clearTiles();
+
+        // Force WebGL context loss to free GPU memory
+        if (this.renderer) {
+            const canvas = this.renderer.domElement;
+            const gl = canvas.getContext('webgl') || canvas.getContext('webgl2');
+            if (gl) {
+                const loseContext = gl.getExtension('WEBGL_lose_context');
+                if (loseContext) {
+                    loseContext.loseContext();
+                }
+            }
+            this.renderer.dispose();
+        }
     }
 }
 

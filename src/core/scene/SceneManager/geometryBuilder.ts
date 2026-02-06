@@ -83,8 +83,9 @@ export function buildTilesFromData(tileData: TileDataResponse): BuildTilesResult
     const tileCount = tiles.length;
 
     // Estimate array sizes: avg 6 vertices per tile, 3 triangles, 3 vertices each = ~18 vertices
-    // Using TypedArrays directly for better performance
     const estimatedVertices = tileCount * 18 * 3;
+    console.log(`[Geometry] Building ${tileCount} tiles, ~${(estimatedVertices * 4 / 1024 / 1024).toFixed(2)}MB estimated`);
+    
     const vertices = new Float32Array(estimatedVertices);
     const colors = new Float32Array(estimatedVertices);
     const indices = new Uint32Array(estimatedVertices);

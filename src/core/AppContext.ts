@@ -159,6 +159,9 @@ class AppContext implements IAppContext {
     public tileSelectorDebug: boolean = false;
     public tileSelectorCloseHandlerAttached: boolean = false;
 
+    // Render-on-demand callback
+    private requestRenderCallback: (() => void) | null = null;
+
     private constructor() {
         // Private constructor to enforce singleton pattern
     }
@@ -224,6 +227,21 @@ class AppContext implements IAppContext {
             return this.hexasphere.tiles;
         }
         return [];
+    }
+
+    /**
+     * Set the render request callback for render-on-demand
+     */
+    public setRequestRenderCallback(callback: (() => void) | null): void {
+        this.requestRenderCallback = callback;
+    }
+
+    /**
+     * Request a render on the next frame (render-on-demand)
+     * Safe to call from anywhere - no-op if callback not set
+     */
+    public requestRender(): void {
+        this.requestRenderCallback?.();
     }
 }
 

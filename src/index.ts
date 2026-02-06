@@ -117,6 +117,9 @@ class GridWorldApp {
     private isVisible = true;
     private visibilityHandler: (() => void) | null = null;
 
+    // Render-on-demand: only render when something changes
+    private needsRender = true;
+
     constructor() {
         this.isInitialized = false;
         this.lastTime = Date.now();
@@ -171,17 +174,20 @@ class GridWorldApp {
             // Create camera
             this.camera = new THREE.PerspectiveCamera(45, width / height, 1, 200);
 
-            // Initialize camera controller
-            this.cameraController = new CameraController(this.camera);
+            // Initialize camera controller with render-on-demand callback
+            this.cameraController = new CameraController(this.camera, this.requestRender.bind(this));
 
             // Pass camera controller to UI manager for tile search feature
             this.uiManager.setCameraController(this.cameraController);
 
             // Initialize tile selector with scene, camera, and sceneManager
-            this.tileSelector = new TileSelector(this.scene, this.camera, this.sceneManager);
+            this.tileSelector = new TileSelector(this.scene, this.camera, this.sceneManager, this.requestRender.bind(this));
 
             // Initialize input handler with references to other modules
             this.inputHandler = new InputHandler(this.renderer, this.cameraController, this.tileSelector);
+
+            // Register render callback with AppContext for render-on-demand
+            getAppContext().setRequestRenderCallback(() => this.requestRender());
 
             // Append renderer to container
             container.appendChild(this.renderer.domElement);
@@ -408,6 +414,14 @@ class GridWorldApp {
         }
     }
 
+    /**
+     * Request a render on the next frame (render-on-demand)
+     * Called when camera moves, data updates, resize, etc.
+     */
+    requestRender(): void {
+        this.needsRender = true;
+    }
+
     startRenderLoop(): void {
         if (this.isAnimating) return; // Prevent multiple loops
         
@@ -426,31 +440,52 @@ class GridWorldApp {
             document.addEventListener('visibilitychange', this.visibilityHandler);
         }
 
+        // Frame counter for diagnostics
+        let frameCount = 0;
+        let lastMemoryLog = Date.now();
+
         // Use arrow function to avoid binding issues
         const renderLoop = (timestamp: number): void => {
             if (!this.isAnimating) return;
 
             // When hidden, stop RAF completely instead of running empty loops
             if (!this.isVisible) {
-                // Don't schedule next frame until visible again
                 return;
             }
 
             const currentTime = Date.now();
             const deltaTime = currentTime - this.lastTime;
+            frameCount++;
 
-            // Update camera controller
+            // Log memory every 10 seconds
+            if (currentTime - lastMemoryLog > 10000) {
+                const mem = (performance as unknown as { memory?: { usedJSHeapSize: number } }).memory;
+                if (mem) {
+                    const mb = (mem.usedJSHeapSize / 1048576).toFixed(1);
+                    console.log(`[Memory] ${mb}MB after ${frameCount} frames`);
+                }
+                lastMemoryLog = currentTime;
+            }
+
+            // Update camera controller - returns true if camera moved
+            let cameraMoved = false;
             if (this.cameraController) {
-                this.cameraController.animate();
-            }
-            // Update camera-bound light
-            if (this.sceneManager && this.camera) {
-                this.sceneManager.updateCameraLight(this.camera);
+                cameraMoved = this.cameraController.animate();
             }
 
-            // Render the scene
-            if (this.sceneManager && this.camera) {
+            // Determine if we need to render
+            // Render if: explicitly requested, camera moved, or auto-rotating
+            const shouldRender = this.needsRender || 
+                                 cameraMoved || 
+                                 (this.cameraController?.isAutoRotating() ?? false);
+
+            if (shouldRender && this.sceneManager && this.camera) {
+                // Update camera-bound light
+                this.sceneManager.updateCameraLight(this.camera);
+                // Render the scene
                 this.sceneManager.render(this.camera);
+                // Reset the dirty flag
+                this.needsRender = false;
             }
 
             // Update stats if in debug mode (throttled to every 60 frames ~1 second)
@@ -617,6 +652,11 @@ class GridWorldApp {
             this.renderer.dispose();
         }
 
+        // Disconnect PopulationManager to stop ping interval
+        import('./managers/population/PopulationManager').then(({ default: pm }) => {
+            pm.disconnect();
+        });
+
         // SocketService is a singleton - disconnect it
         if (this.socketService) {
             this.socketService.disconnect();
@@ -637,6 +677,50 @@ class GridWorldApp {
     }
 }
 
+// Force cleanup before initialization to prevent memory accumulation
+// This helps when the page is refreshed but browser keeps GPU memory
+function forceCleanup(): void {
+    console.log('[Init] Force cleanup running...');
+    
+    // Detect if DevTools might be open (can prevent GC)
+    const devToolsOpen = window.outerWidth - window.innerWidth > 160 || 
+                         window.outerHeight - window.innerHeight > 160;
+    if (devToolsOpen) {
+        console.warn('[Init] DevTools appears open - this may prevent memory cleanup');
+    }
+
+    // Clean up any existing WebGL contexts
+    const canvases = document.querySelectorAll('canvas');
+    console.log(`[Init] Cleaning up ${canvases.length} canvas elements`);
+    canvases.forEach(canvas => {
+        const gl = canvas.getContext('webgl') || canvas.getContext('webgl2');
+        if (gl) {
+            const loseContext = gl.getExtension('WEBGL_lose_context');
+            if (loseContext) {
+                loseContext.loseContext();
+                console.log('[Init] WebGL context lost');
+            }
+        }
+    });
+
+    // Clear stars container to free DOM nodes
+    const starsContainer = document.getElementById('stars');
+    if (starsContainer) {
+        const starCount = starsContainer.children.length;
+        starsContainer.innerHTML = '';
+        console.log(`[Init] Cleared ${starCount} stars`);
+    }
+
+    // Force garbage collection hint (works in some browsers)
+    if (window.gc) {
+        window.gc();
+        console.log('[Init] GC forced');
+    }
+}
+
+// Run cleanup before anything else
+forceCleanup();
+
 // Create and initialize the application
 const app = new GridWorldApp();
 
@@ -647,9 +731,37 @@ window.addEventListener('load', async () => {
         app.startRenderLoop();
 
         // Expose app instance globally for debugging
-        // Cast to any to avoid type conflicts with other declarations
         (window as { GridWorldApp?: unknown }).GridWorldApp = app;
     }
+});
+
+// FORCE CLEANUP on page unload/refresh to prevent memory retention
+window.addEventListener('beforeunload', () => {
+    console.log('[Cleanup] beforeunload - forcing cleanup');
+    app.destroy();
+    
+    // Aggressive cleanup to prevent 2GB memory retention
+    const canvases = document.querySelectorAll('canvas');
+    canvases.forEach(canvas => {
+        const gl = canvas.getContext('webgl') || canvas.getContext('webgl2');
+        if (gl) {
+            const ext = gl.getExtension('WEBGL_lose_context');
+            if (ext) ext.loseContext();
+        }
+    });
+    
+    // Clear all intervals and timeouts
+    const highestId = window.setTimeout(() => {}, 0);
+    for (let i = 0; i < highestId; i++) {
+        window.clearTimeout(i);
+        window.clearInterval(i);
+    }
+});
+
+// Also cleanup on page hide (mobile)
+document.addEventListener('pagehide', () => {
+    console.log('[Cleanup] pagehide - forcing cleanup');
+    app.destroy();
 });
 
 // Expose key functions globally for compatibility

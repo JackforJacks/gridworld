@@ -35,9 +35,13 @@ class TileSelector {
     // Store bound methods to avoid creating new functions each time
     private boundHandleClick: (event: MouseEvent) => void;
 
-    constructor(scene: THREE.Scene, camera: THREE.Camera, _sceneManager: SceneManagerLike) {
+    // Render-on-demand callback
+    private onChange: (() => void) | null = null;
+
+    constructor(scene: THREE.Scene, camera: THREE.Camera, _sceneManager: SceneManagerLike, onChange?: (() => void) | null) {
         this.scene = scene;
         this.camera = camera;
+        this.onChange = onChange || null;
         this.raycaster = new THREE.Raycaster();
         this.selectedTile = null;
         this.borderLines = null;
@@ -243,11 +247,13 @@ class TileSelector {
     createBorder(tile: HexTile): void {
         this.borderLines = createTileBorder(tile);
         this.scene.add(this.borderLines);
+        if (this.onChange) this.onChange();
     }
 
     removeBorder(): void {
         removeTileBorder(this.scene, this.borderLines);
         this.borderLines = null;
+        if (this.onChange) this.onChange();
     }
 
     showInfoPanel(tile: HexTile): void {
