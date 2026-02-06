@@ -20,13 +20,11 @@ export function updateTilePopulations(hexasphere: HexasphereData | null): void {
     const tiles = hexasphere.tiles;
     const tileCount = tiles.length;
 
-    // Optimized loop with reduced property access
     for (let i = 0; i < tileCount; i++) {
         const tile = tiles[i];
         const isHabitable = tile.Habitable === 'yes' || tile.is_habitable === true;
 
         if (isHabitable) {
-            // Try numeric ID first, then string (most common case first)
             tile.population = tilePopulations[tile.id] ?? tilePopulations[String(tile.id)] ?? 0;
         } else {
             tile.population = 0;
@@ -35,8 +33,8 @@ export function updateTilePopulations(hexasphere: HexasphereData | null): void {
 }
 
 /**
- * Check population thresholds and rebuild merged overlay
- * Collects all populated tiles and rebuilds overlay in single draw call
+ * Check population thresholds and update overlay visibility.
+ * Collects populated tile IDs and calls updateVisibility (zero geometry allocation).
  */
 export function checkPopulationThresholds(
     hexasphere: HexasphereData | null,
@@ -47,12 +45,11 @@ export function checkPopulationThresholds(
 
     const tiles = hexasphere.tiles;
     const tileCount = tiles.length;
-    const populatedTiles: HexTile[] = [];
+    const populatedTileIds = new Set<string>();
 
     for (let i = 0; i < tileCount; i++) {
         const tile = tiles[i];
 
-        // Early continue for non-habitable tiles
         if (tile.Habitable !== 'yes') continue;
 
         const population = tile.population ?? 0;
@@ -60,15 +57,14 @@ export function checkPopulationThresholds(
         const colorInfo = tileColorIndices.get(tileIdStr);
         if (!colorInfo) continue;
 
-        // Track state and collect populated tiles for overlay
         colorInfo.isHighlighted = population > 0;
         if (population > 0) {
-            populatedTiles.push(tile);
+            populatedTileIds.add(tileIdStr);
         }
     }
 
-    // Rebuild merged overlay with all populated tiles (single draw call)
-    overlayManager.rebuild(populatedTiles);
+    // Update overlay visibility (writes alpha buffer, no geometry allocation)
+    overlayManager.updateVisibility(populatedTileIds);
 }
 
 /**
@@ -81,8 +77,8 @@ export function resetTileColors(
 ): void {
     if (!hexasphere?.tiles) return;
 
-    // Clear merged overlay (single operation)
-    overlayManager.clear();
+    // Hide all overlays
+    overlayManager.hideAll();
 
     for (const tile of hexasphere.tiles) {
         const colorInfo = tileColorIndices.get(String(tile.id));
@@ -111,7 +107,6 @@ export function getPopulationStats(
     let highPopulationTiles = 0;
     let redTiles = 0;
 
-    // Initialize biome statistics
     const biomes: Record<string, BiomeStats> = {
         tundra: { tiles: 0, population: 0 },
         desert: { tiles: 0, population: 0 },
@@ -120,7 +115,6 @@ export function getPopulationStats(
         alpine: { tiles: 0, population: 0 }
     };
 
-    // Single optimized pass
     for (let i = 0; i < tileCount; i++) {
         const tile = tiles[i];
         const population = tile.population || 0;
@@ -134,7 +128,6 @@ export function getPopulationStats(
             if (colorInfo?.isHighlighted) redTiles++;
         }
 
-        // Count biome statistics
         if (biome && biomes[biome]) {
             biomes[biome].tiles++;
             biomes[biome].population += population;
@@ -181,7 +174,6 @@ export async function reinitializePopulation(
     tileColorIndices: Map<string, TileColorInfo>,
     overlayManager: TileOverlayManager
 ): Promise<(number | string)[]> {
-    // Ensure habitableTileIds is populated
     let ids = habitableTileIds;
     if (!ids || ids.length === 0) {
         if (hexasphere?.tiles) {

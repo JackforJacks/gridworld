@@ -29,8 +29,6 @@ export interface HexTile {
 
 /** Color info for tile color tracking */
 export interface TileColorInfo {
-    start: number;
-    count: number;
     originalColor: THREE.Color;
     currentColor: THREE.Color;
     isHighlighted: boolean;

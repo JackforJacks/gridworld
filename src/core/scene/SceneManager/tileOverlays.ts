@@ -1,173 +1,136 @@
 // Scene Manager - Tile Overlays
-// Merged overlay system - all population overlays in single BufferGeometry (1 draw call)
+// Pre-built overlay system: geometry built once, visibility toggled via per-vertex alpha.
+// Zero runtime geometry allocation. Single draw call for all overlays.
 import * as THREE from 'three';
-import { BoundaryPoint, HexTile, AnyPoint } from './types';
+import { HexTile, AnyPoint } from './types';
 import { normalizePoint } from './geometryBuilder';
 
 /** Overlay configuration */
 const OVERLAY_CONFIG = {
     color: 0xffff00,  // Bright yellow for populated tiles
     opacity: 0.3,
-    renderOrder: 10
+    renderOrder: 10,
+    offset: 0.015     // Radial offset above sphere surface
 };
 
 /** Flash overlay configuration */
 const FLASH_CONFIG = {
-    color: 0xff0000,  // Bright red for flashing
-    opacity: 1.0,     // Fully opaque to cover entire tile
-    renderOrder: 100, // High render order to be on top
-    duration: 5000,   // 5 seconds
-    blinkInterval: 200, // Blink every 200ms
-    scale: 1,      // Scale outward for thick visible border
-    heightOffset: 1 // Raise slightly above tile surface for visibility
+    color: 0xff0000,
+    opacity: 1.0,
+    renderOrder: 100,
+    duration: 5000,
+    blinkInterval: 200,
+    scale: 1,
+    heightOffset: 1
 };
 
+/** Border configuration */
+const BORDER_CONFIG = {
+    color: 0x000000,
+    opacity: 0.15,
+    lineWidth: 1,
+    renderOrder: 5,
+    offset: 0.002
+};
+
+// Overlay ShaderMaterial: uses per-vertex alpha to show/hide individual tiles
+const overlayVertexShader = `
+    attribute float alpha;
+    varying float vAlpha;
+    void main() {
+        vAlpha = alpha;
+        gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
+    }
+`;
+
+const overlayFragmentShader = `
+    uniform vec3 color;
+    uniform float baseOpacity;
+    varying float vAlpha;
+    void main() {
+        if (vAlpha < 0.01) discard;
+        gl_FragColor = vec4(color, baseOpacity * vAlpha);
+    }
+`;
+
 /**
- * Merged overlay mesh data
+ * Spatial hash key for edge deduplication
  */
-interface MergedOverlayData {
-    mesh: THREE.Mesh;
-    geometry: THREE.BufferGeometry;
-    tileIndices: Map<string, { start: number; count: number }>;
+const PRECISION = 1000;
+function vertexKey(x: number, y: number, z: number): string {
+    return `${Math.round(x * PRECISION)},${Math.round(y * PRECISION)},${Math.round(z * PRECISION)}`;
 }
 
 /**
- * Create a flash overlay for a tile (bright red border outline only)
+ * Create a flash overlay for a tile (bright red border outline)
  */
 export function createFlashOverlay(tile: HexTile): THREE.Line | null {
-    // Build border line from tile boundary - scaled inward to stay inside tile
-    // Then offset outward from center (radially) to raise above surface
     const center = normalizePoint(tile.centerPoint);
     const boundaryPoints = tile.boundary.map((p: AnyPoint) => {
         const pt = normalizePoint(p);
         const scale = FLASH_CONFIG.scale;
-        // First scale inward from center
         const sx = center.x + (pt.x - center.x) * scale;
         const sy = center.y + (pt.y - center.y) * scale;
         const sz = center.z + (pt.z - center.z) * scale;
-        // Then offset radially outward to raise above surface
         const heightScale = FLASH_CONFIG.heightOffset;
         return new THREE.Vector3(sx * heightScale, sy * heightScale, sz * heightScale);
     });
 
     if (boundaryPoints.length < 3) return null;
 
-    // Close the loop by adding first point at the end
     const closedPoints = [...boundaryPoints, boundaryPoints[0]];
-
     const geometry = new THREE.BufferGeometry().setFromPoints(closedPoints);
 
     const material = new THREE.LineBasicMaterial({
         color: FLASH_CONFIG.color,
-        linewidth: 3, // Note: linewidth > 1 only works on some systems
+        linewidth: 3,
         depthWrite: true,
         depthTest: true
     });
 
     const borderLine = new THREE.Line(geometry, material);
     borderLine.renderOrder = FLASH_CONFIG.renderOrder;
-
     return borderLine;
 }
 
 /**
- * Builds merged overlay geometry from multiple tiles
- * Returns single BufferGeometry containing all tile overlays
- */
-function buildMergedOverlayGeometry(tiles: HexTile[]): THREE.BufferGeometry | null {
-    if (tiles.length === 0) return null;
-
-    const allVertices: number[] = [];
-    const tileIndices = new Map<string, { start: number; count: number }>();
-
-    for (const tile of tiles) {
-        const center = normalizePoint(tile.centerPoint);
-        const boundaryPoints = tile.boundary.map((p: AnyPoint) => {
-            const pt = normalizePoint(p);
-            return new THREE.Vector3(pt.x, pt.y, pt.z);
-        });
-
-        // Offset all points outward from sphere origin so overlay sits on top of tile
-        const offset = 0.015;
-        for (const bp of boundaryPoints) {
-            const normal = bp.clone().normalize();
-            bp.add(normal.multiplyScalar(offset));
-        }
-
-        if (boundaryPoints.length < 3) continue;
-
-        const startIndex = allVertices.length / 3;
-        let triangleCount = 0;
-
-        // Triangle fan triangulation for this tile
-        for (let i = 1; i < boundaryPoints.length - 1; i++) {
-            const p0 = boundaryPoints[0];
-            const p1 = boundaryPoints[i];
-            const p2 = boundaryPoints[i + 1];
-            allVertices.push(p0.x, p0.y, p0.z);
-            allVertices.push(p1.x, p1.y, p1.z);
-            allVertices.push(p2.x, p2.y, p2.z);
-            triangleCount++;
-        }
-
-        tileIndices.set(String(tile.id), {
-            start: startIndex,
-            count: triangleCount * 3
-        });
-    }
-
-    if (allVertices.length === 0) return null;
-
-    const geometry = new THREE.BufferGeometry();
-    geometry.setAttribute('position', new THREE.Float32BufferAttribute(allVertices, 3));
-    geometry.computeVertexNormals();
-
-    // Store tile indices for potential future use
-    (geometry as unknown as { userData: { tileIndices: Map<string, { start: number; count: number }> } }).userData = { tileIndices };
-
-    return geometry;
-}
-
-/** Border configuration */
-const BORDER_CONFIG = {
-    color: 0x000000,  // Black borders
-    opacity: 0.15,    // Very transparent - barely visible
-    lineWidth: 1,     // Minimum width
-    renderOrder: 5,   // Below overlays but above tiles
-    offset: 0.002     // Minimal offset to prevent z-fighting
-};
-
-/**
- * Builds merged border geometry for all tiles
- * Creates thin black lines along tile boundaries
+ * Builds deduplicated border geometry for all tiles.
+ * Shared edges between adjacent tiles are drawn only once.
  */
 export function buildMergedBorderGeometry(tiles: HexTile[]): THREE.BufferGeometry | null {
     if (tiles.length === 0) return null;
 
+    const edgeSet = new Set<string>();
     const allPoints: number[] = [];
 
     for (const tile of tiles) {
-        const boundaryPoints = tile.boundary.map((p: AnyPoint) => {
-            const pt = normalizePoint(p);
-            // Offset slightly outward to prevent z-fighting with tile surface
-            const normal = new THREE.Vector3(pt.x, pt.y, pt.z).normalize();
-            return new THREE.Vector3(
-                pt.x + normal.x * BORDER_CONFIG.offset,
-                pt.y + normal.y * BORDER_CONFIG.offset,
-                pt.z + normal.z * BORDER_CONFIG.offset
+        const boundary = tile.boundary.map((p: AnyPoint) => normalizePoint(p));
+        if (boundary.length < 3) continue;
+
+        for (let i = 0; i < boundary.length; i++) {
+            const a = boundary[i];
+            const b = boundary[(i + 1) % boundary.length];
+
+            // Canonical edge key (smaller vertex key first) to deduplicate shared edges
+            const keyA = vertexKey(a.x, a.y, a.z);
+            const keyB = vertexKey(b.x, b.y, b.z);
+            const edgeKey = keyA < keyB ? `${keyA}|${keyB}` : `${keyB}|${keyA}`;
+
+            if (edgeSet.has(edgeKey)) continue;
+            edgeSet.add(edgeKey);
+
+            // Offset outward to prevent z-fighting
+            const nAx = a.x, nAy = a.y, nAz = a.z;
+            const nBx = b.x, nBy = b.y, nBz = b.z;
+            const lenA = Math.sqrt(nAx * nAx + nAy * nAy + nAz * nAz);
+            const lenB = Math.sqrt(nBx * nBx + nBy * nBy + nBz * nBz);
+            const offA = BORDER_CONFIG.offset / lenA;
+            const offB = BORDER_CONFIG.offset / lenB;
+
+            allPoints.push(
+                nAx + nAx * offA, nAy + nAy * offA, nAz + nAz * offA,
+                nBx + nBx * offB, nBy + nBy * offB, nBz + nBz * offB
             );
-        });
-
-        if (boundaryPoints.length < 3) continue;
-
-        // Create line loop for this tile (each edge is a line segment)
-        for (let i = 0; i < boundaryPoints.length; i++) {
-            const current = boundaryPoints[i];
-            const next = boundaryPoints[(i + 1) % boundaryPoints.length];
-            
-            // Add line segment: current -> next
-            allPoints.push(current.x, current.y, current.z);
-            allPoints.push(next.x, next.y, next.z);
         }
     }
 
@@ -175,186 +138,286 @@ export function buildMergedBorderGeometry(tiles: HexTile[]): THREE.BufferGeometr
 
     const geometry = new THREE.BufferGeometry();
     geometry.setAttribute('position', new THREE.Float32BufferAttribute(allPoints, 3));
-
+    geometry.computeBoundingSphere();
     return geometry;
 }
 
 /**
- * Manages tile overlay state with merged geometry (single draw call)
+ * Builds pre-built overlay geometry for all habitable tiles.
+ * Per-vertex alpha attribute controls visibility (0.0 = hidden, 1.0 = visible).
+ * Uses indexed triangle fan per tile for vertex efficiency.
+ */
+function buildPrebuiltOverlayGeometry(
+    habitableTiles: HexTile[]
+): {
+    geometry: THREE.BufferGeometry;
+    tileAlphaRanges: Map<string, { start: number; count: number }>;
+} | null {
+    if (habitableTiles.length === 0) return null;
+
+    // Phase 1: count totals
+    let totalVertices = 0;
+    let totalTriangles = 0;
+    for (const tile of habitableTiles) {
+        const bLen = tile.boundary?.length || 0;
+        if (bLen >= 3) {
+            totalVertices += bLen;
+            totalTriangles += bLen - 2;
+        }
+    }
+
+    if (totalVertices === 0) return null;
+
+    // Phase 2: allocate
+    const positions = new Float32Array(totalVertices * 3);
+    const alphas = new Float32Array(totalVertices); // per-vertex alpha, all 0.0 initially
+    const useUint16 = totalVertices < 65535;
+    const indices = useUint16
+        ? new Uint16Array(totalTriangles * 3)
+        : new Uint32Array(totalTriangles * 3);
+
+    const tileAlphaRanges = new Map<string, { start: number; count: number }>();
+
+    // Phase 3: fill
+    let posIdx = 0;
+    let alphaIdx = 0;
+    let idxIdx = 0;
+    let baseVertex = 0;
+
+    for (const tile of habitableTiles) {
+        const boundary = tile.boundary.map((p: AnyPoint) => normalizePoint(p));
+        if (boundary.length < 3) continue;
+
+        const tileId = String(tile.id);
+        const alphaStart = alphaIdx;
+        const bLen = boundary.length;
+
+        // Write each boundary vertex once, offset outward
+        for (let i = 0; i < bLen; i++) {
+            const pt = boundary[i];
+            const len = Math.sqrt(pt.x * pt.x + pt.y * pt.y + pt.z * pt.z);
+            const off = OVERLAY_CONFIG.offset / len;
+            positions[posIdx++] = pt.x + pt.x * off;
+            positions[posIdx++] = pt.y + pt.y * off;
+            positions[posIdx++] = pt.z + pt.z * off;
+            alphas[alphaIdx++] = 0.0; // invisible by default
+        }
+
+        // Triangle fan indices
+        for (let i = 1; i < bLen - 1; i++) {
+            indices[idxIdx++] = baseVertex;
+            indices[idxIdx++] = baseVertex + i;
+            indices[idxIdx++] = baseVertex + i + 1;
+        }
+
+        tileAlphaRanges.set(tileId, { start: alphaStart, count: bLen });
+        baseVertex += bLen;
+    }
+
+    // Trim and build geometry
+    const geometry = new THREE.BufferGeometry();
+    geometry.setAttribute('position', new THREE.BufferAttribute(positions.subarray(0, posIdx), 3));
+
+    const alphaAttr = new THREE.BufferAttribute(alphas.subarray(0, alphaIdx), 1);
+    alphaAttr.setUsage(THREE.DynamicDrawUsage); // will be updated at runtime
+    geometry.setAttribute('alpha', alphaAttr);
+
+    geometry.setIndex(new THREE.BufferAttribute(indices.subarray(0, idxIdx), 1));
+    geometry.computeVertexNormals();
+    geometry.computeBoundingSphere();
+
+    return { geometry, tileAlphaRanges };
+}
+
+/**
+ * Manages tile overlay state with pre-built geometry.
+ * Overlays are built once; visibility is toggled via per-vertex alpha (zero GPU allocation at runtime).
  */
 export class TileOverlayManager {
     private scene: THREE.Scene;
-    private mergedOverlay: MergedOverlayData | null = null;
-    private overlayMaterial: THREE.MeshBasicMaterial | null = null;
     private overlayMesh: THREE.Mesh | null = null;
+    private overlayGeometry: THREE.BufferGeometry | null = null;
+    private overlayMaterial: THREE.ShaderMaterial | null = null;
+    private tileAlphaRanges: Map<string, { start: number; count: number }> = new Map();
+    private visibleTileIds: Set<string> = new Set();
+
     private borderLines: THREE.LineSegments | null = null;
+    private borderMaterial: THREE.LineBasicMaterial | null = null;
     private flashOverlays: Map<string, THREE.Line> = new Map();
+    private flashMaterial: THREE.LineBasicMaterial | null = null;
     private flashTimers: Map<string, { timeout: ReturnType<typeof setTimeout>; interval: ReturnType<typeof setInterval> }> = new Map();
-    private tileIds: Set<string> = new Set();
 
     constructor(scene: THREE.Scene) {
         this.scene = scene;
-        // Create material once and reuse
-        this.overlayMaterial = new THREE.MeshBasicMaterial({
-            color: OVERLAY_CONFIG.color,
-            transparent: true,
-            opacity: OVERLAY_CONFIG.opacity,
-            depthWrite: false
-        });
     }
 
     /**
-     * Create thin black borders for all tiles
-     * Call once when tiles are created
+     * Build overlay geometry once for all habitable tiles.
+     * Call after hexasphere is built. No runtime geometry allocation needed after this.
+     */
+    initOverlays(habitableTiles: HexTile[]): void {
+        // Dispose previous if exists
+        this.disposeOverlays();
+
+        const result = buildPrebuiltOverlayGeometry(habitableTiles);
+        if (!result) return;
+
+        this.overlayGeometry = result.geometry;
+        this.tileAlphaRanges = result.tileAlphaRanges;
+
+        this.overlayMaterial = new THREE.ShaderMaterial({
+            uniforms: {
+                color: { value: new THREE.Color(OVERLAY_CONFIG.color) },
+                baseOpacity: { value: OVERLAY_CONFIG.opacity }
+            },
+            vertexShader: overlayVertexShader,
+            fragmentShader: overlayFragmentShader,
+            transparent: true,
+            depthWrite: false,
+            side: THREE.FrontSide
+        });
+
+        this.overlayMesh = new THREE.Mesh(this.overlayGeometry, this.overlayMaterial);
+        this.overlayMesh.renderOrder = OVERLAY_CONFIG.renderOrder;
+        this.scene.add(this.overlayMesh);
+    }
+
+    /**
+     * Batch update overlay visibility for all tiles.
+     * Sets alpha=1 for populated tiles, alpha=0 for others. Single needsUpdate.
+     */
+    updateVisibility(populatedTileIds: Set<string>): void {
+        if (!this.overlayGeometry) return;
+
+        // Skip if nothing changed
+        if (populatedTileIds.size === this.visibleTileIds.size) {
+            let same = true;
+            for (const id of populatedTileIds) {
+                if (!this.visibleTileIds.has(id)) { same = false; break; }
+            }
+            if (same) return;
+        }
+
+        const alphaAttr = this.overlayGeometry.getAttribute('alpha') as THREE.BufferAttribute;
+        const alphaArray = alphaAttr.array as Float32Array;
+
+        // Hide tiles that are no longer populated
+        for (const id of this.visibleTileIds) {
+            if (!populatedTileIds.has(id)) {
+                const range = this.tileAlphaRanges.get(id);
+                if (range) {
+                    for (let i = range.start; i < range.start + range.count; i++) {
+                        alphaArray[i] = 0.0;
+                    }
+                }
+            }
+        }
+
+        // Show newly populated tiles
+        for (const id of populatedTileIds) {
+            if (!this.visibleTileIds.has(id)) {
+                const range = this.tileAlphaRanges.get(id);
+                if (range) {
+                    for (let i = range.start; i < range.start + range.count; i++) {
+                        alphaArray[i] = 1.0;
+                    }
+                }
+            }
+        }
+
+        alphaAttr.needsUpdate = true;
+        this.visibleTileIds = new Set(populatedTileIds);
+    }
+
+    /**
+     * Hide all overlays (set all alpha to 0)
+     */
+    hideAll(): void {
+        if (!this.overlayGeometry || this.visibleTileIds.size === 0) return;
+
+        const alphaAttr = this.overlayGeometry.getAttribute('alpha') as THREE.BufferAttribute;
+        const alphaArray = alphaAttr.array as Float32Array;
+        alphaArray.fill(0.0);
+        alphaAttr.needsUpdate = true;
+        this.visibleTileIds.clear();
+    }
+
+    /**
+     * Check if tile has a visible overlay
+     */
+    has(tileId: string): boolean {
+        return this.visibleTileIds.has(tileId);
+    }
+
+    /**
+     * Get visible overlay count
+     */
+    get size(): number {
+        return this.visibleTileIds.size;
+    }
+
+    /**
+     * Create deduplicated borders for all tiles. Call once when tiles are created.
      */
     createBorders(tiles: HexTile[]): void {
-        // Dispose old borders
-        if (this.borderLines) {
-            this.scene.remove(this.borderLines);
-            this.borderLines.geometry.dispose();
-            (this.borderLines.material as THREE.Material).dispose();
-            this.borderLines = null;
-        }
+        this.clearBorders();
 
         const geometry = buildMergedBorderGeometry(tiles);
         if (!geometry) return;
 
-        const material = new THREE.LineBasicMaterial({
+        this.borderMaterial = new THREE.LineBasicMaterial({
             color: BORDER_CONFIG.color,
             transparent: true,
             opacity: BORDER_CONFIG.opacity,
             depthWrite: false
         });
 
-        this.borderLines = new THREE.LineSegments(geometry, material);
+        this.borderLines = new THREE.LineSegments(geometry, this.borderMaterial);
         this.borderLines.renderOrder = BORDER_CONFIG.renderOrder;
         this.scene.add(this.borderLines);
     }
 
     /**
-     * Clear borders (call when tiles are cleared)
+     * Clear borders
      */
     clearBorders(): void {
         if (this.borderLines) {
             this.scene.remove(this.borderLines);
             this.borderLines.geometry.dispose();
-            (this.borderLines.material as THREE.Material).dispose();
             this.borderLines = null;
         }
+        if (this.borderMaterial) {
+            this.borderMaterial.dispose();
+            this.borderMaterial = null;
+        }
     }
 
     /**
-     * Rebuild merged overlay with all populated tiles
-     * Skips rebuild if the set of populated tiles hasn't changed.
-     * Reuses material and mesh object to avoid GPU memory churn.
+     * Dispose overlay geometry and material
      */
-    rebuild(tiles: HexTile[]): void {
-        // Build new tile ID set and check if anything changed
-        const newTileIds = new Set<string>();
-        for (const tile of tiles) {
-            newTileIds.add(String(tile.id));
-        }
-
-        // Skip rebuild if populated tile set is identical
-        if (newTileIds.size === this.tileIds.size) {
-            let same = true;
-            for (const id of newTileIds) {
-                if (!this.tileIds.has(id)) { same = false; break; }
-            }
-            if (same) return;
-        }
-
-        // Dispose old geometry only (keep material and mesh for reuse)
-        if (this.mergedOverlay) {
-            // Clear tileIndices Map and userData to release references for GC
-            this.mergedOverlay.tileIndices.clear();
-            (this.mergedOverlay.geometry as unknown as { userData: unknown }).userData = null;
-            this.mergedOverlay.geometry.dispose();
-            this.mergedOverlay = null;
-        }
-
-        this.tileIds = newTileIds;
-
-        if (tiles.length === 0) {
-            // Hide mesh if no tiles
-            if (this.overlayMesh) this.overlayMesh.visible = false;
-            return;
-        }
-
-        // Build new merged geometry
-        const geometry = buildMergedOverlayGeometry(tiles);
-        if (!geometry) {
-            if (this.overlayMesh) this.overlayMesh.visible = false;
-            return;
-        }
-
+    private disposeOverlays(): void {
         if (this.overlayMesh) {
-            // Reuse existing mesh — just swap geometry
-            this.overlayMesh.geometry = geometry;
-            this.overlayMesh.visible = true;
-        } else {
-            // First time: create mesh and add to scene
-            this.overlayMesh = new THREE.Mesh(geometry, this.overlayMaterial!);
-            this.overlayMesh.renderOrder = OVERLAY_CONFIG.renderOrder;
-            this.scene.add(this.overlayMesh);
+            this.scene.remove(this.overlayMesh);
+            this.overlayMesh = null;
         }
-
-        this.mergedOverlay = {
-            mesh: this.overlayMesh,
-            geometry,
-            tileIndices: (geometry as unknown as { userData: { tileIndices: Map<string, { start: number; count: number }> } }).userData.tileIndices
-        };
-    }
-
-    /**
-     * Legacy: Add overlay for a tile (no-op in merged system - use rebuild)
-     * Kept for API compatibility
-     */
-    add(_tile: HexTile): void {
-        // Merged system requires rebuild() - individual add not supported
-    }
-
-    /**
-     * Legacy: Remove overlay for a tile (no-op in merged system - use rebuild)
-     * Kept for API compatibility
-     */
-    remove(_tileId: string): void {
-        // Merged system requires rebuild() - individual remove not supported
-    }
-
-    /**
-     * Check if tile has an overlay
-     */
-    has(tileId: string): boolean {
-        return this.tileIds.has(tileId);
+        if (this.overlayGeometry) {
+            this.overlayGeometry.dispose();
+            this.overlayGeometry = null;
+        }
+        if (this.overlayMaterial) {
+            this.overlayMaterial.dispose();
+            this.overlayMaterial = null;
+        }
+        this.tileAlphaRanges.clear();
+        this.visibleTileIds.clear();
     }
 
     /**
      * Clear all overlays and dispose all GPU resources
      */
     clear(): void {
-        if (this.mergedOverlay) {
-            this.mergedOverlay.tileIndices.clear();
-            (this.mergedOverlay.geometry as unknown as { userData: unknown }).userData = null;
-            this.mergedOverlay.geometry.dispose();
-            this.mergedOverlay = null;
-        }
-        if (this.overlayMesh) {
-            this.scene.remove(this.overlayMesh);
-            this.overlayMesh = null;
-        }
-        if (this.overlayMaterial) {
-            this.overlayMaterial.dispose();
-            this.overlayMaterial = null;
-        }
-        this.tileIds.clear();
-    }
-
-    /**
-     * Get overlay count
-     */
-    get size(): number {
-        return this.tileIds.size;
+        this.disposeOverlays();
+        this.clearBorders();
     }
 
     /**
@@ -362,8 +425,6 @@ export class TileOverlayManager {
      */
     flashTile(tile: HexTile): void {
         const tileId = String(tile.id);
-
-        // Clear any existing flash for this tile
         this.stopFlash(tileId);
 
         const flashOverlay = createFlashOverlay(tile);
@@ -372,21 +433,17 @@ export class TileOverlayManager {
         this.scene.add(flashOverlay);
         this.flashOverlays.set(tileId, flashOverlay);
 
-        // Blink effect - toggle visibility
         let visible = true;
         const interval = setInterval(() => {
             visible = !visible;
             flashOverlay.visible = visible;
         }, FLASH_CONFIG.blinkInterval);
 
-        // Remove after duration
         const timeout = setTimeout(() => {
             this.stopFlash(tileId);
         }, FLASH_CONFIG.duration);
 
         this.flashTimers.set(tileId, { timeout, interval });
-
-        console.log(`🔴 Flashing tile ${tileId} for ${FLASH_CONFIG.duration / 1000} seconds`);
     }
 
     /**
@@ -414,7 +471,7 @@ export class TileOverlayManager {
      */
     clearAll(): void {
         this.clear();
-        this.flashTimers.forEach((timers, tileId) => {
+        this.flashTimers.forEach((_timers, tileId) => {
             this.stopFlash(tileId);
         });
     }

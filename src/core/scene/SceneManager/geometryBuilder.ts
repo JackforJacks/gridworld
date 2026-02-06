@@ -1,5 +1,6 @@
 // Scene Manager - Geometry Builder
 // Handles tile geometry creation and validation
+// Modern Three.js patterns: indexed geometry with per-tile fan dedup, Uint16 indices
 import * as THREE from 'three';
 import { BoundaryPoint, HexTile, TileColorInfo, TileDataResponse, HexasphereData } from './types';
 import { getBiomeColorCached } from './colorUtils';
@@ -47,6 +48,10 @@ function getPooledVector3(x: number, y: number, z: number): THREE.Vector3 {
 
 function resetVec3Pool(): void {
     vec3PoolIndex = 0;
+    // Trim pool if it grew too large
+    if (vec3Pool.length > 100) {
+        vec3Pool.length = 100;
+    }
 }
 
 /**
@@ -66,8 +71,105 @@ export function validateTileBoundary(tile: HexTile): THREE.Vector3[] | null {
 }
 
 /**
+ * Build indexed geometry from tiles using per-tile fan deduplication.
+ * Each tile's boundary vertices are stored once; triangle fan indices reference them.
+ * Reduces vertex count by ~50% compared to non-indexed triangle lists.
+ */
+function buildIndexedGeometry(
+    tiles: HexTile[],
+    tileColorIndices: Map<string, TileColorInfo>,
+    habitableTileIds: (number | string)[]
+): THREE.BufferGeometry {
+    // Phase 1: Count totals for pre-allocation
+    let totalVertices = 0;
+    let totalTriangles = 0;
+    for (const tile of tiles) {
+        const bLen = tile.boundary?.length || 0;
+        if (bLen >= 3) {
+            totalVertices += bLen;           // each boundary point stored once per tile
+            totalTriangles += bLen - 2;      // triangle fan: N-2 triangles
+        }
+    }
+
+    // Phase 2: Allocate TypedArrays
+    const positions = new Float32Array(totalVertices * 3);
+    const colors = new Float32Array(totalVertices * 3);
+    // Use Uint16Array when possible (< 65535 vertices), otherwise Uint32Array
+    const useUint16 = totalVertices < 65535;
+    const indices = useUint16
+        ? new Uint16Array(totalTriangles * 3)
+        : new Uint32Array(totalTriangles * 3);
+
+    // Phase 3: Fill arrays
+    let posIdx = 0;
+    let colIdx = 0;
+    let idxIdx = 0;
+    let baseVertex = 0;
+
+    for (const tile of tiles) {
+        // Track habitable tiles
+        if (tile.Habitable === 'yes') {
+            habitableTileIds.push(tile.id);
+        }
+
+        const color = getBiomeColorCached(tile);
+        const tileIdStr = String(tile.id);
+
+        tileColorIndices.set(tileIdStr, {
+            originalColor: color,
+            currentColor: color,
+            isHighlighted: false
+        });
+
+        const boundaryPoints = validateTileBoundary(tile);
+        if (!boundaryPoints || boundaryPoints.length < 3) continue;
+
+        const cr = color.r, cg = color.g, cb = color.b;
+        const bLen = boundaryPoints.length;
+
+        // Write each boundary vertex ONCE (fan dedup)
+        for (let i = 0; i < bLen; i++) {
+            const p = boundaryPoints[i];
+            positions[posIdx++] = p.x;
+            positions[posIdx++] = p.y;
+            positions[posIdx++] = p.z;
+            colors[colIdx++] = cr;
+            colors[colIdx++] = cg;
+            colors[colIdx++] = cb;
+        }
+
+        // Triangle fan indices referencing unique vertices
+        for (let i = 1; i < bLen - 1; i++) {
+            indices[idxIdx++] = baseVertex;         // fan center
+            indices[idxIdx++] = baseVertex + i;
+            indices[idxIdx++] = baseVertex + i + 1;
+        }
+
+        baseVertex += bLen;
+    }
+
+    // Trim to actual size
+    const trimmedPositions = positions.subarray(0, posIdx);
+    const trimmedColors = colors.subarray(0, colIdx);
+    const trimmedIndices = indices.subarray(0, idxIdx);
+
+    // Build geometry
+    const geometry = new THREE.BufferGeometry();
+    geometry.setAttribute('position', new THREE.BufferAttribute(trimmedPositions, 3));
+    geometry.setAttribute('color', new THREE.BufferAttribute(trimmedColors, 3));
+    geometry.setIndex(new THREE.BufferAttribute(trimmedIndices, 1));
+    geometry.computeVertexNormals();
+    geometry.computeBoundingSphere();
+
+    const uniqueVerts = posIdx / 3;
+    const triCount = idxIdx / 3;
+    console.log(`[Geometry] ${tiles.length} tiles → ${uniqueVerts} vertices, ${triCount} triangles (${useUint16 ? 'Uint16' : 'Uint32'} indices)`);
+
+    return geometry;
+}
+
+/**
  * Build Three.js geometry from server-provided tile data
- * OPTIMIZED: Pre-allocated arrays, cached colors, deduplicated validation
  */
 export function buildTilesFromData(tileData: TileDataResponse): BuildTilesResult | null {
     if (!tileData || !Array.isArray(tileData.tiles)) {
@@ -75,106 +177,13 @@ export function buildTilesFromData(tileData: TileDataResponse): BuildTilesResult
         return null;
     }
 
+    resetVec3Pool();
+
     const hexasphere: HexasphereData = { tiles: tileData.tiles };
     const habitableTileIds: (number | string)[] = [];
     const tileColorIndices = new Map<string, TileColorInfo>();
 
-    const tiles = tileData.tiles;
-    const tileCount = tiles.length;
-
-    // Estimate array sizes: avg 6 vertices per tile, 3 triangles, 3 vertices each = ~18 vertices
-    const estimatedVertices = tileCount * 18 * 3;
-    console.log(`[Geometry] Building ${tileCount} tiles, ~${(estimatedVertices * 4 / 1024 / 1024).toFixed(2)}MB estimated`);
-    
-    const vertices = new Float32Array(estimatedVertices);
-    const colors = new Float32Array(estimatedVertices);
-    const indices = new Uint32Array(estimatedVertices);
-
-    let vertexIndex = 0;
-    let colorIndex = 0;
-    let arrayIndex = 0;
-    let indexArrayIndex = 0;
-
-    // Build geometry from each tile using optimized loop
-    for (let tileIdx = 0; tileIdx < tileCount; tileIdx++) {
-        const tile = tiles[tileIdx];
-
-        // Track habitable tiles
-        if (tile.Habitable === 'yes') {
-            habitableTileIds.push(tile.id);
-        }
-
-        // Use cached color lookup
-        const color = getBiomeColorCached(tile);
-        const tileColorStart = colorIndex;
-        const boundaryLen = tile.boundary?.length || 0;
-        const tileVertexCount = (boundaryLen - 2) * 3 * 3;
-        const tileIdStr = String(tile.id);
-
-        // Defer color cloning - store reference, clone only when needed
-        tileColorIndices.set(tileIdStr, {
-            start: tileColorStart,
-            count: tileVertexCount,
-            originalColor: color, // Reference, not clone (colors are shared/cached)
-            currentColor: color,  // Reference initially, clone only on modification
-            isHighlighted: false
-        });
-
-        // Validate and get boundary points
-        const boundaryPoints = validateTileBoundary(tile);
-
-        // Skip tiles with invalid boundary data
-        if (!boundaryPoints || boundaryPoints.length < 3) {
-            continue;
-        }
-
-        // Cache first point and color components for inner loop
-        const p0 = boundaryPoints[0];
-        const p0x = p0.x, p0y = p0.y, p0z = p0.z;
-        const cr = color.r, cg = color.g, cb = color.b;
-        const bLen = boundaryPoints.length;
-
-        // Optimized triangle fan loop
-        for (let i = 1; i < bLen - 1; i++) {
-            const p1 = boundaryPoints[i];
-            const p2 = boundaryPoints[i + 1];
-
-            // Direct array assignment instead of push
-            vertices[arrayIndex++] = p0x;
-            vertices[arrayIndex++] = p0y;
-            vertices[arrayIndex++] = p0z;
-            vertices[arrayIndex++] = p1.x;
-            vertices[arrayIndex++] = p1.y;
-            vertices[arrayIndex++] = p1.z;
-            vertices[arrayIndex++] = p2.x;
-            vertices[arrayIndex++] = p2.y;
-            vertices[arrayIndex++] = p2.z;
-
-            colors[colorIndex++] = cr;
-            colors[colorIndex++] = cg;
-            colors[colorIndex++] = cb;
-            colors[colorIndex++] = cr;
-            colors[colorIndex++] = cg;
-            colors[colorIndex++] = cb;
-            colors[colorIndex++] = cr;
-            colors[colorIndex++] = cg;
-            colors[colorIndex++] = cb;
-
-            indices[indexArrayIndex++] = vertexIndex;
-            indices[indexArrayIndex++] = vertexIndex + 1;
-            indices[indexArrayIndex++] = vertexIndex + 2;
-            vertexIndex += 3;
-        }
-    }
-
-    // Trim TypedArrays to actual size using subarray (creates views, no copy)
-    const trimmedVertices = vertices.subarray(0, arrayIndex);
-    const trimmedColors = colors.subarray(0, colorIndex);
-    const trimmedIndices = indices.subarray(0, indexArrayIndex);
-
-    // Create geometry
-    const geometry = new THREE.BufferGeometry();
-    createBufferGeometry(geometry, trimmedVertices, trimmedColors, trimmedIndices);
+    const geometry = buildIndexedGeometry(tileData.tiles, tileColorIndices, habitableTileIds);
 
     return { hexasphere, habitableTileIds, tileColorIndices, geometry };
 }
@@ -218,7 +227,6 @@ export function buildTilesFromLocalHexasphere(
         return null;
     }
 
-    // Reset vector pool for this build operation
     resetVec3Pool();
 
     // Convert local tiles to HexTile format, merging server state
@@ -226,7 +234,6 @@ export function buildTilesFromLocalHexasphere(
         const tileId = localTile.id ?? idx;
         const state = tileState[String(tileId)];
 
-        // Merge server state with local geometry
         return {
             id: tileId,
             boundary: localTile.boundary,
@@ -243,128 +250,9 @@ export function buildTilesFromLocalHexasphere(
     const habitableTileIds: (number | string)[] = [];
     const tileColorIndices = new Map<string, TileColorInfo>();
 
-    const tileCount = tiles.length;
-
-    // Estimate array sizes: avg 6 boundary points per tile = 4 triangles = 12 vertices = 36 floats
-    // Using TypedArrays directly for better performance
-    const estimatedVertices = tileCount * 18 * 3;
-    const vertices = new Float32Array(estimatedVertices);
-    const colors = new Float32Array(estimatedVertices);
-    const indices = new Uint32Array(estimatedVertices);
-
-    let vertexIndex = 0;
-    let colorIndex = 0;
-    let arrayIndex = 0;
-    let indexArrayIndex = 0;
-
-    for (let tileIdx = 0; tileIdx < tileCount; tileIdx++) {
-        const tile = tiles[tileIdx];
-
-        if (tile.Habitable === 'yes') {
-            habitableTileIds.push(tile.id);
-        }
-
-        const color = getBiomeColorCached(tile);
-        const tileColorStart = colorIndex;
-        const boundaryLen = tile.boundary?.length || 0;
-        const tileVertexCount = (boundaryLen - 2) * 3 * 3;
-        const tileIdStr = String(tile.id);
-
-        // Defer color cloning - store reference, clone only when needed
-        tileColorIndices.set(tileIdStr, {
-            start: tileColorStart,
-            count: tileVertexCount,
-            originalColor: color, // Reference, not clone (colors are shared/cached)
-            currentColor: color,  // Reference initially, clone only on modification
-            isHighlighted: false
-        });
-
-        const boundaryPoints = validateTileBoundary(tile);
-        if (!boundaryPoints || boundaryPoints.length < 3) {
-            continue;
-        }
-
-        const p0 = boundaryPoints[0];
-        const p0x = p0.x, p0y = p0.y, p0z = p0.z;
-        const cr = color.r, cg = color.g, cb = color.b;
-        const bLen = boundaryPoints.length;
-
-        for (let i = 1; i < bLen - 1; i++) {
-            const p1 = boundaryPoints[i];
-            const p2 = boundaryPoints[i + 1];
-
-            vertices[arrayIndex++] = p0x;
-            vertices[arrayIndex++] = p0y;
-            vertices[arrayIndex++] = p0z;
-            vertices[arrayIndex++] = p1.x;
-            vertices[arrayIndex++] = p1.y;
-            vertices[arrayIndex++] = p1.z;
-            vertices[arrayIndex++] = p2.x;
-            vertices[arrayIndex++] = p2.y;
-            vertices[arrayIndex++] = p2.z;
-
-            colors[colorIndex++] = cr;
-            colors[colorIndex++] = cg;
-            colors[colorIndex++] = cb;
-            colors[colorIndex++] = cr;
-            colors[colorIndex++] = cg;
-            colors[colorIndex++] = cb;
-            colors[colorIndex++] = cr;
-            colors[colorIndex++] = cg;
-            colors[colorIndex++] = cb;
-
-            indices[indexArrayIndex++] = vertexIndex;
-            indices[indexArrayIndex++] = vertexIndex + 1;
-            indices[indexArrayIndex++] = vertexIndex + 2;
-            vertexIndex += 3;
-        }
-    }
-
-    // Trim TypedArrays to actual size using subarray (creates views, no copy)
-    const trimmedVertices = vertices.subarray(0, arrayIndex);
-    const trimmedColors = colors.subarray(0, colorIndex);
-    const trimmedIndices = indices.subarray(0, indexArrayIndex);
-
-    const geometry = new THREE.BufferGeometry();
-    createBufferGeometry(geometry, trimmedVertices, trimmedColors, trimmedIndices);
+    const geometry = buildIndexedGeometry(tiles, tileColorIndices, habitableTileIds);
 
     return { hexasphere: hexasphereData, habitableTileIds, tileColorIndices, geometry };
-}
-
-/**
- * Create buffer geometry from vertex/color/index arrays
- * Accepts both regular arrays and TypedArrays
- */
-export function createBufferGeometry(
-    geometry: THREE.BufferGeometry,
-    vertices: number[] | Float32Array,
-    colors: number[] | Float32Array,
-    indices: number[] | Uint32Array
-): void {
-    try {
-        // Use BufferAttribute directly for TypedArrays (faster)
-        if (vertices instanceof Float32Array) {
-            geometry.setAttribute('position', new THREE.BufferAttribute(vertices, 3));
-        } else {
-            geometry.setAttribute('position', new THREE.Float32BufferAttribute(vertices, 3));
-        }
-
-        if (colors instanceof Float32Array) {
-            geometry.setAttribute('color', new THREE.BufferAttribute(colors, 3));
-        } else {
-            geometry.setAttribute('color', new THREE.Float32BufferAttribute(colors, 3));
-        }
-
-        if (indices instanceof Uint32Array) {
-            geometry.setIndex(new THREE.BufferAttribute(indices, 1));
-        } else {
-            geometry.setIndex(indices);
-        }
-
-        geometry.computeVertexNormals();
-    } catch (error: unknown) {
-        console.error('❌ Error creating buffer geometry:', error);
-    }
 }
 
 /**
@@ -372,11 +260,10 @@ export function createBufferGeometry(
  * Uses MeshPhongMaterial with vertex colors - responds to Three.js lights
  */
 export function createHexasphereMesh(geometry: THREE.BufferGeometry, hexasphere: HexasphereData): THREE.Mesh {
-    // Use standard Phong material with vertex colors - works with Three.js lighting system
     const material = new THREE.MeshPhongMaterial({
         vertexColors: true,
         side: THREE.FrontSide,
-        shininess: 10  // Low shininess for matte planet look
+        shininess: 10
     });
 
     const mesh = new THREE.Mesh(geometry, material);
@@ -390,7 +277,6 @@ export function createHexasphereMesh(geometry: THREE.BufferGeometry, hexasphere:
 export function calculateTileProperties(tile: HexTile): { terrainType: string; lat: number; lon: number } {
     let lat = 0, lon = 0;
 
-    // Normalize centerPoint to {x, y, z} format
     const cp = normalizePoint(tile.centerPoint);
 
     try {
@@ -407,7 +293,6 @@ export function calculateTileProperties(tile: HexTile): { terrainType: string; l
         console.warn('Could not get lat/lon for tile:', tile.id, e);
     }
 
-    // Generate terrain using new system
     let terrainType;
     const y = cp.y;
     const isWater = y < -0.1;

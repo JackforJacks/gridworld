@@ -11,7 +11,7 @@ import type { HexTile, HexasphereData, TileColorInfo, TileDataResponse, Populati
 
 // Import modules
 import { initializeColorCaches, getBiomeColor, getBiomeColorCached, getTerrainColor } from './colorUtils';
-import { buildTilesFromData, buildTilesFromLocalHexasphere, createHexasphereMesh, calculateTileProperties, validateTileBoundary, sanitizeBoundaryPoint, createBufferGeometry, normalizePoint } from './geometryBuilder';
+import { buildTilesFromData, buildTilesFromLocalHexasphere, createHexasphereMesh, calculateTileProperties, normalizePoint } from './geometryBuilder';
 import type { LocalHexasphere, CompactTileState } from './geometryBuilder';
 import { TileOverlayManager } from './tileOverlays';
 import { updateTilePopulations, checkPopulationThresholds, getPopulationStats, resetTileColors, initializeTilePopulations, reinitializePopulation } from './populationDisplay';
@@ -194,9 +194,13 @@ class SceneManager {
         this.scene!.add(mesh);
         getAppContext().currentTiles = this.currentTiles;
 
-        // Create thin black borders between tiles
         if (this.overlayManager && this.hexasphere?.tiles) {
+            // Create thin black borders between tiles
             this.overlayManager.createBorders(this.hexasphere.tiles);
+
+            // Build overlay geometry once for all habitable tiles (zero runtime allocation)
+            const habitableTiles = this.hexasphere.tiles.filter(t => t.Habitable === 'yes');
+            this.overlayManager.initOverlays(habitableTiles);
         }
 
         // Apply population data
@@ -218,19 +222,19 @@ class SceneManager {
         this.habitableTileIds = result.habitableTileIds;
         this.tileColorIndices = result.tileColorIndices;
 
-        // Create mesh and add to scene
         const mesh = createHexasphereMesh(result.geometry, result.hexasphere);
         this.hexasphereMesh = mesh;
         this.currentTiles.push(mesh);
         this.scene!.add(mesh);
         getAppContext().currentTiles = this.currentTiles;
 
-        // Create thin black borders between tiles
         if (this.overlayManager && this.hexasphere?.tiles) {
             this.overlayManager.createBorders(this.hexasphere.tiles);
+
+            const habitableTiles = this.hexasphere.tiles.filter(t => t.Habitable === 'yes');
+            this.overlayManager.initOverlays(habitableTiles);
         }
 
-        // Apply population data
         updateTilePopulations(this.hexasphere);
         if (this.overlayManager) {
             checkPopulationThresholds(this.hexasphere, this.tileColorIndices, this.overlayManager);
@@ -250,14 +254,6 @@ class SceneManager {
     checkPopulationThresholds(): void {
         if (!this.hexasphereMesh || !this.overlayManager) return;
         checkPopulationThresholds(this.hexasphere, this.tileColorIndices, this.overlayManager);
-    }
-
-    addTileOverlay(tile: HexTile): void {
-        this.overlayManager?.add(tile);
-    }
-
-    removeTileOverlay(tileId: string): void {
-        this.overlayManager?.remove(tileId);
     }
 
     clearTileOverlays(): void {
@@ -405,48 +401,6 @@ class SceneManager {
 
     getBiomeColor(tile: HexTile): THREE.Color {
         return getBiomeColor(tile);
-    }
-
-    // Legacy method - kept for compatibility
-    addTileGeometry(tile: HexTile, color: THREE.Color, vertices: number[], colors: number[], indices: number[], startVertexIndex: number): void {
-        const boundaryPoints = validateTileBoundary(tile);
-        if (!boundaryPoints || boundaryPoints.length < 3) {
-            console.warn(`Skipping tile ${tile.id}: insufficient boundary points`);
-            return;
-        }
-
-        const cr = color.r, cg = color.g, cb = color.b;
-
-        for (let i = 1; i < boundaryPoints.length - 1; i++) {
-            const p0 = boundaryPoints[0];
-            const p1 = boundaryPoints[i];
-            const p2 = boundaryPoints[i + 1];
-
-            vertices.push(p0.x, p0.y, p0.z);
-            vertices.push(p1.x, p1.y, p1.z);
-            vertices.push(p2.x, p2.y, p2.z);
-            colors.push(cr, cg, cb);
-            colors.push(cr, cg, cb);
-            colors.push(cr, cg, cb);
-            indices.push(startVertexIndex, startVertexIndex + 1, startVertexIndex + 2);
-            startVertexIndex += 3;
-        }
-    }
-
-    // Legacy method - kept for compatibility
-    createHexasphereMesh(geometry: THREE.BufferGeometry, vertices: number[], colors: number[], indices: number[]): void {
-        createBufferGeometry(geometry, vertices, colors, indices);
-
-        const material = new THREE.MeshPhongMaterial({
-            vertexColors: true,
-            side: THREE.DoubleSide
-        });
-        const hexasphereMesh = new THREE.Mesh(geometry, material);
-        this.hexasphereMesh = hexasphereMesh;
-        hexasphereMesh.userData = { hexasphere: this.hexasphere };
-        this.currentTiles.push(hexasphereMesh);
-        this.scene!.add(hexasphereMesh);
-        getAppContext().currentTiles = this.currentTiles;
     }
 
     clearTiles(): void {
