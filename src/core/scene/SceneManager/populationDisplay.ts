@@ -35,20 +35,20 @@ export function updateTilePopulations(hexasphere: HexasphereData | null): void {
 }
 
 /**
- * Check population thresholds - overlay system removed for performance
- * Now just tracks the isHighlighted state without creating overlay meshes
+ * Check population thresholds and rebuild merged overlay
+ * Collects all populated tiles and rebuilds overlay in single draw call
  */
 export function checkPopulationThresholds(
     hexasphere: HexasphereData | null,
     tileColorIndices: Map<string, TileColorInfo>,
-    _overlayManager: TileOverlayManager
+    overlayManager: TileOverlayManager
 ): void {
     if (!hexasphere?.tiles) return;
 
     const tiles = hexasphere.tiles;
     const tileCount = tiles.length;
+    const populatedTiles: HexTile[] = [];
 
-    // Just update state tracking, no overlay meshes
     for (let i = 0; i < tileCount; i++) {
         const tile = tiles[i];
 
@@ -60,9 +60,15 @@ export function checkPopulationThresholds(
         const colorInfo = tileColorIndices.get(tileIdStr);
         if (!colorInfo) continue;
 
-        // Track state without creating overlays
+        // Track state and collect populated tiles for overlay
         colorInfo.isHighlighted = population > 0;
+        if (population > 0) {
+            populatedTiles.push(tile);
+        }
     }
+
+    // Rebuild merged overlay with all populated tiles (single draw call)
+    overlayManager.rebuild(populatedTiles);
 }
 
 /**
@@ -75,10 +81,12 @@ export function resetTileColors(
 ): void {
     if (!hexasphere?.tiles) return;
 
+    // Clear merged overlay (single operation)
+    overlayManager.clear();
+
     for (const tile of hexasphere.tiles) {
         const colorInfo = tileColorIndices.get(String(tile.id));
         if (colorInfo && colorInfo.isHighlighted) {
-            overlayManager.remove(String(tile.id));
             colorInfo.isHighlighted = false;
             colorInfo.currentColor = colorInfo.originalColor.clone();
         }
