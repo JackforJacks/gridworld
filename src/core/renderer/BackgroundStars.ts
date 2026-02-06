@@ -64,7 +64,8 @@ function createStars() {
 }
 
 // Initialize stars when DOM is loaded
-document.addEventListener('DOMContentLoaded', createStars);
+// STARS DISABLED - Uncomment the line below to re-enable stars
+// document.addEventListener('DOMContentLoaded', createStars);
 
 // Export for lazy loading
 export default createStars;
