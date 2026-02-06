@@ -1,64 +1,61 @@
 //! Birth System
 //! 
-//! Handles pregnancy and childbirth for married couples.
+//! Handles childbirth for partnered women.
 
 use hecs::World;
 use rand::Rng;
 use crate::components::{
-    Age, Alive, FamilyId, FamilyMember, FamilyRole, Fertility, 
-    Married, Person, PersonId, Residency, Sex, Single
+    BirthDate, Calendar, Fertility, Mother, Partner, Person, PersonId, Sex, TileId
 };
 
-/// Minimum ticks between births (about 2 years)
-const MIN_BIRTH_INTERVAL: u64 = 24;
+/// Base fertility rate per day for eligible women
+/// Annual ~0.48 / 96 days = 0.005 per day
+const BASE_FERTILITY_RATE: f64 = 0.005;
 
-/// Base fertility rate per month for eligible women
-const BASE_FERTILITY_RATE: f64 = 0.04;
-
-/// Process births for all fertile married women
-pub fn birth_system(world: &mut World, current_tick: u64, next_person_id: &mut u64) {
+/// Process births for all fertile partnered women
+pub fn birth_system(world: &mut World, cal: &Calendar, next_person_id: &mut u64) {
     let mut rng = rand::thread_rng();
-    let mut births: Vec<(hecs::Entity, FamilyId, Option<Residency>)> = Vec::new();
+    let mut births: Vec<(hecs::Entity, TileId)> = Vec::new();
     
-    // Find fertile married women
-    for (entity, (age, fertility, family_member, residency)) in world
-        .query::<(&Age, &Fertility, &FamilyMember, Option<&Residency>)>()
-        .with::<&Alive>()
-        .with::<&Married>()
+    // Find fertile women with partners
+    for (entity, (birth, fertility, tile)) in world
+        .query::<(&BirthDate, &Fertility, &TileId)>()
+        .with::<&Partner>()
         .iter()
     {
         // Check if woman is in fertile age range
-        if !age.can_have_children(Sex::Female) {
+        if !birth.can_have_children(Sex::Female, cal) {
             continue;
         }
         
-        // Check birth interval
-        if let Some(last_birth) = fertility.last_birth_tick {
-            if current_tick - last_birth < MIN_BIRTH_INTERVAL {
-                continue;
-            }
+        // Check birth interval (18 months minimum)
+        if !fertility.can_give_birth(cal) {
+            continue;
         }
         
-        // Fertility decreases with age and number of children
-        let age_factor = if age.years() > 35 {
-            1.0 - ((age.years() - 35) as f64 * 0.05)
+        // Fertility decreases with age (starts declining at 28, max age 33)
+        let years = birth.age_years(cal);
+        let age_factor = if years > 28 {
+            1.0 - ((years - 28) as f64 * 0.1)  // -10% per year after 28
         } else {
             1.0
         };
-        let children_factor = (1.0 - fertility.children_born as f64 * 0.08).max(0.2);
+        
+        // Fertility decreases with number of children (-10% per child, min 20%)
+        let children_factor = fertility.children_factor();
+        
         let rate = BASE_FERTILITY_RATE * age_factor * children_factor;
         
         if rng.gen::<f64>() < rate {
-            births.push((entity, family_member.family_id, residency.copied()));
+            births.push((entity, *tile));
         }
     }
     
     // Process births
-    for (mother_entity, family_id, residency) in births {
+    for (mother_entity, tile_id) in births {
         // Update mother's fertility
         if let Ok(mut fertility) = world.get::<&mut Fertility>(mother_entity) {
-            fertility.last_birth_tick = Some(current_tick);
-            fertility.children_born += 1;
+            fertility.record_birth(cal);
         }
         
         // Create child entity
@@ -67,28 +64,17 @@ pub fn birth_system(world: &mut World, current_tick: u64, next_person_id: &mut u
         
         let sex = if rng.gen::<bool>() { Sex::Male } else { Sex::Female };
         
-        let child_components = (
+        let child = world.spawn((
             Person {
                 id: child_id,
                 first_name: format!("Child_{}", child_id.0),
-                last_name: String::new(), // TODO: inherit from family
+                last_name: String::new(),
             },
             sex,
-            Age::new(0),
-            Alive,
-            FamilyMember {
-                family_id,
-                role: FamilyRole::Child,
-            },
-            Single,
-        );
-        
-        let child = world.spawn(child_components);
-        
-        // Add residency if mother has one
-        if let Some(res) = residency {
-            let _ = world.insert_one(child, res);
-        }
+            BirthDate::new(cal.year, cal.month, cal.day),
+            Mother(mother_entity),
+            tile_id,  // Inherit mother's tile
+        ));
         
         // Add fertility component if female
         if sex == Sex::Female {
@@ -103,10 +89,11 @@ mod tests {
 
     #[test]
     fn test_fertility_age_check() {
-        let age = Age::new(25);
-        assert!(age.can_have_children(Sex::Female));
+        let cal = Calendar::default();
+        let birth = BirthDate::from_age(25, &cal);
+        assert!(birth.can_have_children(Sex::Female, &cal));
         
-        let old_age = Age::new(50);
-        assert!(!old_age.can_have_children(Sex::Female));
+        let old_birth = BirthDate::from_age(50, &cal);
+        assert!(!old_birth.can_have_children(Sex::Female, &cal));
     }
 }

@@ -28,6 +28,10 @@
     <div id="stars" class="stars"></div>
     <div id="dashboard">
         <!-- Dashboard content will go here -->
+        <div id="rust-population" class="dashboard-stat" title="Rust ECS Population">
+            <span class="stat-icon">👤</span>
+            <span id="rust-pop-value">0</span>
+        </div>
         <button id="reset-data" class="dashboard-button reset-button">🔄 Restart</button>
         <button id="show-stats" class="dashboard-button">📊 Stats</button>
         <button id="save-game" class="dashboard-button save-button">💾 Save</button>
@@ -114,6 +118,29 @@
                     });
                 }
             });
+        })();
+    </script>
+    <script>
+        // Rust ECS population display
+        (function () {
+            const popEl = document.getElementById('rust-pop-value');
+            if (!popEl) return;
+
+            async function updateRustPopulation() {
+                try {
+                    const res = await fetch('/api/rust/population');
+                    const data = await res.json();
+                    if (data.success) {
+                        popEl.textContent = data.population.toLocaleString();
+                    }
+                } catch (e) {
+                    // Silent fail - server may not be up yet
+                }
+            }
+
+            // Initial fetch and periodic update
+            updateRustPopulation();
+            setInterval(updateRustPopulation, 2000);
         })();
     </script>
     <!-- ref:include analytics -->

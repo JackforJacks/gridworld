@@ -17,6 +17,11 @@ pub fn seed_population(world: External<WorldHandle>, count: u32) {
 }
 
 #[napi]
+pub fn seed_population_on_tile(world: External<WorldHandle>, count: u32, tile_id: u32) {
+    world.lock().unwrap().seed_population_on_tile(count as usize, tile_id as u16);
+}
+
+#[napi]
 pub fn tick(world: External<WorldHandle>) {
     world.lock().unwrap().tick();
 }
@@ -43,13 +48,19 @@ pub fn get_memory_bytes(_world: External<WorldHandle>) -> u32 {
 }
 
 #[napi]
-pub fn get_current_tick(world: External<WorldHandle>) -> u32 {
-    world.lock().unwrap().current_tick as u32
+pub fn get_current_day(world: External<WorldHandle>) -> u32 {
+    // Return total days since year 4000 (96 days/year)
+    let w = world.lock().unwrap();
+    let years_since = w.calendar.year.saturating_sub(4000) as u32;
+    let days = years_since * 96 
+        + (w.calendar.month as u32 - 1) * 8 
+        + (w.calendar.day as u32 - 1);
+    days
 }
 
 #[napi(object)]
 pub struct JsCalendar {
-    pub tick: u32,
+    pub day: u32,
     pub month: u8,
     pub year: i32,
 }
@@ -58,9 +69,9 @@ pub struct JsCalendar {
 pub fn get_calendar(world: External<WorldHandle>) -> JsCalendar {
     let w = world.lock().unwrap();
     JsCalendar {
-        tick: w.calendar.tick as u32,
+        day: w.calendar.day as u32,
         month: w.calendar.month,
-        year: w.calendar.year,
+        year: w.calendar.year as i32,
     }
 }
 

@@ -79,6 +79,29 @@ kbd {
     color: #fff;
 }
 
+/* Dashboard stat display (Rust population etc.) */
+.dashboard-stat {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    background: rgba(255, 255, 255, 0.1);
+    padding: 6px 12px;
+    border-radius: 6px;
+    font-size: 14px;
+    font-weight: 500;
+    color: #fff;
+    cursor: default;
+}
+
+.dashboard-stat .stat-icon {
+    font-size: 18px;
+}
+
+#rust-pop-value {
+    font-family: 'Consolas', 'Monaco', monospace;
+    min-width: 60px;
+}
+
 #projection {
     display: none;
 }

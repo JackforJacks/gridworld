@@ -18,6 +18,7 @@
  */
 
 import storage from '../storage';
+import rustSimulation from '../rustSimulation';
 import Hexasphere from '../../../src/core/hexasphere/HexaSphere';
 import idAllocator from '../idAllocator';
 import {
@@ -200,7 +201,17 @@ export async function restartWorld(options: WorldRestartOptions = {}): Promise<W
 
         // Step 5: Select habitable tiles and create population
         console.log('👥 [WorldRestart] Step 4/6: Creating population...');
-        const { habitableTiles, selectedTiles, people } = await createPopulation(seed, tileCount);
+        const { habitableTiles, selectedTiles, people, tilePeopleCounts } = await createPopulation(seed, tileCount);
+
+        // Step 5b: Seed Rust ECS simulation with same tile/population data
+        console.log('🦀 [WorldRestart] Seeding Rust simulation...');
+        rustSimulation.reset();
+        for (let i = 0; i < selectedTiles.length; i++) {
+            if (tilePeopleCounts[i] > 0) {
+                rustSimulation.seedPopulationOnTile(tilePeopleCounts[i], selectedTiles[i]);
+            }
+        }
+        console.log(`   🦀 Rust ECS seeded: ${rustSimulation.getPopulation()} people across ${selectedTiles.length} tiles`);
 
         // Step 6: Create villages for populated tiles
         console.log('🏘️ [WorldRestart] Step 5/6: Creating villages...');
@@ -424,6 +435,7 @@ interface PopulationResult {
     habitableTiles: number;
     selectedTiles: number[];
     people: Person[];
+    tilePeopleCounts: number[];
 }
 
 async function createPopulation(seed: number, tileCount: number): Promise<PopulationResult> {
@@ -460,7 +472,7 @@ async function createPopulation(seed: number, tileCount: number): Promise<Popula
     // Warn if no habitable tiles found, but continue with empty population
     if (habitableTileIds.length === 0) {
         console.warn('⚠️ [WorldRestart] No habitable tiles found - world will have no population');
-        return { habitableTiles: 0, selectedTiles: [], people: [] };
+        return { habitableTiles: 0, selectedTiles: [], people: [], tilePeopleCounts: [] };
     }
 
     // Shuffle and select 60% of habitable tiles (or use explicit tileCount if provided)
@@ -569,7 +581,8 @@ async function createPopulation(seed: number, tileCount: number): Promise<Popula
     return {
         habitableTiles: habitableTileIds.length,
         selectedTiles,
-        people: allPeople
+        people: allPeople,
+        tilePeopleCounts
     };
 }
 

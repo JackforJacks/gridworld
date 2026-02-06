@@ -1,10 +1,10 @@
 //! Death System
 //! 
-//! Determines mortality based on age and removes dead entities.
+//! Determines mortality based on age and despawns dead entities.
 
 use hecs::World;
 use rand::Rng;
-use crate::components::{Age, Alive, Dead};
+use crate::components::{BirthDate, Calendar};
 
 /// Base mortality rates by age bracket (annual probability)
 const MORTALITY_RATES: &[(u32, f64)] = &[
@@ -20,50 +20,35 @@ const MORTALITY_RATES: &[(u32, f64)] = &[
     (100, 0.5),    // Centenarian
 ];
 
-/// Get monthly mortality rate for a given age
-fn get_mortality_rate(years: u32) -> f64 {
+/// Get daily mortality rate for a given age
+fn get_mortality_rate(years: u16) -> f64 {
     let annual = MORTALITY_RATES
         .iter()
         .rev()
-        .find(|(age, _)| years >= *age)
+        .find(|(age, _)| years >= *age as u16)
         .map(|(_, rate)| *rate)
         .unwrap_or(0.002);
     
-    // Convert annual to monthly: 1 - (1 - annual)^(1/12)
-    1.0 - (1.0 - annual).powf(1.0 / 12.0)
+    // Convert annual to daily: 1 - (1 - annual)^(1/96) for 96 days/year
+    1.0 - (1.0 - annual).powf(1.0 / Calendar::DAYS_PER_YEAR as f64)
 }
 
-/// Process death for all living entities
-pub fn death_system(world: &mut World, current_tick: u64) {
+/// Process death for all entities - despawns dead ones immediately
+pub fn death_system(world: &mut World, cal: &Calendar) {
     let mut rng = rand::thread_rng();
     let mut deaths = Vec::new();
     
     // Determine who dies this tick
-    for (entity, age) in world.query::<&Age>().with::<&Alive>().iter() {
-        let rate = get_mortality_rate(age.years());
+    for (entity, birth) in world.query::<&BirthDate>().iter() {
+        let years = birth.age_years(cal);
+        let rate = get_mortality_rate(years);
         if rng.gen::<f64>() < rate {
             deaths.push(entity);
         }
     }
     
-    // Process deaths - remove Alive, add Dead
+    // Despawn dead entities
     for entity in deaths {
-        let _ = world.remove_one::<Alive>(entity);
-        let _ = world.insert_one(entity, Dead { tick_of_death: current_tick });
-    }
-}
-
-/// Clean up dead entities (call periodically, not every tick)
-pub fn cleanup_dead(world: &mut World, ticks_to_keep: u64, current_tick: u64) {
-    let mut to_despawn = Vec::new();
-    
-    for (entity, dead) in world.query::<&Dead>().iter() {
-        if current_tick - dead.tick_of_death > ticks_to_keep {
-            to_despawn.push(entity);
-        }
-    }
-    
-    for entity in to_despawn {
         let _ = world.despawn(entity);
     }
 }

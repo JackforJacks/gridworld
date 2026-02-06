@@ -9,6 +9,7 @@ import calendarRoutes from './calendar';
 import dbRoutes from './db';
 import statisticsRoutes from './statistics';
 import systemRoutes from './system';
+import rustRoutes from './rust';
 import DatabaseService from '../services/databaseService';
 import pool from '../config/database';
 import StateManager from '../services/stateManager';
@@ -40,6 +41,7 @@ router.use('/calendar', calendarRoutes);
 router.use('/db', dbRoutes);
 router.use('/statistics', statisticsRoutes);
 router.use('/system', systemRoutes);
+router.use('/rust', rustRoutes);
 
 // POST /api/save - Save game state from Redis to PostgreSQL
 router.post('/save', async (req: Request, res: Response) => {

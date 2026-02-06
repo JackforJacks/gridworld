@@ -1,12 +1,11 @@
 //! Matchmaking System
 //! 
-//! Pairs single adults into marriages.
+//! Pairs single adults into partnerships.
 
 use hecs::World;
 use rand::seq::SliceRandom;
 use crate::components::{
-    Age, Alive, Family, FamilyHeads, FamilyId, FamilyMember, FamilyRole,
-    Fertility, Married, Residency, Sex, Single, VillageId
+    BirthDate, Calendar, Fertility, Partner, Sex, TileId
 };
 use std::collections::HashMap;
 
@@ -17,37 +16,36 @@ const MARRIAGE_AGE: u32 = 16;
 const MAX_AGE_DIFF: u32 = 15;
 
 /// Process matchmaking - pair eligible singles
-pub fn matchmaking_system(world: &mut World, current_tick: u64, next_family_id: &mut u64) {
+pub fn matchmaking_system(world: &mut World, cal: &Calendar) {
     let mut rng = rand::thread_rng();
     
-    // Collect eligible singles by village
-    let mut single_men: HashMap<Option<VillageId>, Vec<(hecs::Entity, u32)>> = HashMap::new();
-    let mut single_women: HashMap<Option<VillageId>, Vec<(hecs::Entity, u32)>> = HashMap::new();
+    // Collect eligible singles by tile (people without Partner)
+    let mut single_men: HashMap<u16, Vec<(hecs::Entity, u16)>> = HashMap::new();
+    let mut single_women: HashMap<u16, Vec<(hecs::Entity, u16)>> = HashMap::new();
     
-    for (entity, (age, sex, residency)) in world
-        .query::<(&Age, &Sex, Option<&Residency>)>()
-        .with::<&Alive>()
-        .with::<&Single>()
+    for (entity, (birth, sex, tile)) in world
+        .query::<(&BirthDate, &Sex, &TileId)>()
+        .without::<&Partner>()
         .iter()
     {
-        if age.years() < MARRIAGE_AGE {
+        let years = birth.age_years(cal);
+        if years < MARRIAGE_AGE as u16 {
             continue;
         }
         
-        let village = residency.map(|r| r.village_id);
-        let entry = (entity, age.years());
+        let entry = (entity, years);
         
         match sex {
-            Sex::Male => single_men.entry(village).or_default().push(entry),
-            Sex::Female => single_women.entry(village).or_default().push(entry),
+            Sex::Male => single_men.entry(tile.0).or_default().push(entry),
+            Sex::Female => single_women.entry(tile.0).or_default().push(entry),
         }
     }
     
-    // Match within each village
+    // Match within each tile
     let mut marriages = Vec::new();
     
-    for (village, mut men) in single_men {
-        if let Some(women) = single_women.get_mut(&village) {
+    for (tile, mut men) in single_men {
+        if let Some(women) = single_women.get_mut(&tile) {
             men.shuffle(&mut rng);
             women.shuffle(&mut rng);
             
@@ -60,51 +58,16 @@ pub fn matchmaking_system(world: &mut World, current_tick: u64, next_family_id: 
                 
                 if let Some(pos) = woman_pos {
                     let (woman_entity, _) = women.remove(pos);
-                    marriages.push((man_entity, woman_entity, village));
+                    marriages.push((man_entity, woman_entity));
                 }
             }
         }
     }
     
-    // Process marriages
-    for (husband_entity, wife_entity, _village) in marriages {
-        // Create new family
-        let family_id = FamilyId(*next_family_id);
-        *next_family_id += 1;
-        
-        let _family_entity = world.spawn((
-            Family { id: family_id },
-            FamilyHeads {
-                husband: Some(husband_entity),
-                wife: Some(wife_entity),
-            },
-        ));
-        
-        // Remove Single, add Married and FamilyMember to both
-        let _ = world.remove_one::<Single>(husband_entity);
-        let _ = world.remove_one::<Single>(wife_entity);
-        
-        let _ = world.insert(husband_entity, (
-            Married {
-                spouse_entity: wife_entity,
-                marriage_tick: current_tick,
-            },
-            FamilyMember {
-                family_id,
-                role: FamilyRole::Husband,
-            },
-        ));
-        
-        let _ = world.insert(wife_entity, (
-            Married {
-                spouse_entity: husband_entity,
-                marriage_tick: current_tick,
-            },
-            FamilyMember {
-                family_id,
-                role: FamilyRole::Wife,
-            },
-        ));
+    // Process marriages - just add Partner component to both
+    for (husband_entity, wife_entity) in marriages {
+        let _ = world.insert_one(husband_entity, Partner(wife_entity));
+        let _ = world.insert_one(wife_entity, Partner(husband_entity));
         
         // Ensure wife has fertility component
         if world.get::<&Fertility>(wife_entity).is_err() {

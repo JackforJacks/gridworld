@@ -120,6 +120,14 @@ class GridWorldServer {
             // Perform the load - Redis is already guaranteed to be ready
             await StateManager.loadFromDatabase();
 
+            // Sync Rust ECS from Redis population data
+            try {
+                const rustSim = await import('./services/rustSimulation');
+                await rustSim.default.syncFromRedis();
+            } catch (e: unknown) {
+                console.warn('⚠️ Failed to sync Rust simulation from Redis:', (e as Error).message);
+            }
+
             // If storage reconnects later, re-sync automatically
             try {
                 const storage = await import('./services/storage');
