@@ -16,7 +16,7 @@ body {
 }
 
 body {
-    background: linear-gradient(to bottom, #000022 0%, #0a0a2a 50%, #1a1a4a 100%);
+    background: #001a33; /* Dark blue background */
     position: relative;
     color: #fff;
 }

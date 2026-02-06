@@ -261,10 +261,10 @@ class GridWorldApp {
                 import('./core/scene/init')
             ]);
 
-            // Initialize background stars
-            if (typeof initStars === 'function') {
-                initStars();
-            }
+            // Initialize background stars - DISABLED
+            // if (typeof initStars === 'function') {
+            //     initStars();
+            // }
 
             // Create the hexasphere using server environment variables (with timing)
             console.log('🌐 Starting sphere initialization...');
