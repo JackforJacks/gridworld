@@ -120,29 +120,7 @@
             });
         })();
     </script>
-    <script>
-        // Rust ECS population display
-        (function () {
-            const popEl = document.getElementById('rust-pop-value');
-            if (!popEl) return;
-
-            async function updateRustPopulation() {
-                try {
-                    const res = await fetch('/api/rust/population');
-                    const data = await res.json();
-                    if (data.success) {
-                        popEl.textContent = data.population.toLocaleString();
-                    }
-                } catch (e) {
-                    // Silent fail - server may not be up yet
-                }
-            }
-
-            // Initial fetch and periodic update
-            updateRustPopulation();
-            setInterval(updateRustPopulation, 2000);
-        })();
-    </script>
+    <!-- Rust ECS population updates now handled via Socket.IO events in UIManager -->
     <!-- ref:include analytics -->
     <!-- endref -->
 

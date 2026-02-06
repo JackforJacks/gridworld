@@ -159,16 +159,42 @@ class TileSelector {
         this.cancelPendingRequest();
 
         try {
-            const data = await this.fetchTileData(tile.id);
+            // Fetch tile data and Rust population in parallel
+            const [data, rustData] = await Promise.all([
+                this.fetchTileData(tile.id),
+                this.fetchRustTilePopulation(tile.id)
+            ]);
+            
             if (data) {
                 tile.lands = data.lands;
                 tile.fertility = data.fertility;
-                this.updatePanel(tile);
             }
+            if (rustData !== null) {
+                tile.rustPopulation = rustData;
+            }
+            this.updatePanel(tile);
         } catch (error) {
             if ((error as Error).name !== 'AbortError') {
                 console.warn(`Failed to fetch detailed tile data for tile ${tile.id}:`, error);
             }
+        }
+    }
+
+    /**
+     * Fetch Rust ECS population for a tile
+     */
+    private async fetchRustTilePopulation(tileId: number | string): Promise<number | null> {
+        try {
+            const response = await fetch(`/api/rust/tiles/${tileId}`, {
+                signal: this.abortController?.signal
+            });
+            if (response.ok) {
+                const data = await response.json();
+                return data.population ?? null;
+            }
+            return null;
+        } catch {
+            return null;
         }
     }
 

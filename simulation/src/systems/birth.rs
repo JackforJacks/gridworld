@@ -12,8 +12,9 @@ use crate::components::{
 /// Annual ~0.48 / 96 days = 0.005 per day
 const BASE_FERTILITY_RATE: f64 = 0.005;
 
-/// Process births for all fertile partnered women
-pub fn birth_system(world: &mut World, cal: &Calendar, next_person_id: &mut u64) {
+/// Process births for all fertile partnered women.
+/// Returns the number of births this tick.
+pub fn birth_system(world: &mut World, cal: &Calendar, next_person_id: &mut u64) -> u32 {
     let mut rng = rand::thread_rng();
     let mut births: Vec<(hecs::Entity, TileId)> = Vec::new();
     
@@ -51,6 +52,8 @@ pub fn birth_system(world: &mut World, cal: &Calendar, next_person_id: &mut u64)
         }
     }
     
+    let count = births.len() as u32;
+    
     // Process births
     for (mother_entity, tile_id) in births {
         // Update mother's fertility
@@ -81,6 +84,8 @@ pub fn birth_system(world: &mut World, cal: &Calendar, next_person_id: &mut u64)
             let _ = world.insert_one(child, Fertility::default());
         }
     }
+    
+    count
 }
 
 #[cfg(test)]

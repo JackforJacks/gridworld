@@ -9,6 +9,44 @@ export interface RustCalendar {
     year: number;
 }
 
+export interface TickResult {
+    births: number;
+    deaths: number;
+    marriages: number;
+    pregnancies: number;
+    dissolutions: number;
+    population: number;
+}
+
+export interface TilePopulation {
+    tileId: number;
+    count: number;
+}
+
+export interface Demographics {
+    population: number;
+    males: number;
+    females: number;
+    partnered: number;
+    single: number;
+    pregnant: number;
+    averageAge: number;
+    age0_4: number;
+    age5_14: number;
+    age15_29: number;
+    age30_49: number;
+    age50_69: number;
+    age70_89: number;
+    age90Plus: number;
+}
+
+export interface ImportResult {
+    population: number;
+    partners: number;
+    mothers: number;
+    calendarYear: number;
+}
+
 class RustSimulationService {
     private world: unknown = null;
 
@@ -27,14 +65,14 @@ class RustSimulationService {
         simulation.seedPopulation(this.world, count);
     }
 
-    /** Advance simulation by one tick (1 day) */
-    tick(): void {
-        simulation.tick(this.world);
+    /** Advance simulation by one tick (1 day). Returns births/deaths/marriages/population. */
+    tick(): TickResult {
+        return simulation.tick(this.world) as TickResult;
     }
 
-    /** Advance simulation by N ticks */
-    tickMany(count: number): void {
-        simulation.tickMany(this.world, count);
+    /** Advance simulation by N ticks. Returns accumulated births/deaths/marriages + final population. */
+    tickMany(count: number): TickResult {
+        return simulation.tickMany(this.world, count) as TickResult;
     }
 
     /** Get total population (entity count) */
@@ -57,10 +95,65 @@ class RustSimulationService {
         return simulation.getCurrentDay(this.world);
     }
 
+    // ========================================================================
+    // Statistics queries (Phase 2)
+    // ========================================================================
+
+    /** Get population count for a specific tile */
+    getTilePopulation(tileId: number): number {
+        return simulation.getTilePopulation(this.world, tileId) as number;
+    }
+
+    /** Get population counts per tile */
+    getPopulationByTile(): TilePopulation[] {
+        const raw = simulation.getPopulationByTile(this.world) as Array<{ tileId: number; count: number }>;
+        return raw.map((r: { tileId: number; count: number }) => ({ tileId: r.tileId, count: r.count }));
+    }
+
+    /** Get full demographics snapshot (age distribution, sex ratio, partnership stats) */
+    getDemographics(): Demographics {
+        const d = simulation.getDemographics(this.world);
+        // napi-rs converts snake_case to camelCase: age_0_4 → age04, age_5_14 → age514, etc.
+        return {
+            population: d.population,
+            males: d.males,
+            females: d.females,
+            partnered: d.partnered,
+            single: d.single,
+            pregnant: d.pregnant,
+            averageAge: d.averageAge,
+            age0_4: d.age04,
+            age5_14: d.age514,
+            age15_29: d.age1529,
+            age30_49: d.age3049,
+            age50_69: d.age5069,
+            age70_89: d.age7089,
+            age90Plus: d.age90Plus,
+        };
+    }
+
     /** Reset world - creates new world instance */
     reset(): void {
         this.world = simulation.createWorld();
         console.log('🦀 Rust simulation world reset');
+    }
+
+    // ========================================================================
+    // Persistence (Phase 4)
+    // ========================================================================
+
+    /** Export entire world state to JSON string for database storage */
+    exportWorld(): string {
+        const json = simulation.exportWorld(this.world) as string;
+        console.log(`🦀 Exported Rust world: ${json.length} bytes`);
+        return json;
+    }
+
+    /** Import world state from JSON string, replacing current state */
+    importWorld(json: string): ImportResult {
+        const result = simulation.importWorld(this.world, json) as ImportResult;
+        console.log(`🦀 Imported Rust world: ${result.population} people, ${result.partners} partners, year ${result.calendarYear}`);
+        return result;
     }
 
     /** Sync Rust ECS from Redis person data (used on server restart) */

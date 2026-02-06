@@ -1,7 +1,7 @@
 // UI Manager Module
 // Handles UI setup, controls panel, and user interface interactions
 
-import populationManager from '../population/PopulationManager';
+import populationManager, { RustTickData } from '../population/PopulationManager';
 import { getAppContext } from '../../core/AppContext';
 import { getApiClient } from '../../services/api/ApiClient';
 
@@ -46,6 +46,7 @@ interface PopulationApiStats {
     avgChildrenPerFamily?: number;
     totalPopulation?: number;
     villagesCount?: number;
+    totalTiles?: number;
 }
 
 // Interface for stats data
@@ -86,6 +87,25 @@ interface StatsData {
 // Chart.js instance interface
 interface ChartInstance {
     destroy(): void;
+}
+
+// Rust ECS demographics response
+interface RustDemographicsData {
+    success: boolean;
+    population: number;
+    males: number;
+    females: number;
+    partnered: number;
+    single: number;
+    pregnant: number;
+    averageAge: number;
+    age0_4: number;
+    age5_14: number;
+    age15_29: number;
+    age30_49: number;
+    age50_69: number;
+    age70_89: number;
+    age90Plus: number;
 }
 
 // Extended window interface for local use
@@ -547,10 +567,22 @@ class UIManager {
                 mergeApiStats(stats, popData);
             }
 
+            // Fetch Rust ECS demographics
+            let rustDemographics: RustDemographicsData | null = null;
+            try {
+                const res = await fetch('/api/rust/demographics');
+                const data = await res.json();
+                if (data.success) {
+                    rustDemographics = data as RustDemographicsData;
+                }
+            } catch (e) {
+                // Silent fail - Rust stats are optional
+            }
+
             this.currentTotalPopulation = stats.totalPopulation ?? 0;
             const growthStats = populationManager.getGrowthStats();
             this.hideLoadingIndicator();
-            this.showStatsModal(stats, growthStats);
+            this.showStatsModal(stats, growthStats, rustDemographics);
         } catch (error: unknown) {
             this.hideLoadingIndicator();
             console.error('Failed to get statistics:', error);
@@ -558,7 +590,7 @@ class UIManager {
         }
     }
 
-    showStatsModal(stats: StatsData, _growthStats: GrowthStats): void {
+    showStatsModal(stats: StatsData, _growthStats: GrowthStats, rustDemographics?: RustDemographicsData | null): void {
         // Remove existing modal if any
         document.getElementById('stats-modal-overlay')?.remove();
 
@@ -566,7 +598,7 @@ class UIManager {
         const overlay = document.createElement('div');
         overlay.id = 'stats-modal-overlay';
         overlay.className = 'stats-modal-overlay';
-        overlay.innerHTML = this.generateStatsModalHTML(stats);
+        overlay.innerHTML = this.generateStatsModalHTML(stats, rustDemographics);
         document.body.appendChild(overlay);
 
         // Attach event handlers
@@ -577,7 +609,7 @@ class UIManager {
     }
 
     /** Generate stats modal HTML content */
-    private generateStatsModalHTML(stats: StatsData): string {
+    private generateStatsModalHTML(stats: StatsData, rustDemographics?: RustDemographicsData | null): string {
         const SEP = '<hr class="stats-modal-separator">';
 
         // Biome section
@@ -591,11 +623,54 @@ class UIManager {
             ${this.biomeRow('⛰️ Alpine', stats.biomes.alpine)}
         ` : '';
 
+        // Rust ECS demographics section
+        const rustSection = rustDemographics ? (() => {
+            const d = rustDemographics;
+            const sexRatio = d.females > 0 ? (d.males / d.females).toFixed(2) : 'N/A';
+            const partnerPct = d.population > 0 ? ((d.partnered / d.population) * 100).toFixed(1) : '0.0';
+            // Build a simple ASCII bar chart for age brackets
+            const brackets = [
+                { label: '0-4', count: d.age0_4 },
+                { label: '5-14', count: d.age5_14 },
+                { label: '15-29', count: d.age15_29 },
+                { label: '30-49', count: d.age30_49 },
+                { label: '50-69', count: d.age50_69 },
+                { label: '70-89', count: d.age70_89 },
+                { label: '90+', count: d.age90Plus },
+            ];
+            const maxCount = Math.max(...brackets.map(b => b.count), 1);
+            const barRows = brackets.map(b => {
+                const pct = d.population > 0 ? ((b.count / d.population) * 100).toFixed(1) : '0.0';
+                const barWidth = Math.round((b.count / maxCount) * 100);
+                return `<div style="display:flex;align-items:center;margin:2px 0;gap:6px;">
+                    <span style="width:40px;text-align:right;font-size:0.85em;color:#aaa;">${b.label}</span>
+                    <div style="flex:1;background:#333;border-radius:3px;overflow:hidden;height:16px;">
+                        <div style="width:${barWidth}%;background:linear-gradient(90deg,#4a90d9,#67b8e3);height:100%;border-radius:3px;"></div>
+                    </div>
+                    <span style="width:80px;font-size:0.85em;color:#ccc;">${b.count.toLocaleString()} (${pct}%)</span>
+                </div>`;
+            }).join('');
+
+            return `
+                ${SEP}
+                <h4>🦀 Rust ECS Demographics</h4>
+                ${statRow('ECS Population', d.population.toLocaleString())}
+                ${statRow('Males / Females', `${d.males.toLocaleString()} / ${d.females.toLocaleString()} (ratio: ${sexRatio})`)}
+                ${statRow('Partnered', `${d.partnered.toLocaleString()} (${partnerPct}%)`)}
+                ${statRow('Single', d.single.toLocaleString())}
+                ${statRow('🤰 Pregnant', (d.pregnant ?? 0).toLocaleString())}
+                ${statRow('Average Age', d.averageAge.toFixed(1) + ' years')}
+                <div style="margin-top:8px;">
+                    <strong>Age Distribution:</strong>
+                    <div style="margin-top:4px;">${barRows}</div>
+                </div>
+            `;
+        })() : '';
+
         return `
             <div class="stats-modal">
                 <div class="stats-modal-header">
                     <h3>📊 Population Statistics</h3>
-                    <button class="stats-modal-refresh" style="margin-right:8px">⟳ Refresh</button>
                     <button class="stats-modal-close">&times;</button>
                 </div>
                 <div class="stats-modal-content">
@@ -624,6 +699,7 @@ class UIManager {
                     ${statRow(`High Pop Tiles (≥${stats.threshold ?? 0})`, String(stats.highPopulationTiles ?? 'N/A'))}
                     ${statRow('Red Tiles', String(stats.redTiles ?? 'N/A'))}
                     ${biomeSection}
+                    ${rustSection}
                     ${SEP}
                     <div style="margin: 24px 0;">
                         <h4>Vital Rates (per 1000 people, last 100 years)</h4>
@@ -641,16 +717,7 @@ class UIManager {
 
     /** Attach event handlers to stats modal */
     private attachStatsModalHandlers(overlay: HTMLElement): void {
-        const refreshBtn = overlay.querySelector('.stats-modal-refresh') as HTMLButtonElement;
         const closeBtn = overlay.querySelector('.stats-modal-close');
-
-        if (refreshBtn) {
-            refreshBtn.onclick = async () => {
-                refreshBtn.disabled = true;
-                refreshBtn.textContent = 'Refreshing...';
-                await this.handleShowStats();
-            };
-        }
 
         if (closeBtn) {
             closeBtn.addEventListener('click', () => overlay.remove());
@@ -712,9 +779,24 @@ class UIManager {
             if (eventType === 'connected') {
                 this.isConnected = eventData as boolean;
             }
-            // Do NOT update currentTotalPopulation on populationUpdate anymore
+            // Handle real-time Rust ECS population updates
+            if (eventType === 'rustPopulation') {
+                const rustData = eventData as RustTickData;
+                this.currentTotalPopulation = rustData.population;
+                this.updateRustPopulationDisplay(rustData);
+            }
         });
         populationManager.connect();
+    }
+
+    // Update the Rust ECS population display in real-time
+    updateRustPopulationDisplay(data: RustTickData): void {
+        const rustPopEl = document.getElementById('rust-pop-value');
+        if (rustPopEl) {
+            rustPopEl.textContent = data.population.toLocaleString();
+        }
+        // Also update stats modal if open
+        this.updateStatsModalPopulation();
     }
 
     updateStatsModalPopulation(): void {

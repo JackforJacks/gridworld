@@ -83,6 +83,9 @@ export async function loadFromDatabase(context: LoadContext): Promise<LoadResult
         // Reload calendar state from DB
         await reloadCalendarState(context);
 
+        // Restore Rust simulation state from DB (if saved)
+        await loadRustSimulationState();
+
         // Resume calendar if it was running
         resumeCalendar(context, calendarWasRunning);
 
@@ -220,6 +223,51 @@ function pauseCalendar(context: LoadContext): boolean {
 async function reloadCalendarState(context: LoadContext): Promise<void> {
     if (context.calendarService?.loadStateFromDB) {
         await context.calendarService.loadStateFromDB();
+    }
+}
+
+/**
+ * Load Rust simulation state from PostgreSQL
+ * Restores the entire Rust ECS world from saved JSON
+ */
+async function loadRustSimulationState(): Promise<void> {
+    const pool = require('../../../config/database').default;
+    
+    try {
+        const result = await pool.query(`
+            SELECT state_json, population, calendar_year 
+            FROM rust_simulation_state 
+            WHERE id = 1
+        `);
+        
+        if (result.rows.length === 0) {
+            console.log('🦀 No saved Rust simulation state found, will sync from Redis');
+            // Fall back to syncing from Redis (legacy behavior)
+            const rustSimulation = require('../../rustSimulation').default;
+            await rustSimulation.syncFromRedis();
+            return;
+        }
+        
+        const { state_json, population, calendar_year } = result.rows[0];
+        
+        // Import the saved state
+        const rustSimulation = require('../../rustSimulation').default;
+        const importResult = rustSimulation.importWorld(state_json);
+        
+        console.log(`🦀 [PostgreSQL] Loaded Rust simulation state: ${importResult.population} people, ${importResult.partners} partners, year ${importResult.calendarYear}`);
+    } catch (err: unknown) {
+        // Table might not exist yet - fall back to Redis sync
+        const errMsg = err instanceof Error ? err.message : String(err);
+        if (errMsg.includes('does not exist')) {
+            console.log('🦀 rust_simulation_state table not found, syncing from Redis');
+            const rustSimulation = require('../../rustSimulation').default;
+            await rustSimulation.syncFromRedis();
+        } else {
+            console.warn('⚠️ Failed to load Rust simulation state:', errMsg);
+            // Still try to sync from Redis as fallback
+            const rustSimulation = require('../../rustSimulation').default;
+            await rustSimulation.syncFromRedis();
+        }
     }
 }
 

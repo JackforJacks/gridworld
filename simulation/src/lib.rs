@@ -10,7 +10,9 @@ pub mod components;
 pub mod systems;
 pub mod world;
 pub mod storage;
+pub mod persistence;
 pub mod napi_bindings;
 
 pub use components::*;
 pub use world::SimulationWorld;
+pub use persistence::{ExportData, ImportResult};

@@ -100,6 +100,16 @@ CREATE TABLE IF NOT EXISTS calendar_state (
     CONSTRAINT single_row_constraint CHECK (id = 1)
 );
 
+-- 4b. Create rust_simulation_state table (stores Rust ECS state as JSON)
+CREATE TABLE IF NOT EXISTS rust_simulation_state (
+    id INT PRIMARY KEY DEFAULT 1,
+    state_json TEXT NOT NULL,
+    population INT NOT NULL DEFAULT 0,
+    calendar_year INT NOT NULL DEFAULT 4000,
+    last_updated TIMESTAMP DEFAULT NOW(),
+    CONSTRAINT single_rust_state CHECK (id = 1)
+);
+
 -- 5. Add family_id reference to people table (if not already added)
 DO $$ 
 BEGIN

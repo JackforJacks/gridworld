@@ -32,11 +32,13 @@ router.get('/status', (req: Request, res: Response) => {
         const population = rustSimulation.getPopulation();
         const calendar = rustSimulation.getCalendar();
         const memoryBytes = rustSimulation.getMemoryBytes();
+        const demographics = rustSimulation.getDemographics();
         res.json({
             success: true,
             population,
             calendar,
-            memoryMB: (memoryBytes / 1024 / 1024).toFixed(2)
+            memoryMB: (memoryBytes / 1024 / 1024).toFixed(2),
+            demographics
         });
     } catch (error: unknown) {
         console.error('Error getting Rust status:', error);
@@ -61,16 +63,55 @@ router.post('/seed', (req: Request, res: Response) => {
 router.post('/tick', (req: Request, res: Response) => {
     try {
         const { count = 1 } = req.body;
+        let result;
         if (count > 1) {
-            rustSimulation.tickMany(count);
+            result = rustSimulation.tickMany(count);
         } else {
-            rustSimulation.tick();
+            result = rustSimulation.tick();
         }
-        const population = rustSimulation.getPopulation();
         const calendar = rustSimulation.getCalendar();
-        res.json({ success: true, population, calendar });
+        res.json({ success: true, ...result, calendar });
     } catch (error: unknown) {
         console.error('Error ticking Rust simulation:', error);
+        res.status(500).json({ success: false, error: (error as Error).message });
+    }
+});
+
+// GET /api/rust/demographics - Full demographics snapshot
+router.get('/demographics', (req: Request, res: Response) => {
+    try {
+        const demographics = rustSimulation.getDemographics();
+        res.json({ success: true, ...demographics });
+    } catch (error: unknown) {
+        console.error('Error getting Rust demographics:', error);
+        res.status(500).json({ success: false, error: (error as Error).message });
+    }
+});
+
+// GET /api/rust/tiles - Population count per tile
+router.get('/tiles', (req: Request, res: Response) => {
+    try {
+        const tiles = rustSimulation.getPopulationByTile();
+        const total = tiles.reduce((sum, t) => sum + t.count, 0);
+        res.json({ success: true, total, tileCount: tiles.length, tiles });
+    } catch (error: unknown) {
+        console.error('Error getting Rust tile populations:', error);
+        res.status(500).json({ success: false, error: (error as Error).message });
+    }
+});
+
+// GET /api/rust/tiles/:tileId - Population count for a specific tile
+router.get('/tiles/:tileId', (req: Request, res: Response) => {
+    try {
+        const tileId = parseInt(req.params.tileId, 10);
+        if (isNaN(tileId)) {
+            res.status(400).json({ success: false, error: 'Invalid tile ID' });
+            return;
+        }
+        const population = rustSimulation.getTilePopulation(tileId);
+        res.json({ success: true, tileId, population });
+    } catch (error: unknown) {
+        console.error('Error getting Rust tile population:', error);
         res.status(500).json({ success: false, error: (error as Error).message });
     }
 });

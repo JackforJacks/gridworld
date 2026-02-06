@@ -15,8 +15,9 @@ const MARRIAGE_AGE: u32 = 16;
 /// Maximum age difference for marriage
 const MAX_AGE_DIFF: u32 = 15;
 
-/// Process matchmaking - pair eligible singles
-pub fn matchmaking_system(world: &mut World, cal: &Calendar) {
+/// Process matchmaking - pair eligible singles.
+/// Returns the number of marriages formed this tick.
+pub fn matchmaking_system(world: &mut World, cal: &Calendar) -> u32 {
     let mut rng = rand::thread_rng();
     
     // Collect eligible singles by tile (people without Partner)
@@ -64,6 +65,8 @@ pub fn matchmaking_system(world: &mut World, cal: &Calendar) {
         }
     }
     
+    let count = marriages.len() as u32;
+    
     // Process marriages - just add Partner component to both
     for (husband_entity, wife_entity) in marriages {
         let _ = world.insert_one(husband_entity, Partner(wife_entity));
@@ -74,6 +77,8 @@ pub fn matchmaking_system(world: &mut World, cal: &Calendar) {
             let _ = world.insert_one(wife_entity, Fertility::default());
         }
     }
+    
+    count
 }
 
 #[cfg(test)]

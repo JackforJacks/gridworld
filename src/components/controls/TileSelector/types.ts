@@ -31,6 +31,7 @@ export interface HexTile {
     terrainType?: string;
     biome?: string;
     population?: number;
+    rustPopulation?: number;
     fertility?: number;
     latitude?: number | null;
     longitude?: number | null;

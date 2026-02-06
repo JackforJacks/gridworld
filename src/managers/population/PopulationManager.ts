@@ -54,6 +54,16 @@ interface BulkUpdateEntry {
     population: number;
 }
 
+/** Rust ECS tick data from socket event */
+export interface RustTickData {
+    births: number;
+    deaths: number;
+    marriages: number;
+    pregnancies: number;
+    dissolutions: number;
+    population: number;
+}
+
 /** Population update callback function type */
 type PopulationCallback = (eventType: string, data: unknown) => void;
 
@@ -70,6 +80,7 @@ class PopulationManager {
     private apiBaseUrl: string;
     private pingInterval: ReturnType<typeof setInterval> | null;
     private connectionUnsubscribe: (() => void) | null;
+    private rustTickData: RustTickData;
 
     constructor() {
         this.socketService = null;
@@ -94,6 +105,14 @@ class PopulationManager {
         this.apiBaseUrl = '/api/population';
         this.pingInterval = null;
         this.connectionUnsubscribe = null;
+        this.rustTickData = {
+            births: 0,
+            deaths: 0,
+            marriages: 0,
+            pregnancies: 0,
+            dissolutions: 0,
+            population: 0
+        };
     }
 
     // Check if population data already exists
@@ -156,6 +175,8 @@ class PopulationManager {
                     this.connectionRetries = 0;
                     // Request initial data on connect
                     this.socketService?.emit('getPopulation');
+                    // Fetch initial Rust ECS population
+                    this.fetchInitialRustPopulation();
                 }
             });
 
@@ -184,6 +205,12 @@ class PopulationManager {
                 this.notifyCallbacks('populationUpdate', data);
             });
         }
+
+        // Handle real-time Rust ECS population updates (each tick)
+        this.socketService.on('rustPopulation', (data: unknown) => {
+            this.rustTickData = data as RustTickData;
+            this.notifyCallbacks('rustPopulation', this.rustTickData);
+        });
 
         // Add ping/pong for connection health
         this.socketService.on('pong', () => {
@@ -246,6 +273,11 @@ class PopulationManager {
     // Get current population data
     getPopulationData(): PopulationData {
         return { ...this.populationData };
+    }
+
+    // Get current Rust ECS tick data (real-time stats)
+    getRustTickData(): RustTickData {
+        return { ...this.rustTickData };
     }
 
     // Get formatted total population count
@@ -412,6 +444,27 @@ class PopulationManager {
         });
 
         return this.updateTilePopulations(tilePopulations);
+    }
+
+    // Fetch initial Rust ECS population on connect
+    private async fetchInitialRustPopulation(): Promise<void> {
+        try {
+            const res = await fetch('/api/rust/population');
+            const data = await res.json();
+            if (data.success) {
+                this.rustTickData = {
+                    births: 0,
+                    deaths: 0,
+                    marriages: 0,
+                    pregnancies: 0,
+                    dissolutions: 0,
+                    population: data.population
+                };
+                this.notifyCallbacks('rustPopulation', this.rustTickData);
+            }
+        } catch (error: unknown) {
+            console.error('Failed to fetch initial Rust population:', error);
+        }
     }
 }
 

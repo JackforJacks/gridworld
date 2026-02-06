@@ -51,6 +51,7 @@ export function generateInfoPanelHTML(tile: HexTile): string {
     const habitable = tile.Habitable || 'unknown';
     const population = tile.population || 0;
     const populationDisplay = population > 0 ? population.toLocaleString() : 'Uninhabited';
+    const rustPopulation = tile.rustPopulation ?? null;
     const biome = tile.biome || null;
     const fertility = tile.fertility ?? null;
     const landCounts = countLandTypes(tile.lands);
@@ -89,6 +90,12 @@ export function generateInfoPanelHTML(tile: HexTile): string {
             <span class="label">Population:</span>
             <span class="value population-${population > 0 ? 'inhabited' : 'uninhabited'}">${populationDisplay}</span>
         </div>
+        ${rustPopulation !== null ? `
+        <div class="tile-info-row">
+            <span class="label">🦀 Rust Pop:</span>
+            <span class="value population-${rustPopulation > 0 ? 'inhabited' : 'uninhabited'}">${rustPopulation > 0 ? rustPopulation.toLocaleString() : '0'}</span>
+        </div>
+        ` : ''}
         <div class="tile-info-row">
             <span class="label">Habitable:</span>
             <span class="value Habitable-${habitable}">${habitable}</span>

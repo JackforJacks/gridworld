@@ -85,6 +85,30 @@ function preParsePeopleData(
 }
 
 /**
+ * Save Rust simulation state to PostgreSQL
+ * This exports the entire Rust ECS world to JSON and stores it
+ */
+async function saveRustSimulationState(): Promise<void> {
+    const rustSimulation = require('../rustSimulation').default;
+    
+    const stateJson = rustSimulation.exportWorld();
+    const demographics = rustSimulation.getDemographics();
+    const calendar = rustSimulation.getCalendar();
+    
+    await pool.query(`
+        INSERT INTO rust_simulation_state (id, state_json, population, calendar_year, last_updated)
+        VALUES (1, $1, $2, $3, NOW())
+        ON CONFLICT (id) DO UPDATE SET
+            state_json = EXCLUDED.state_json,
+            population = EXCLUDED.population,
+            calendar_year = EXCLUDED.calendar_year,
+            last_updated = NOW()
+    `, [stateJson, demographics.population, calendar.year]);
+    
+    console.log(`🦀 [PostgreSQL] Saved Rust simulation state: ${demographics.population} people, year ${calendar.year}`);
+}
+
+/**
  * Save all Redis state back to PostgreSQL
  * This is a full save - it saves ALL data from Redis, replacing what's in Postgres.
  * @param context - StateManager context with calendarService, io
@@ -563,6 +587,13 @@ async function saveToDatabase(context: SaveContext): Promise<SaveResult> {
             }
         }
 
+        // Save Rust simulation state
+        try {
+            await saveRustSimulationState();
+        } catch (err: unknown) {
+            console.warn('⚠️ Failed to save Rust simulation state:', (err as Error).message);
+        }
+
         return {
             tiles: tilesSaved,
             lands: landsSaved,
@@ -607,5 +638,6 @@ async function emitPopulationUpdate(io: SocketIOServer | null): Promise<void> {
 
 export {
     saveToDatabase,
+    saveRustSimulationState,
     emitPopulationUpdate
 };

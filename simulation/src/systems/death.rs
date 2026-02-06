@@ -33,8 +33,9 @@ fn get_mortality_rate(years: u16) -> f64 {
     1.0 - (1.0 - annual).powf(1.0 / Calendar::DAYS_PER_YEAR as f64)
 }
 
-/// Process death for all entities - despawns dead ones immediately
-pub fn death_system(world: &mut World, cal: &Calendar) {
+/// Process death for all entities - despawns dead ones immediately.
+/// Returns the number of deaths this tick.
+pub fn death_system(world: &mut World, cal: &Calendar) -> u32 {
     let mut rng = rand::thread_rng();
     let mut deaths = Vec::new();
     
@@ -47,10 +48,14 @@ pub fn death_system(world: &mut World, cal: &Calendar) {
         }
     }
     
+    let count = deaths.len() as u32;
+    
     // Despawn dead entities
     for entity in deaths {
         let _ = world.despawn(entity);
     }
+    
+    count
 }
 
 #[cfg(test)]

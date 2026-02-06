@@ -90,6 +90,38 @@ pub struct Partner(pub hecs::Entity);
 #[derive(Debug, Clone, Copy)]
 pub struct Mother(pub hecs::Entity);
 
+/// Pregnancy tracking - added when a woman becomes pregnant
+/// Gestation period: ~9 months (72 days in our calendar)
+#[derive(Debug, Clone, Copy)]
+pub struct Pregnant {
+    pub due_year: u16,
+    pub due_month: u8,
+}
+
+impl Pregnant {
+    /// Create a new pregnancy with due date ~9 months from now
+    pub fn new(cal: &Calendar) -> Self {
+        let mut due_month = cal.month + 9;
+        let mut due_year = cal.year;
+        if due_month > 12 {
+            due_month -= 12;
+            due_year += 1;
+        }
+        Self { due_year, due_month }
+    }
+    
+    /// Check if the baby is due (current date >= due date)
+    pub fn is_due(&self, cal: &Calendar) -> bool {
+        if cal.year > self.due_year {
+            return true;
+        }
+        if cal.year == self.due_year && cal.month >= self.due_month {
+            return true;
+        }
+        false
+    }
+}
+
 /// Fertility tracking for women
 /// Uses year/month for birth interval tracking (0 = never gave birth)
 #[derive(Debug, Clone, Copy)]

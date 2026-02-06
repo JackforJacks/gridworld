@@ -4,6 +4,7 @@ import { startRateTracking } from './PopStats';
 import config from '../../config/server'; // Added for autoSaveInterval
 import * as deps from './dependencyContainer';
 import { logError, ErrorSeverity, safeExecuteSync } from '../../utils/errorHandler';
+import rustSimulation from '../rustSimulation';
 
 // Function to ensure the 'people' table and its indexes exist
 async function ensureTableExists(pool) {
@@ -173,6 +174,29 @@ async function initializePopulationService(serviceInstance, io, calendarService)
         // Add daily family events processing
         serviceInstance.calendarService.on('dayChanged', async (newDay, oldDay) => {
             try {
+                // ─── Rust ECS tick (source of truth for population) ───
+                const rustResult = rustSimulation.tick();
+                if (rustResult.births > 0 || rustResult.deaths > 0 || rustResult.marriages > 0 || rustResult.pregnancies > 0) {
+                    if (config.verboseLogs) {
+                        console.log(`🦀 Tick: +${rustResult.births} births, -${rustResult.deaths} deaths, 💍${rustResult.marriages} marriages, 🤰${rustResult.pregnancies} pregnancies | pop: ${rustResult.population}`);
+                    }
+                }
+                // Broadcast Rust population to all socket clients
+                if (serviceInstance.io) {
+                    serviceInstance.io.emit('rustPopulation', {
+                        births: rustResult.births,
+                        deaths: rustResult.deaths,
+                        marriages: rustResult.marriages,
+                        pregnancies: rustResult.pregnancies,
+                        dissolutions: rustResult.dissolutions,
+                        population: rustResult.population,
+                    });
+                }
+
+                // ─── TS family events DISABLED (Phase 3: Rust now handles families) ───
+                // The following code is kept for reference but no longer runs.
+                // Rust family_system handles: pregnancies, deliveries, dissolutions.
+                /*
                 const pool = serviceInstance.getPool ? serviceInstance.getPool() : serviceInstance._pool || serviceInstance['#pool'];
                 if (pool) {
                     // 1. Form new families from bachelors (call less frequently to avoid over-population)
@@ -192,8 +216,9 @@ async function initializePopulationService(serviceInstance, io, calendarService)
                         await serviceInstance.broadcastUpdate('familyEvents');
                     }
                 }
+                */
             } catch (error: unknown) {
-                console.error('Error processing daily family events:', error);
+                console.error('Error processing daily events:', error);
             }
         });
     }
