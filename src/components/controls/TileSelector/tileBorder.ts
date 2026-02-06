@@ -19,9 +19,10 @@ const cachedMaterials: THREE.LineBasicMaterial[] = GLOW_COLORS.map((color, offse
     return new THREE.LineBasicMaterial({
         color,
         depthTest: false,
+        depthWrite: false,
         transparent: true,
-        opacity: glowIntensity * 0.8,
-        linewidth: 8 - (offset * 1.5)
+        opacity: glowIntensity * 0.9,
+        linewidth: 6 - (offset * 1)
     });
 });
 
@@ -30,6 +31,7 @@ const cachedMaterials: THREE.LineBasicMaterial[] = GLOW_COLORS.map((color, offse
  */
 export function createTileBorder(tile: HexTile): THREE.Group {
     const borderGroup = new THREE.Group();
+    borderGroup.renderOrder = 1000; // Ensure border renders on top of everything
 
     for (let offset = 0; offset < GLOW_LAYERS; offset++) {
         const geometry = new THREE.BufferGeometry();
