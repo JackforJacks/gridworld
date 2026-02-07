@@ -481,10 +481,6 @@ class GridWorldApp {
             document.addEventListener('visibilitychange', this.visibilityHandler);
         }
 
-        // Frame counter for diagnostics
-        let frameCount = 0;
-        let lastMemoryLog = Date.now();
-
         // Use arrow function to avoid binding issues
         const renderLoop = (timestamp: number): void => {
             if (!this.isAnimating) return;
@@ -495,17 +491,6 @@ class GridWorldApp {
             }
 
             const currentTime = Date.now();
-            frameCount++;
-
-            // Log memory every 10 seconds
-            if (currentTime - lastMemoryLog > 10000) {
-                const mem = (performance as unknown as { memory?: { usedJSHeapSize: number } }).memory;
-                if (mem) {
-                    const mb = (mem.usedJSHeapSize / 1048576).toFixed(1);
-                    console.log(`[Memory] ${mb}MB after ${frameCount} frames`);
-                }
-                lastMemoryLog = currentTime;
-            }
 
             // Use shared render frame logic
             this.renderFrame(timestamp, currentTime);
@@ -647,6 +632,11 @@ class GridWorldApp {
         // Clean up tile selector
         if (this.tileSelector) {
             this.tileSelector.destroy();
+        }
+
+        // Clean up UI manager (removes population subscription)
+        if (this.uiManager) {
+            this.uiManager.cleanup();
         }
 
         // Clean up scene manager

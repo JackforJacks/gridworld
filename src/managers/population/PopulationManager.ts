@@ -325,9 +325,9 @@ class PopulationManager {
         }
     }
 
-    // Get all tile populations
+    // Get all tile populations (read-only reference, no copy)
     getAllTilePopulations(): TilePopulations {
-        return { ...this.populationData.tilePopulations };
+        return this.populationData.tilePopulations;
     }
 
     // Get total population across all tiles

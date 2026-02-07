@@ -52,8 +52,8 @@ class SocketService {
     private static readonly DEFAULT_CONFIG: SocketConfig = {
         url: 'http://localhost:3000',
         timeout: 30000,
-        transports: ['polling'],
-        upgrade: false,
+        transports: ['websocket', 'polling'],
+        upgrade: true,
         reconnection: true,
         reconnectionDelay: 1000,
         reconnectionDelayMax: 5000,

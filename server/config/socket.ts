@@ -4,13 +4,13 @@ const socketConfig = {
         origin: "*",
         methods: ["GET", "POST"]
     },
-    transports: ['polling', 'websocket'], // Prioritize polling
+    transports: ['websocket', 'polling'],
     allowEIO3: true,
     pingTimeout: 60000,
     pingInterval: 25000,
     upgradeTimeout: 10000,
     maxHttpBufferSize: 1e6,
-    allowUpgrades: false, // Disable upgrading to WebSocket to avoid proxy issues
+    allowUpgrades: true,
     perMessageDeflate: false,
     httpCompression: false,
     serveClient: false

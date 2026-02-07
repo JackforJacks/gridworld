@@ -456,14 +456,6 @@ class SceneManager {
     }
 
     render(camera: THREE.Camera): void {
-        // Log renderer info periodically to detect leaks
-        if (this.renderer && Math.random() < 0.001) { // ~once per 1000 frames
-            const info = this.renderer.info;
-            console.log('[Three.js] Geometries:', info.memory.geometries, 
-                        'Textures:', info.memory.textures,
-                        'Calls:', info.render.calls,
-                        'Triangles:', info.render.triangles);
-        }
         this.renderer!.render(this.scene!, camera);
     }
 

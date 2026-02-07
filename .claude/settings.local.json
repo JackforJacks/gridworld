@@ -4,7 +4,8 @@
       "Bash(grep:*)",
       "Bash(del \"c:\\\\Users\\\\giaco\\\\OneDrive\\\\Documenti\\\\github\\\\GridWorld\\\\src\\\\core\\\\scene\\\\SceneManager\\\\hexasphereShader.ts\")",
       "Bash(npx tsc:*)",
-      "Bash(npx webpack:*)"
+      "Bash(npx webpack:*)",
+      "Bash(node:*)"
     ]
   }
 }
