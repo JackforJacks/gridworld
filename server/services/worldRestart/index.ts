@@ -25,8 +25,6 @@ import {
     calculateTileProperties,
     generateLandsForTile,
     isHabitable,
-    UNINHABITABLE_TERRAIN,
-    UNINHABITABLE_BIOMES,
     type LandChunk,
     type TileProperties
 } from '../terrain';
@@ -81,8 +79,6 @@ interface StoredTileData {
     latitude: number;
     longitude: number;
     terrain_type: string;
-    is_land: boolean;
-    is_habitable: boolean;
     biome: string | null;
     fertility: number;
     boundary_points: string;
@@ -357,8 +353,6 @@ interface TileData {
     latitude: number;
     longitude: number;
     terrain_type: string;
-    is_land: boolean;
-    is_habitable: boolean;
     biome: string | null;
     fertility: number;
     boundary_points: string;
@@ -400,8 +394,6 @@ async function generateTiles(seed: number): Promise<number> {
             latitude: tileProps.latitude,
             longitude: tileProps.longitude,
             terrain_type: tileProps.terrainType,
-            is_land: tileProps.isLand,
-            is_habitable: tileProps.isHabitable,
             biome: tileProps.biome,
             fertility: tileProps.fertility,
             boundary_points: JSON.stringify(tile.boundary?.map((p: { x: number; y: number; z: number }) => ({ x: p.x, y: p.y, z: p.z })) || []),
@@ -453,10 +445,8 @@ async function createPopulation(seed: number, tileCount: number): Promise<Popula
     for (const [tileId, tileJson] of Object.entries(allTiles)) {
         const tile = JSON.parse(tileJson);
 
-        // Double-check habitability (defensive programming)
-        if (!tile.is_habitable) continue;
-        if (UNINHABITABLE_TERRAIN.includes(tile.terrain_type)) continue;
-        if (tile.biome && UNINHABITABLE_BIOMES.includes(tile.biome)) continue;
+        // Derive habitability from terrain + biome
+        if (!isHabitable(tile.terrain_type, tile.biome, tile.terrain_type !== 'ocean')) continue;
 
         // Check for cleared lands
         const landsJson = allLands[tileId];
@@ -705,7 +695,7 @@ async function verifyIntegrity(): Promise<IntegrityResult> {
 
     for (const tileJson of Object.values(tiles || {})) {
         const tile = JSON.parse(tileJson);
-        if (tile.is_habitable) habitableCount++;
+        if (isHabitable(tile.terrain_type, tile.biome, tile.terrain_type !== 'ocean')) habitableCount++;
     }
 
     // Check people integrity
@@ -736,7 +726,7 @@ async function verifyIntegrity(): Promise<IntegrityResult> {
             const tileJson = tiles[person.tile_id.toString()];
             if (tileJson) {
                 const tile = JSON.parse(tileJson);
-                if (!tile.is_habitable) {
+                if (!isHabitable(tile.terrain_type, tile.biome, tile.terrain_type !== 'ocean')) {
                     issues.push(`Person ${person.id} is on uninhabitable tile ${person.tile_id} (${tile.terrain_type})`);
                 }
             }
@@ -752,7 +742,7 @@ async function verifyIntegrity(): Promise<IntegrityResult> {
             const tileJson = tiles[village.tile_id?.toString()];
             if (tileJson) {
                 const tile = JSON.parse(tileJson);
-                if (!tile.is_habitable) {
+                if (!isHabitable(tile.terrain_type, tile.biome, tile.terrain_type !== 'ocean')) {
                     issues.push(`Village ${villageId} is on uninhabitable tile ${village.tile_id} (${tile.terrain_type})`);
                 }
             }

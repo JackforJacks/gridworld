@@ -53,11 +53,9 @@ class Tile {
     public centerPoint: Point;
     public faces: Face[];
     public population: number;
-    public Habitable: boolean;
     public id: number | null;
     public latitude: number | null;
     public longitude: number | null;
-    public isLand: boolean | null;
     public terrainType: string;
     public terrain?: string;
     public boundary: Point[];
@@ -70,11 +68,9 @@ class Tile {
         this.centerPoint = centerPoint;
         this.faces = centerPoint.getOrderedFaces() as Face[];
         this.population = 0;
-        this.Habitable = false;
         this.id = null;
         this.latitude = null;
         this.longitude = null;
-        this.isLand = null;
         this.terrainType = "unknown";
         this.boundary = [];
         this.neighborIds = [];
@@ -147,16 +143,12 @@ class Tile {
         id: number,
         latitude: number,
         longitude: number,
-        isLand: boolean,
-        terrainType: string,
-        Habitable: boolean
+        terrainType: string
     ): void {
         this.id = id;
         this.latitude = latitude;
         this.longitude = longitude;
-        this.isLand = isLand;
         this.terrainType = terrainType;
-        this.Habitable = Habitable;
         this.terrain = terrainType;
     }
 
@@ -164,18 +156,14 @@ class Tile {
         id: number | null;
         latitude: number | null;
         longitude: number | null;
-        isLand: boolean | null;
         terrainType: string;
-        Habitable: boolean;
         population: number;
     } {
         return {
             id: this.id,
             latitude: this.latitude,
             longitude: this.longitude,
-            isLand: this.isLand,
             terrainType: this.terrainType,
-            Habitable: this.Habitable,
             population: this.population
         };
     }

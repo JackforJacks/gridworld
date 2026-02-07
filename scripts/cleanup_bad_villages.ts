@@ -29,18 +29,23 @@ async function cleanup() {
     ]);
 
     // Build tile lookup map for O(1) access
-    const tileMap = new Map<string, { terrain_type: string; is_land: boolean; is_habitable: boolean }>();
+    const tileMap = new Map<string, { terrain_type: string; biome?: string }>();
     for (const [id, json] of Object.entries(tiles || {})) {
         tileMap.set(id, JSON.parse(json as string));
     }
 
-    // Identify bad villages
+    // Identify bad villages (on uninhabitable tiles)
     const badVillages: Array<{ id: number; tile_id: number; terrain: string }> = [];
     for (const [id, json] of Object.entries(villages || {})) {
         const v = JSON.parse(json as string);
         const t = tileMap.get(v.tile_id.toString());
-        if (t && (t.terrain_type === 'ocean' || t.terrain_type === 'mountains' || !t.is_land || !t.is_habitable)) {
-            badVillages.push({ id: parseInt(id), tile_id: v.tile_id, terrain: t.terrain_type });
+        if (t) {
+            const biome = t.biome || '';
+            const uninhabitable = t.terrain_type === 'ocean' || t.terrain_type === 'mountains' ||
+                (biome && (biome === 'desert' || biome === 'tundra' || biome === 'alpine'));
+            if (uninhabitable) {
+                badVillages.push({ id: parseInt(id), tile_id: v.tile_id, terrain: t.terrain_type });
+            }
         }
     }
 

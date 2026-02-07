@@ -66,8 +66,6 @@ export interface TileRow {
     latitude: number;
     longitude: number;
     terrain_type: string;
-    is_land: boolean;
-    is_habitable: boolean;
     boundary_points: unknown;
     neighbor_ids: number[];
     biome: string | null;

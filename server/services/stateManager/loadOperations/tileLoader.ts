@@ -32,8 +32,6 @@ export async function fetchTiles(): Promise<TileLoadResult> {
             latitude: t.latitude,
             longitude: t.longitude,
             terrain_type: t.terrain_type,
-            is_land: t.is_land,
-            is_habitable: t.is_habitable,
             boundary_points: t.boundary_points,
             neighbor_ids: t.neighbor_ids,
             biome: t.biome,

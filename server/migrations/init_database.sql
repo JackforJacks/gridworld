@@ -10,8 +10,6 @@ CREATE TABLE IF NOT EXISTS tiles (
     latitude REAL NOT NULL,
     longitude REAL NOT NULL,
     terrain_type VARCHAR(50) NOT NULL,
-    is_land BOOLEAN NOT NULL DEFAULT FALSE,
-    is_habitable BOOLEAN NOT NULL DEFAULT FALSE,
     boundary_points JSONB,
     neighbor_ids INTEGER[],
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
@@ -124,8 +122,6 @@ END $$;
 
 -- Tiles indexes
 CREATE INDEX IF NOT EXISTS idx_tiles_terrain_type ON tiles(terrain_type);
-CREATE INDEX IF NOT EXISTS idx_tiles_is_land ON tiles(is_land);
-CREATE INDEX IF NOT EXISTS idx_tiles_is_habitable ON tiles(is_habitable);
 CREATE INDEX IF NOT EXISTS idx_tiles_latitude ON tiles(latitude);
 CREATE INDEX IF NOT EXISTS idx_tiles_longitude ON tiles(longitude);
 

@@ -1,6 +1,7 @@
 // Utility functions for GridWorld
 
 import { getAppContext } from '../core/AppContext';
+import { isLandTerrain } from './tileUtils';
 
 // Define terrain colors and land function globally
 const terrainColors = {
@@ -20,14 +21,6 @@ const biomeColors = {
     ocean: 0x4A90E2      // Keep ocean blue for water tiles
 };
 
-const isLand = function (centerPoint: { x: number; y: number; z: number } | [number, number, number]) {
-    // Simple land/ocean determination - you can make this more sophisticated
-    // Handle both array [x,y,z] and object {x,y,z} formats
-    const y = Array.isArray(centerPoint) ? centerPoint[1] : centerPoint.y;
-    const randomFactor = Math.random();
-    return y > -0.3 && randomFactor > 0.4; // Roughly 60% chance of land if above certain Y
-};
-
 // Simple dashboard update function (non-ECSY)
 function updateDashboard() {
     // Use AppContext to get tiles - single source of truth
@@ -38,13 +31,10 @@ function updateDashboard() {
         return;
     }
 
-    const totalTiles = tiles.length;
     let landTileCount = 0;
 
-    // Type assertion since we know the tile structure
-    (tiles as Array<{ isLand?: boolean | null; centerPoint?: { x: number; y: number; z: number } }>).forEach((tile) => {
-        // Use tile properties directly - no separate data structure needed!
-        if (tile.isLand === true || (tile.isLand === null && tile.centerPoint && isLand(tile.centerPoint))) {
+    (tiles as Array<{ terrainType?: string }>).forEach((tile) => {
+        if (isLandTerrain(tile.terrainType || 'unknown')) {
             landTileCount++;
         }
     });
@@ -54,4 +44,4 @@ function updateDashboard() {
     }
 }
 
-export { updateDashboard, terrainColors, biomeColors, isLand };
+export { updateDashboard, terrainColors, biomeColors };

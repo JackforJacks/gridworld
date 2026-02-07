@@ -4,6 +4,7 @@
 import * as THREE from 'three';
 import { BoundaryPoint, HexTile, TileColorInfo, TileDataResponse, HexasphereData } from './types';
 import { getBiomeColorCached } from './colorUtils';
+import { isHabitable } from '../../../utils/tileUtils';
 
 /** Result from building tiles */
 export interface BuildTilesResult {
@@ -107,8 +108,8 @@ function buildIndexedGeometry(
     let baseVertex = 0;
 
     for (const tile of tiles) {
-        // Track habitable tiles
-        if (tile.Habitable === 'yes') {
+        // Track habitable tiles (derived from terrainType + biome)
+        if (isHabitable(tile.terrainType || 'unknown', tile.biome)) {
             habitableTileIds.push(tile.id);
         }
 
@@ -191,9 +192,7 @@ export function buildTilesFromData(tileData: TileDataResponse): BuildTilesResult
 /** Compact tile state from server */
 export interface CompactTileState {
     t: string;      // terrainType
-    l: boolean;     // isLand
     b: string | null; // biome
-    h: boolean;     // Habitable
 }
 
 /** Interface for locally-generated Hexasphere tiles */
@@ -202,8 +201,6 @@ export interface LocalTile {
     boundary: Array<{ x: number; y: number; z: number }>;
     centerPoint: { x: number; y: number; z: number };
     terrainType: string;
-    isLand: boolean | null;
-    Habitable: boolean;
     biome?: string;
     population?: number;
 }
@@ -234,14 +231,15 @@ export function buildTilesFromLocalHexasphere(
         const tileId = localTile.id ?? idx;
         const state = tileState[String(tileId)];
 
+        const terrainType = state?.t ?? localTile.terrainType ?? 'unknown';
+        const biome = state?.b ?? localTile.biome ?? undefined;
+
         return {
             id: tileId,
             boundary: localTile.boundary,
             centerPoint: localTile.centerPoint,
-            terrainType: state?.t ?? localTile.terrainType ?? 'unknown',
-            isLand: state?.l ?? localTile.isLand ?? false,
-            biome: state?.b ?? localTile.biome ?? undefined,
-            Habitable: state?.h ? 'yes' : (localTile.Habitable ? 'yes' : 'no'),
+            terrainType,
+            biome,
             population: localTile.population ?? 0
         };
     });

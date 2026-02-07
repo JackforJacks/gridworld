@@ -22,7 +22,7 @@ const pool = new Pool({
     SELECT COUNT(DISTINCT t.id) as cnt 
     FROM tiles t 
     INNER JOIN tiles_lands tl ON t.id = tl.tile_id AND tl.land_type = 'cleared'
-    WHERE t.is_habitable = TRUE
+    WHERE t.terrain_type NOT IN ('ocean', 'mountains') AND (t.biome IS NULL OR t.biome NOT IN ('desert', 'tundra', 'alpine'))
   `);
     console.log('Habitable tiles with cleared lands:', habitableWithLands[0].cnt);
 
@@ -31,7 +31,7 @@ const pool = new Pool({
     SELECT DISTINCT t.id 
     FROM tiles t 
     INNER JOIN tiles_lands tl ON t.id = tl.tile_id AND tl.land_type = 'cleared'
-    WHERE t.is_habitable = TRUE
+    WHERE t.terrain_type NOT IN ('ocean', 'mountains') AND (t.biome IS NULL OR t.biome NOT IN ('desert', 'tundra', 'alpine'))
     LIMIT 10
   `);
     console.log('Sample habitable tiles with cleared lands:', sample.map(r => r.id));

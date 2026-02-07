@@ -238,7 +238,7 @@ async function saveToDatabase(context: SaveContext): Promise<SaveResult> {
                     const neighborIds = tile.neighbor_ids !== undefined && tile.neighbor_ids !== null
                         ? JSON.stringify(tile.neighbor_ids)
                         : '[]';
-                    tileValues.push(`($${paramIndex}, $${paramIndex + 1}, $${paramIndex + 2}, $${paramIndex + 3}, $${paramIndex + 4}, $${paramIndex + 5}, $${paramIndex + 6}, $${paramIndex + 7}, $${paramIndex + 8}, $${paramIndex + 9}, $${paramIndex + 10}, $${paramIndex + 11}, $${paramIndex + 12})`);
+                    tileValues.push(`($${paramIndex}, $${paramIndex + 1}, $${paramIndex + 2}, $${paramIndex + 3}, $${paramIndex + 4}, $${paramIndex + 5}, $${paramIndex + 6}, $${paramIndex + 7}, $${paramIndex + 8}, $${paramIndex + 9}, $${paramIndex + 10})`);
                     tileParams.push(
                         tile.id,
                         tile.center_x,
@@ -247,19 +247,17 @@ async function saveToDatabase(context: SaveContext): Promise<SaveResult> {
                         tile.latitude,
                         tile.longitude,
                         tile.terrain_type,
-                        tile.is_land,
-                        tile.is_habitable,
                         boundaryPoints,
                         neighborIds,
                         tile.biome,
                         tile.fertility
                     );
-                    paramIndex += 13;
+                    paramIndex += 11;
                 }
 
                 if (tileValues.length > 0) {
                     await client.query(`
-                        INSERT INTO tiles (id, center_x, center_y, center_z, latitude, longitude, terrain_type, is_land, is_habitable, boundary_points, neighbor_ids, biome, fertility)
+                        INSERT INTO tiles (id, center_x, center_y, center_z, latitude, longitude, terrain_type, boundary_points, neighbor_ids, biome, fertility)
                         VALUES ${tileValues.join(', ')}
                     `, tileParams);
                     tilesSaved += tileValues.length;

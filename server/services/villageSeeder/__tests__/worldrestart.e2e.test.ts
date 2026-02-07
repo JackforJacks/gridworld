@@ -35,7 +35,7 @@ describe('World restart -> Village seeding -> storage-to-ui flow (e2e)', () => {
         const pool = {
             query: async (text, params) => {
                 // Return the single habitable tile
-                if (text && text.includes('SELECT id FROM tiles WHERE is_habitable')) {
+                if (text && text.includes('SELECT id FROM tiles WHERE terrain_type NOT IN')) {
                     return { rows: [{ id: fakeTileId }] };
                 }
                 // ID allocator setval reservation query

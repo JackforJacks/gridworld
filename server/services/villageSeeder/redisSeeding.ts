@@ -67,8 +67,6 @@ interface InitialTile {
     latitude: number;
     longitude: number;
     terrain_type: string;
-    is_land: boolean;
-    is_habitable: boolean;
     fertility: number;
 }
 
@@ -443,24 +441,15 @@ async function createInitialTilesRedisFirst(): Promise<InitialTile[]> {
         try {
             const tile = JSON.parse(tileJson);
 
-            // Get terrain and biome info
+            // Derive habitability from terrain + biome
             const terrainType = tile.terrain_type || tile.terrainType || '';
             const biome = tile.biome || '';
-            const isLand = tile.is_land === true || tile.isLand === true;
 
-            // Skip ocean and mountain tiles
-            if (!isLand || terrainType === 'ocean' || terrainType === 'mountains') {
+            // Skip uninhabitable tiles
+            if (terrainType === 'ocean' || terrainType === 'mountains') {
                 continue;
             }
-
-            // Skip uninhabitable biomes
             if (biome === 'tundra' || biome === 'desert' || biome === 'alpine') {
-                continue;
-            }
-
-            // Check if tile is marked as habitable
-            const isHabitable = tile.is_habitable === true || tile.Habitable === 'yes' || tile.Habitable === true;
-            if (!isHabitable) {
                 continue;
             }
 
@@ -472,8 +461,6 @@ async function createInitialTilesRedisFirst(): Promise<InitialTile[]> {
                 latitude: tile.latitude || 0,
                 longitude: tile.longitude || 0,
                 terrain_type: terrainType,
-                is_land: true,
-                is_habitable: true,
                 fertility: tile.fertility || 70
             });
         } catch {

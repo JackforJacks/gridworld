@@ -123,7 +123,7 @@ loadWorldSeed();
 
 // GET /api/tiles
 // READ-ONLY endpoint - returns MINIMAL tile data for initial rendering
-// Only includes: id, boundary, centerPoint, terrainType, isLand, biome, Habitable
+// Only includes: id, boundary, centerPoint, terrainType, biome
 // Detailed data (lands, fertility, villages) fetched via GET /api/tiles/:id
 router.get('/', async (req: Request, res: Response): Promise<void> => {
     const startTime = Date.now();
@@ -185,16 +185,12 @@ router.get('/', async (req: Request, res: Response): Promise<void> => {
                 try {
                     const tileData = JSON.parse(tileDataJson);
                     result.terrainType = tileData.terrain_type;
-                    result.isLand = tileData.is_land;
                     result.biome = tileData.biome;
-                    result.Habitable = tileData.is_habitable ? 'yes' : 'no';
                     // Note: fertility, lands, villages NOT included - fetch via /api/tiles/:id
                 } catch (e: unknown) {
                     // Use defaults if parse fails
                     result.terrainType = 'unknown';
-                    result.isLand = false;
                     result.biome = null;
-                    result.Habitable = 'no';
                 }
             }
 
@@ -223,7 +219,7 @@ router.get('/seed', (_req: Request, res: Response): void => {
 });
 
 // GET /api/tiles/state - Lightweight endpoint returning ONLY tile state (no geometry)
-// Client generates geometry locally, this provides: terrainType, isLand, biome, Habitable
+// Client generates geometry locally, this provides: terrainType, biome
 // Keyed by tile ID for efficient merging with client-generated hexasphere
 // NOTE: Must be defined BEFORE /:id to avoid being caught by that route
 router.get('/state', async (_req: Request, res: Response): Promise<void> => {
@@ -241,17 +237,15 @@ router.get('/state', async (_req: Request, res: Response): Promise<void> => {
             return;
         }
 
-        // Build compact tile state map: { tileId: { terrainType, isLand, biome, Habitable } }
-        const tileState: Record<string, { t: string; l: boolean; b: string | null; h: boolean }> = {};
+        // Build compact tile state map: { tileId: { terrainType, biome } }
+        const tileState: Record<string, { t: string; b: string | null }> = {};
 
         for (const [tileId, tileDataJson] of Object.entries(allTileData)) {
             try {
                 const tileData = JSON.parse(tileDataJson as string);
                 tileState[tileId] = {
                     t: tileData.terrain_type || 'unknown',  // terrainType
-                    l: tileData.is_land || false,            // isLand
-                    b: tileData.biome || null,               // biome
-                    h: tileData.is_habitable || false        // Habitable
+                    b: tileData.biome || null               // biome
                 };
             } catch (_e: unknown) {
                 // Skip malformed entries
@@ -368,10 +362,8 @@ router.get('/:id', async (req: Request, res: Response): Promise<void> => {
         res.json({
             id: parseInt(tileId),
             terrainType: tileData.terrain_type,
-            isLand: tileData.is_land,
             biome: tileData.biome,
             fertility: tileData.fertility,
-            Habitable: tileData.is_habitable ? 'yes' : 'no',
             lands
         });
     } catch (err: unknown) {

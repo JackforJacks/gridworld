@@ -18,7 +18,11 @@ async function main() {
         // Find habitable tiles with cleared lands
         const habitableIds: number[] = [];
         for (const [tileId, tile] of Object.entries(tiles)) {
-            if (tile.is_habitable) {
+            const terrainType = tile.terrain_type || '';
+            const biome = tile.biome || '';
+            const tileIsHabitable = terrainType !== 'ocean' && terrainType !== 'mountains' &&
+                (!biome || (biome !== 'desert' && biome !== 'tundra' && biome !== 'alpine'));
+            if (tileIsHabitable) {
                 const landsJson = landsData[tileId];
                 if (landsJson) {
                     const lands = JSON.parse(landsJson as string);
@@ -44,8 +48,11 @@ async function main() {
             const v = JSON.parse(vjson as string);
             const tile = tiles[v.tile_id?.toString()];
             if (tile) {
-                const status = tile.is_habitable ? '✅' : '❌ BAD';
-                console.log(`${status} Village ${vid}: tile ${v.tile_id}, terrain=${tile.terrain_type}, biome=${tile.biome || 'none'}, is_habitable=${tile.is_habitable}`);
+                const tt = tile.terrain_type || '';
+                const bm = tile.biome || '';
+                const hab = tt !== 'ocean' && tt !== 'mountains' && (!bm || (bm !== 'desert' && bm !== 'tundra' && bm !== 'alpine'));
+                const status = hab ? '✅' : '❌ BAD';
+                console.log(`${status} Village ${vid}: tile ${v.tile_id}, terrain=${tt}, biome=${bm || 'none'}, habitable=${hab}`);
             } else {
                 console.log(`❌ Village ${vid}: tile ${v.tile_id} NOT FOUND in tiles`);
             }
@@ -56,7 +63,10 @@ async function main() {
         for (const [vid, vjson] of Object.entries(villages || {})) {
             const v = JSON.parse(vjson as string);
             const tile = tiles[v.tile_id?.toString()];
-            if (!tile || !tile.is_habitable) badCount++;
+            const tt2 = tile?.terrain_type || '';
+            const bm2 = tile?.biome || '';
+            const hab2 = tile && tt2 !== 'ocean' && tt2 !== 'mountains' && (!bm2 || (bm2 !== 'desert' && bm2 !== 'tundra' && bm2 !== 'alpine'));
+            if (!hab2) badCount++;
         }
 
         console.log(`\n${badCount > 0 ? '❌' : '✅'} ${badCount} villages on uninhabitable tiles out of ${Object.keys(villages || {}).length} total`);

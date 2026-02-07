@@ -328,14 +328,6 @@ kbd {
     color: #795548;
 }
 
-.value.Habitable-yes {
-    color: #4CAF50;
-}
-
-.value.Habitable-no {
-    color: #f44336;
-}
-
 .tile-info-footer {
     margin-top: 14px;
     padding-top: 10px;

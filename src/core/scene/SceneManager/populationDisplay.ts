@@ -3,6 +3,7 @@
 import populationManager from '../../../managers/population/PopulationManager';
 import { HexTile, HexasphereData, TileColorInfo, PopulationStats, BiomeStats } from './types';
 import { TileOverlayManager } from './tileOverlays';
+import { isHabitable } from '../../../utils/tileUtils';
 
 /** Population threshold for "high population" designation */
 const HIGH_POPULATION_THRESHOLD = 10000;
@@ -22,9 +23,7 @@ export function updateTilePopulations(hexasphere: HexasphereData | null): void {
 
     for (let i = 0; i < tileCount; i++) {
         const tile = tiles[i];
-        const isHabitable = tile.Habitable === 'yes' || tile.is_habitable === true;
-
-        if (isHabitable) {
+        if (isHabitable(tile.terrainType || 'unknown', tile.biome)) {
             tile.population = tilePopulations[tile.id] ?? tilePopulations[String(tile.id)] ?? 0;
         } else {
             tile.population = 0;
@@ -50,7 +49,7 @@ export function checkPopulationThresholds(
     for (let i = 0; i < tileCount; i++) {
         const tile = tiles[i];
 
-        if (tile.Habitable !== 'yes') continue;
+        if (!isHabitable(tile.terrainType || 'unknown', tile.biome)) continue;
 
         const population = tile.population ?? 0;
         const tileIdStr = String(tile.id);
@@ -120,7 +119,7 @@ export function getPopulationStats(
         const population = tile.population || 0;
         const biome = tile.biome;
 
-        if (tile.Habitable === 'yes') {
+        if (isHabitable(tile.terrainType || 'unknown', tile.biome)) {
             habitableTiles++;
             if (population > 0) populatedTiles++;
             if (population >= HIGH_POPULATION_THRESHOLD) highPopulationTiles++;
@@ -178,7 +177,7 @@ export async function reinitializePopulation(
     if (!ids || ids.length === 0) {
         if (hexasphere?.tiles) {
             ids = hexasphere.tiles
-                .filter((t: HexTile) => t.Habitable === 'yes')
+                .filter((t: HexTile) => isHabitable(t.terrainType || 'unknown', t.biome))
                 .map((t: HexTile) => t.id);
         }
     }

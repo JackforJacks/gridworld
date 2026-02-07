@@ -140,9 +140,9 @@ export async function regenerateTiles(newSeed?: number): Promise<number> {
         for (const tile of hexasphere.tiles) {
             const props = tile.getProperties ? tile.getProperties() : tile;
             const centerPoint = tile.centerPoint ? { x: tile.centerPoint.x, y: tile.centerPoint.y, z: tile.centerPoint.z } : null;
-            const biome = (centerPoint && props.isLand) ? calculateBiome(tile.centerPoint, props.terrainType, seededRandom) : null;
-            const fertility = calculateFertility(biome, props.terrainType, seededRandom);
-            const isHabitableFlag = ((props.Habitable === true || props.Habitable === 'yes') && biome !== 'tundra' && biome !== 'desert' && biome !== 'alpine');
+            const terrainType = props.terrainType;
+            const biome = (centerPoint && terrainType !== 'ocean') ? calculateBiome(tile.centerPoint, terrainType, seededRandom) : null;
+            const fertility = calculateFertility(biome, terrainType, seededRandom);
 
             const tileData = {
                 id: props.id,
@@ -151,9 +151,7 @@ export async function regenerateTiles(newSeed?: number): Promise<number> {
                 center_z: centerPoint?.z || 0,
                 latitude: props.latitude || 0,
                 longitude: props.longitude || 0,
-                terrain_type: props.terrainType,
-                is_land: props.isLand,
-                is_habitable: isHabitableFlag,
+                terrain_type: terrainType,
                 boundary_points: JSON.stringify(tile.boundary ? tile.boundary.map((p: { x: number; y: number; z: number }) => ({ x: p.x, y: p.y, z: p.z })) : []),
                 neighbor_ids: JSON.stringify(props.neighborIds || []),
                 biome: biome,
@@ -167,11 +165,12 @@ export async function regenerateTiles(newSeed?: number): Promise<number> {
         }
 
         // Generate lands for eligible tiles
-        const eligibleTiles = hexasphere.tiles.filter((tile: { getProperties?: () => { terrainType: string; isLand: boolean }; terrainType?: string; isLand?: boolean; centerPoint?: { x: number; y: number; z: number } }) => {
+        const eligibleTiles = hexasphere.tiles.filter((tile: { getProperties?: () => { terrainType: string }; terrainType?: string; centerPoint?: { x: number; y: number; z: number } }) => {
             const props = tile.getProperties ? tile.getProperties() : tile;
             const centerPoint = tile.centerPoint ? { x: tile.centerPoint.x, y: tile.centerPoint.y, z: tile.centerPoint.z } : null;
-            const biome = (centerPoint && props.isLand) ? calculateBiome(tile.centerPoint!, props.terrainType!, seededRandom) : null;
-            return props.terrainType !== 'ocean' && props.terrainType !== 'mountains' &&
+            const terrainType = props.terrainType!;
+            const biome = (centerPoint && terrainType !== 'ocean') ? calculateBiome(tile.centerPoint!, terrainType, seededRandom) : null;
+            return terrainType !== 'ocean' && terrainType !== 'mountains' &&
                 (!biome || (biome !== 'desert' && biome !== 'tundra'));
         });
 

@@ -50,8 +50,6 @@ export interface TileData {
     latitude: number;
     longitude: number;
     terrain_type: TerrainType;
-    is_land: boolean;
-    is_habitable: boolean;
     boundary_points: Array<{ x: number, y: number, z: number }>;
     neighbor_ids: number[];
     biome?: string;
@@ -131,7 +129,6 @@ export interface SceneConfig {
     scene: THREE.Scene;
     currentTiles: THREE.Mesh[];
     terrainColors: Record<TerrainType, number>;
-    isLand: (point: THREE.Vector3) => boolean;
     renderer: THREE.Renderer;
     camera: THREE.Camera;
     tileData: TileData[];

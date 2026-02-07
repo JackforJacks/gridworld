@@ -26,8 +26,6 @@ export interface LandData {
 /** Tile interface for the hexasphere tiles */
 export interface HexTile {
     id: number | string;
-    Habitable?: string;
-    is_habitable?: boolean;
     terrainType?: string;
     biome?: string;
     population?: number;

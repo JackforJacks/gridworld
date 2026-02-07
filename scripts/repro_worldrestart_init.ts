@@ -6,7 +6,7 @@ async function main() {
     try {
         console.log('Resetting population...');
         await svc.resetPopulation();
-        const habitableRows = await pool.query('SELECT id FROM tiles WHERE is_habitable = TRUE');
+        const habitableRows = await pool.query("SELECT id FROM tiles WHERE terrain_type NOT IN ('ocean', 'mountains') AND (biome IS NULL OR biome NOT IN ('desert', 'tundra', 'alpine'))");
         const habitableIds = habitableRows.rows.map(r => r.id);
         console.log('Habitable tiles:', habitableIds.length);
         const res = await svc.initializeTilePopulations(habitableIds);

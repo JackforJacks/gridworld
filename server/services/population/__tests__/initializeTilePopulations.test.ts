@@ -42,7 +42,7 @@ describe('initializeTilePopulations (storage-first)', () => {
         const fakeTileId = 9999;
         const pool = {
             query: async (text) => {
-                if (text && text.includes('SELECT id FROM tiles WHERE is_habitable')) {
+                if (text && text.includes('SELECT id FROM tiles WHERE terrain_type NOT IN')) {
                     return { rows: [{ id: fakeTileId }] };
                 }
                 if (text && text.trim().toUpperCase().startsWith('TRUNCATE')) {
@@ -102,7 +102,7 @@ describe('initializeTilePopulations (storage-first)', () => {
         const fakeTileId = 12345;
         const pool = {
             query: async (text) => {
-                if (text && text.includes('SELECT id FROM tiles WHERE is_habitable')) {
+                if (text && text.includes('SELECT id FROM tiles WHERE terrain_type NOT IN')) {
                     return { rows: [{ id: fakeTileId }] };
                 }
                 if (text && text.trim().toUpperCase().startsWith('TRUNCATE')) {

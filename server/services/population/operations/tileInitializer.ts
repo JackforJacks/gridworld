@@ -237,7 +237,11 @@ async function selectTilesForInitialization(tileIds: number[]): Promise<number[]
         if (tileData && landsData) {
             for (const [tileId, tileJson] of Object.entries(tileData)) {
                 const tile = JSON.parse(tileJson);
-                if (tile.is_habitable) {
+                const terrainType = tile.terrain_type || '';
+                const biome = tile.biome || '';
+                const tileIsHabitable = terrainType !== 'ocean' && terrainType !== 'mountains' &&
+                    biome !== 'desert' && biome !== 'tundra' && biome !== 'alpine';
+                if (tileIsHabitable) {
                     const landsJson = landsData[tileId];
                     if (landsJson) {
                         const lands: Array<{ cleared?: boolean }> = JSON.parse(landsJson);

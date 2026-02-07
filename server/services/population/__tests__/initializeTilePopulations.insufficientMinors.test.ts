@@ -39,7 +39,7 @@ describe('initializeTilePopulations (insufficient minors)', () => {
         const fakeTileId = 7777;
         const pool = {
             query: async (text) => {
-                if (text && text.includes('SELECT id FROM tiles WHERE is_habitable')) {
+                if (text && text.includes('SELECT id FROM tiles WHERE terrain_type NOT IN')) {
                     return { rows: [{ id: fakeTileId }] };
                 }
                 if (text && text.trim().toUpperCase().startsWith('TRUNCATE')) {
@@ -97,7 +97,7 @@ describe('initializeTilePopulations (insufficient minors)', () => {
         const fakeTileId = 7778;
         const pool = {
             query: async (text) => {
-                if (text && text.includes('SELECT id FROM tiles WHERE is_habitable')) {
+                if (text && text.includes('SELECT id FROM tiles WHERE terrain_type NOT IN')) {
                     return { rows: [{ id: fakeTileId }] };
                 }
                 if (text && text.trim().toUpperCase().startsWith('TRUNCATE')) {
@@ -144,7 +144,7 @@ describe('initializeTilePopulations (insufficient minors)', () => {
         const fakeTileId = 7779;
         const pool = {
             query: async (text) => {
-                if (text && text.includes('SELECT id FROM tiles WHERE is_habitable')) {
+                if (text && text.includes('SELECT id FROM tiles WHERE terrain_type NOT IN')) {
                     return { rows: [{ id: fakeTileId }] };
                 }
                 if (text && text.trim().toUpperCase().startsWith('TRUNCATE')) {

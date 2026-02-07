@@ -17,7 +17,6 @@ import { getAppContext } from '../AppContext';
  * @param {any} world - No longer used (was ECSY World instance)
  * @param {any[]} currentTiles - Array to store created THREE.Mesh objects for tiles
  * @param {Record<string, number>} terrainColors - Terrain type to color mapping
- * @param {Function} isLand - Function to determine if tile is land
  * @param {any} TileComponent - No longer used (was ECSY Component class)
  * @param {any} backgroundSphere - Optional visual background sphere mesh
  * @param {any} hexasphere_global - window.hexasphere reference
@@ -52,7 +51,6 @@ function createScene(
     world,
     currentTiles,
     terrainColors,
-    isLand,
     TileComponent,
     backgroundSphere,
     hexasphere_global,

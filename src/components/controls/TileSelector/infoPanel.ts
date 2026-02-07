@@ -48,7 +48,6 @@ export function countLandTypes(lands: LandData[] | undefined): { forested: numbe
  */
 export function generateInfoPanelHTML(tile: HexTile): string {
     const terrainType = tile.terrainType || 'unknown';
-    const habitable = tile.Habitable || 'unknown';
     const population = tile.population || 0;
     const populationDisplay = population > 0 ? population.toLocaleString() : 'Uninhabited';
     const rustPopulation = tile.rustPopulation ?? null;
@@ -96,10 +95,6 @@ export function generateInfoPanelHTML(tile: HexTile): string {
             <span class="value population-${rustPopulation > 0 ? 'inhabited' : 'uninhabited'}">${rustPopulation > 0 ? rustPopulation.toLocaleString() : '0'}</span>
         </div>
         ` : ''}
-        <div class="tile-info-row">
-            <span class="label">Habitable:</span>
-            <span class="value Habitable-${habitable}">${habitable}</span>
-        </div>
     `;
 }
 

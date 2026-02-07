@@ -5,6 +5,7 @@ import { getAppContext } from '../../AppContext';
 import populationManager from '../../../managers/population/PopulationManager';
 import { getApiClient } from '../../../services/api/ApiClient';
 import Hexasphere from '../../hexasphere/HexaSphere';
+import { isHabitable } from '../../../utils/tileUtils';
 
 // Import types
 import type { HexTile, HexasphereData, TileColorInfo, TileDataResponse, PopulationEventType } from './types';
@@ -199,7 +200,7 @@ class SceneManager {
             this.overlayManager.createBorders(this.hexasphere.tiles);
 
             // Build overlay geometry once for all habitable tiles (zero runtime allocation)
-            const habitableTiles = this.hexasphere.tiles.filter(t => t.Habitable === 'yes');
+            const habitableTiles = this.hexasphere.tiles.filter(t => isHabitable(t.terrainType || 'unknown', t.biome));
             this.overlayManager.initOverlays(habitableTiles);
         }
 
@@ -231,7 +232,7 @@ class SceneManager {
         if (this.overlayManager && this.hexasphere?.tiles) {
             this.overlayManager.createBorders(this.hexasphere.tiles);
 
-            const habitableTiles = this.hexasphere.tiles.filter(t => t.Habitable === 'yes');
+            const habitableTiles = this.hexasphere.tiles.filter(t => isHabitable(t.terrainType || 'unknown', t.biome));
             this.overlayManager.initOverlays(habitableTiles);
         }
 

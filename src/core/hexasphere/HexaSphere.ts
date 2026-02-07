@@ -200,10 +200,7 @@ class Hexasphere {
                 }
             }
 
-            const Habitable = terrainType === 'flats' || terrainType === 'hills';
-            const isWaterFinal = terrainType === 'ocean';
-
-            tile.setProperties(idx, lat, lon, !isWaterFinal, terrainType, Habitable);
+            tile.setProperties(idx, lat, lon, terrainType);
         }
     }
 

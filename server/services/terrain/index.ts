@@ -302,7 +302,6 @@ export function generateLandsForTile(tileId: number, seed: number): LandChunk[] 
 /** Complete tile data structure */
 export interface TileProperties {
     terrainType: string;
-    isLand: boolean;
     biome: string | null;
     fertility: number;
     isHabitable: boolean;
@@ -327,10 +326,9 @@ export function calculateTileProperties(
     seed: number
 ): TileProperties {
     const terrainType = calculateTerrain(x, y, z);
-    const isLand = isLandTerrain(terrainType);
     const biome = calculateBiome(x, y, z, terrainType, seed);
     const fertility = calculateFertility(x, y, z, biome, terrainType, seed);
-    const habitable = isHabitable(terrainType, biome, isLand);
+    const habitable = isHabitable(terrainType, biome, isLandTerrain(terrainType));
 
     // Calculate lat/lon
     const radius = Math.sqrt(x * x + y * y + z * z);
@@ -339,7 +337,6 @@ export function calculateTileProperties(
 
     return {
         terrainType,
-        isLand,
         biome,
         fertility,
         isHabitable: habitable,

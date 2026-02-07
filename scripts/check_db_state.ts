@@ -10,15 +10,15 @@ async function check() {
     const cleared = await pool.query("SELECT COUNT(*) as c FROM tiles_lands WHERE land_type = 'cleared'");
     console.log('Cleared lands count:', cleared.rows[0].c);
 
-    const habitable = await pool.query('SELECT COUNT(*) as c FROM tiles WHERE is_habitable = TRUE');
+    const habitable = await pool.query("SELECT COUNT(*) as c FROM tiles WHERE terrain_type NOT IN ('ocean', 'mountains') AND (biome IS NULL OR biome NOT IN ('desert', 'tundra', 'alpine'))");
     console.log('Habitable tiles count:', habitable.rows[0].c);
 
     // Check for habitable tiles with cleared lands
     const habitableWithCleared = await pool.query(`
-        SELECT DISTINCT t.id 
-        FROM tiles t 
+        SELECT DISTINCT t.id
+        FROM tiles t
         INNER JOIN tiles_lands tl ON t.id = tl.tile_id AND tl.land_type = 'cleared'
-        WHERE t.is_habitable = TRUE
+        WHERE t.terrain_type NOT IN ('ocean', 'mountains') AND (t.biome IS NULL OR t.biome NOT IN ('desert', 'tundra', 'alpine'))
     `);
     console.log('Habitable tiles with cleared lands:', habitableWithCleared.rows.length);
 

@@ -69,9 +69,7 @@ export interface TileData {
     boundary: Array<{ x: number; y: number; z: number }>;
     centerPoint: { x: number; y: number; z: number };
     terrainType: string;
-    isLand: boolean;
     biome: string;
-    Habitable: string;
 }
 
 /** Tiles API response */
@@ -83,9 +81,7 @@ export interface TilesResponse {
 /** Compact tile state for a single tile (from /api/tile-state) */
 export interface CompactTileState {
     t: string;      // terrainType
-    l: boolean;     // isLand
     b: string | null; // biome
-    h: boolean;     // Habitable
 }
 
 /** Tile state API response (no geometry, just state) */
@@ -267,7 +263,7 @@ class ApiClient {
 
     /**
      * Get tile state only (no geometry) - for client-side hexasphere generation
-     * Returns compact state keyed by tile ID: { t: terrainType, l: isLand, b: biome, h: habitable }
+     * Returns compact state keyed by tile ID: { t: terrainType, b: biome }
      */
     async getTileState(): Promise<TileStateResponse> {
         return this.request<TileStateResponse>('/api/tiles/state');
