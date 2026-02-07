@@ -28,6 +28,7 @@ yarn-error.log*
 # OS
 .DS_Store
 Thumbs.db
+nul
 
 # Webpack
 *.hot-update.*

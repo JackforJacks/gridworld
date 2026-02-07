@@ -49,6 +49,7 @@ class CalendarDisplay {
     private tickHandler: StateChangeHandler | null;
     private stopButton: HTMLButtonElement | null;
     private calendarMode: 'stopped' | 'running' | 'fast';
+    private savedCalendarMode: 'stopped' | 'running' | 'fast' | null = null;
     private monthStepElements: HTMLDivElement[] = [];
     private lastDisplayedMonth: number = -1;
     private lastDisplayedDay: number = -1;
@@ -137,90 +138,17 @@ class CalendarDisplay {
      * Create and position year label and other dashboard elements
      */
     private createDashboardElements(): void {
-        const dashboard = document.getElementById('dashboard');
-        if (!dashboard) return;
+        const rightElements = document.getElementById('dashboard-right-elements');
+        if (!rightElements) return;
 
-        // Create the right-aligned elements container
-        const rightElements = this.createRightElementsContainer();
+        // Insert dynamic elements (controls + year label) before the menu button
+        const menuBtn = document.getElementById('menu-btn');
 
-        // Create control buttons container (to the left of year label)
-        const controlsContainer = this.createControlButtonsContainer();
-        rightElements.appendChild(controlsContainer);
-
-        // Create year label
-        const yearLabel = this.createYearLabel();
-        rightElements.appendChild(yearLabel);
-
-        // Position help button if it exists
-        this.positionHelpButton(rightElements);
-
-        // Add the container to the dashboard
-        dashboard.appendChild(rightElements);
-    }
-
-    /**
-     * Create the container for right-aligned dashboard elements
-     */
-    private createRightElementsContainer(): HTMLDivElement {
-        // Remove any existing container
-        const existingRightElements = document.getElementById('dashboard-right-elements');
-        if (existingRightElements && existingRightElements.parentNode) {
-            existingRightElements.parentNode.removeChild(existingRightElements);
-        }
-
-        // Create a new container
-        const rightElements = document.createElement('div');
-        rightElements.id = 'dashboard-right-elements';
-        rightElements.className = 'dashboard-right-elements';
-
-        return rightElements;
-    }
-
-    /**
-     * Create the year label element
-     */
-    private createYearLabel(): HTMLSpanElement {
-        // Remove any existing year label
-        const existingYearLabel = document.getElementById('calendar-year-inline');
-        if (existingYearLabel && existingYearLabel.parentNode) {
-            existingYearLabel.parentNode.removeChild(existingYearLabel);
-        }
-
-        // Create a new year label
-        const yearLabel = document.createElement('span');
-        yearLabel.id = 'calendar-year-inline';
-        yearLabel.className = 'calendar-year-inline';
-
-        return yearLabel;
-    }
-
-    /**
-     * Position the help button in the right elements container
-     */
-    private positionHelpButton(container: HTMLElement): void {
-        const helpBtn = document.getElementById('toggle-help');
-        if (helpBtn && helpBtn.parentNode) {
-            helpBtn.parentNode.removeChild(helpBtn);
-            container.appendChild(helpBtn);
-        }
-    }
-
-    /**
-     * Create control buttons container (single cycling button: stop/run/fast)
-     */
-    private createControlButtonsContainer(): HTMLDivElement {
-        // Remove any existing container
-        const existingControls = document.getElementById('calendar-controls');
-        if (existingControls && existingControls.parentNode) {
-            existingControls.parentNode.removeChild(existingControls);
-        }
-
-        // Create control buttons container
+        // Create control button (start/stop/fast)
         const controlsContainer = document.createElement('div');
         controlsContainer.id = 'calendar-controls';
         controlsContainer.className = 'calendar-controls';
 
-        // Create single cycling button (stop/run/fast)
         this.stopButton = document.createElement('button');
         this.stopButton.id = 'calendar-control-btn';
         this.stopButton.className = 'calendar-control-btn';
@@ -229,7 +157,14 @@ class CalendarDisplay {
         this.stopButton.addEventListener('click', () => this.cycleCalendarMode());
         controlsContainer.appendChild(this.stopButton);
 
-        return controlsContainer;
+        // Create year label
+        const yearLabel = document.createElement('span');
+        yearLabel.id = 'calendar-year-inline';
+        yearLabel.className = 'calendar-year-inline';
+
+        // Insert before menu button (or append if menu button not found)
+        rightElements.insertBefore(controlsContainer, menuBtn);
+        rightElements.insertBefore(yearLabel, menuBtn);
     }
 
     /**
@@ -264,6 +199,40 @@ class CalendarDisplay {
     }
 
     /**
+     * Pause the calendar, saving the current mode so it can be resumed later.
+     */
+    async pauseCalendar(): Promise<void> {
+        if (this.calendarMode === 'stopped' || this.savedCalendarMode !== null) return;
+        this.savedCalendarMode = this.calendarMode;
+        try {
+            await this.calendarManager?.stop();
+        } catch { /* silent */ }
+        this.calendarMode = 'stopped';
+        this.updateModeButton();
+    }
+
+    /**
+     * Resume the calendar to the mode it was in before pauseCalendar() was called.
+     */
+    async resumeCalendar(): Promise<void> {
+        if (this.savedCalendarMode === null || !this.calendarManager) return;
+        const mode = this.savedCalendarMode;
+        this.savedCalendarMode = null;
+        try {
+            if (mode === 'running') {
+                await this.calendarManager.setSpeed('1_day');
+                await this.calendarManager.start();
+                this.calendarMode = 'running';
+            } else if (mode === 'fast') {
+                await this.calendarManager.setSpeed('1_month');
+                await this.calendarManager.start();
+                this.calendarMode = 'fast';
+            }
+            this.updateModeButton();
+        } catch { /* silent */ }
+    }
+
+    /**
      * Update the mode button icon and title based on current mode
      */
     private updateModeButton(): void {
@@ -286,9 +255,12 @@ class CalendarDisplay {
     }
 
     /**
-     * Update control button states based on calendar state
+     * Update control button states based on calendar state.
+     * Skipped while the calendar is paused by a modal so the saved mode is preserved.
      */
     private updateControlButtons(state: CalendarState): void {
+        if (this.savedCalendarMode !== null) return;
+
         const isRunning = state.isRunning !== false && state.isPaused !== true;
         const currentSpeed = state.currentSpeed || '1_day';
 
@@ -517,11 +489,9 @@ class CalendarDisplay {
             this.dateElement.parentNode.removeChild(this.dateElement);
         }
 
-        // Remove control buttons container
-        const controlsContainer = document.getElementById('calendar-controls');
-        if (controlsContainer && controlsContainer.parentNode) {
-            controlsContainer.parentNode.removeChild(controlsContainer);
-        }
+        // Remove dynamically inserted elements
+        document.getElementById('calendar-controls')?.remove();
+        document.getElementById('calendar-year-inline')?.remove();
 
         // Clear references
         this.calendarManager = null;

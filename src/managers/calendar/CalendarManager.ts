@@ -302,30 +302,6 @@ class CalendarManager {
             return false;
         }
     }    /**
-     * Change tick interval
-     */
-    async setTickInterval(intervalMs: number): Promise<boolean> {
-        try {
-            const response = await fetch(`${this.apiBaseUrl}/interval`, {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ intervalMs })
-            });
-            const result: CalendarApiResponse = await response.json();
-
-            if (!result.success) {
-                console.error('Failed to set tick interval:', result.error);
-                return false;
-            }
-
-            return true;
-        } catch (error: unknown) {
-            console.error('Error setting tick interval:', error);
-            return false;
-        }
-    }
-
-    /**
      * Get available speed modes
      */
     async getAvailableSpeeds(): Promise<SpeedMode[] | null> {

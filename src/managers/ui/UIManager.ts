@@ -165,8 +165,6 @@ function mergeApiStats(stats: StatsData, popData: PopulationApiStats): void {
 }
 
 class UIManager {
-    private controlsPanel: HTMLElement | null;
-    private toggleHelpButton: HTMLElement | null;
     private isInitialized: boolean;
     private populationUnsubscribe: (() => void) | null;
     private sceneManager: SceneManagerLike | null;
@@ -177,8 +175,6 @@ class UIManager {
     private messageTimeout: ReturnType<typeof setTimeout> | null;
 
     constructor(sceneManager: SceneManagerLike | null) {
-        this.controlsPanel = null;
-        this.toggleHelpButton = null;
         this.isInitialized = false;
         this.populationUnsubscribe = null;
         this.sceneManager = sceneManager; // Store sceneManager instance
@@ -268,40 +264,39 @@ class UIManager {
     }
 
     setupControlsPanel(): void {
-        this.toggleHelpButton = document.getElementById('toggle-help');
-        this.controlsPanel = document.getElementById('controls-help');
-
-        if (this.toggleHelpButton && this.controlsPanel) {
-            this.toggleHelpButton.addEventListener('click', () => {
-                this.toggleControlsPanel();
-            });
-
-            // Initially show controls for a few seconds, then collapse
-            setTimeout(() => {
-                this.collapseControlsPanel();
-            }, 5000);
-        }
+        this.setupHelpModal();
     }
 
-    toggleControlsPanel(): void {
-        if (!this.controlsPanel || !this.toggleHelpButton) return;
+    private setupHelpModal(): void {
+        const helpBtn = document.getElementById('toggle-help');
+        const overlay = document.getElementById('help-modal-overlay');
+        const closeBtn = overlay?.querySelector('.help-modal-close');
 
-        this.controlsPanel.classList.toggle('collapsed');
-        this.toggleHelpButton.textContent = this.controlsPanel.classList.contains('collapsed') ? '?' : '×';
-    }
+        if (!helpBtn || !overlay) return;
 
-    collapseControlsPanel(): void {
-        if (!this.controlsPanel || !this.toggleHelpButton) return;
+        const openHelp = () => {
+            overlay.classList.remove('hidden');
+            getAppContext().calendarDisplay?.pauseCalendar();
+        };
 
-        this.controlsPanel.classList.add('collapsed');
-        this.toggleHelpButton.textContent = '?';
-    }
+        const closeHelp = () => {
+            overlay.classList.add('hidden');
+            getAppContext().calendarDisplay?.resumeCalendar();
+        };
 
-    expandControlsPanel(): void {
-        if (!this.controlsPanel || !this.toggleHelpButton) return;
+        helpBtn.addEventListener('click', () => {
+            if (overlay.classList.contains('hidden')) {
+                openHelp();
+            } else {
+                closeHelp();
+            }
+        });
 
-        this.controlsPanel.classList.remove('collapsed');
-        this.toggleHelpButton.textContent = '×';
+        closeBtn?.addEventListener('click', closeHelp);
+
+        overlay.addEventListener('click', (e) => {
+            if (e.target === overlay) closeHelp();
+        });
     }
 
     setupPopulationDisplay(): void {
@@ -370,40 +365,42 @@ class UIManager {
             });
         }
 
-        // Normalize dashboard buttons sizes and log pixel sizes for debugging
-        this.measureAndNormalizeDashboardButtons();
+        // Menu modal open/close
+        this.setupMenuModal();
     }
 
-    /**
-     * Measure the pixel heights of the dashboard buttons and normalize
-     * If one button is smaller, apply a min-height so all match the tallest
-     */
-    measureAndNormalizeDashboardButtons(): void {
-        try {
-            const resetBtn = document.getElementById('reset-data');
-            const statsBtn = document.getElementById('show-stats');
-            const saveBtn = document.getElementById('save-game');
-            const loadBtn = document.getElementById('load-game');
-            if (!resetBtn || !statsBtn || !saveBtn || !loadBtn) return;
+    private setupMenuModal(): void {
+        const menuBtn = document.getElementById('menu-btn');
+        const overlay = document.getElementById('menu-modal-overlay');
+        const closeBtn = overlay?.querySelector('.menu-modal-close');
 
-            const r = resetBtn.getBoundingClientRect();
-            const s = statsBtn.getBoundingClientRect();
-            const v = saveBtn.getBoundingClientRect();
-            const l = loadBtn.getBoundingClientRect();
+        if (!menuBtn || !overlay) return;
 
-            const heights = { reset: Math.round(r.height), stats: Math.round(s.height), save: Math.round(v.height), load: Math.round(l.height) };
-            // [log removed]
+        const openMenu = () => {
+            overlay.classList.remove('hidden');
+            getAppContext().calendarDisplay?.pauseCalendar();
+        };
 
-            const maxHeight = Math.max(heights.reset, heights.stats, heights.save, heights.load);
-            // Apply min-height to all dashboard buttons to ensure uniform vertical size
-            [resetBtn, statsBtn, saveBtn, loadBtn].forEach(btn => {
-                btn.style.minHeight = maxHeight + 'px';
-                // Also set line-height to center single-line content if needed
-                btn.style.lineHeight = maxHeight + 'px';
-            });
-        } catch (err: unknown) {
-            console.warn('Could not normalize dashboard button heights:', err instanceof Error ? (err as Error).message : err);
-        }
+        const closeMenu = () => {
+            overlay.classList.add('hidden');
+            getAppContext().calendarDisplay?.resumeCalendar();
+        };
+
+        menuBtn.addEventListener('click', () => {
+            if (overlay.classList.contains('hidden')) {
+                openMenu();
+            } else {
+                closeMenu();
+            }
+        });
+
+        closeBtn?.addEventListener('click', closeMenu);
+
+        overlay.addEventListener('click', (e) => {
+            if (e.target === overlay) {
+                closeMenu();
+            }
+        });
     }
 
     async handleSaveGame(): Promise<void> {
@@ -594,6 +591,9 @@ class UIManager {
         // Remove existing modal if any
         document.getElementById('stats-modal-overlay')?.remove();
 
+        // Pause calendar while stats modal is open
+        getAppContext().calendarDisplay?.pauseCalendar();
+
         // Create overlay
         const overlay = document.createElement('div');
         overlay.id = 'stats-modal-overlay';
@@ -719,12 +719,17 @@ class UIManager {
     private attachStatsModalHandlers(overlay: HTMLElement): void {
         const closeBtn = overlay.querySelector('.stats-modal-close');
 
+        const closeStats = () => {
+            overlay.remove();
+            getAppContext().calendarDisplay?.resumeCalendar();
+        };
+
         if (closeBtn) {
-            closeBtn.addEventListener('click', () => overlay.remove());
+            closeBtn.addEventListener('click', closeStats);
         }
 
         overlay.addEventListener('click', (e) => {
-            if (e.target === overlay) overlay.remove();
+            if (e.target === overlay) closeStats();
         });
     }
 
@@ -816,11 +821,6 @@ class UIManager {
         if (this.populationUnsubscribe) {
             this.populationUnsubscribe();
             this.populationUnsubscribe = null;
-        }
-        // Remove controls panel if it exists
-        if (this.controlsPanel) {
-            this.controlsPanel.remove();
-            this.controlsPanel = null;
         }
         this.isInitialized = false;
     }

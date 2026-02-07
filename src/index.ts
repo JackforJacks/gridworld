@@ -388,6 +388,11 @@ class GridWorldApp {
             // Initialize calendar display
             this.calendarDisplay = new CalendarDisplay(this.calendarManager);
 
+            // Expose to AppContext so other modules (UIManager) can access them
+            const ctx = getAppContext();
+            ctx.calendarManager = this.calendarManager;
+            ctx.calendarDisplay = this.calendarDisplay;
+
             // Initialize heap meter
             this.heapMeter = new HeapMeter();
 

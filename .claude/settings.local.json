@@ -5,7 +5,11 @@
       "Bash(del \"c:\\\\Users\\\\giaco\\\\OneDrive\\\\Documenti\\\\github\\\\GridWorld\\\\src\\\\core\\\\scene\\\\SceneManager\\\\hexasphereShader.ts\")",
       "Bash(npx tsc:*)",
       "Bash(npx webpack:*)",
-      "Bash(node:*)"
+      "Bash(node:*)",
+      "Bash(del \"\\\\?\\\\c:\\\\Users\\\\giaco\\\\OneDrive\\\\Documenti\\\\github\\\\GridWorld\\\\nul\")",
+      "Bash(cmd /c \"del \\\\?\\\\c:\\\\Users\\\\giaco\\\\OneDrive\\\\Documenti\\\\github\\\\GridWorld\\\\nul\")",
+      "Bash(cmd /c \"cd /d c:\\\\Users\\\\giaco\\\\OneDrive\\\\Documenti\\\\github\\\\GridWorld && del /f /q \\\\?\\\\c:\\\\Users\\\\giaco\\\\OneDrive\\\\Documenti\\\\github\\\\GridWorld\\\\nul\")",
+      "Bash(powershell:*)"
     ]
   }
 }

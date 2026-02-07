@@ -6,7 +6,7 @@ dotenv.config({ path: path.resolve(__dirname, '../../.env') });
 const calendarConfig = {
     daysPerMonth: parseInt(process.env.CALENDAR_DAYS_PER_MONTH || '8', 10),
     monthsPerYear: parseInt(process.env.CALENDAR_MONTHS_PER_YEAR || '12', 10),
-    startYear: parseInt(process.env.CALENDAR_START_YEAR || '1', 10),
+    startYear: parseInt(process.env.CALENDAR_START_YEAR || '4000', 10),
     startMonth: parseInt(process.env.CALENDAR_START_MONTH || '1', 10),
     startDay: parseInt(process.env.CALENDAR_START_DAY || '1', 10),
     autoStart: process.env.CALENDAR_AUTO_START !== 'false',

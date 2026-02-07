@@ -32,15 +32,16 @@
             <span class="stat-icon">👤</span>
             <span id="rust-pop-value">0</span>
         </div>
-        <button id="reset-data" class="dashboard-button reset-button">🔄 Restart</button>
-        <button id="show-stats" class="dashboard-button">📊 Stats</button>
-        <button id="save-game" class="dashboard-button save-button">💾 Save</button>
-        <button id="load-game" class="dashboard-button load-button">📥 Load</button>
         <div class="tile-search-container">
             <input type="number" id="tile-search-input" class="tile-search-input" placeholder="Tile ID" min="0">
             <button id="tile-search-btn" class="dashboard-button search-button">🔍</button>
         </div>
-        <button id="toggle-help" class="dashboard-toggle-help">?</button>
+        <div id="dashboard-right-elements" class="dashboard-right-elements">
+            <button id="toggle-help" class="dashboard-toggle-help">?</button>
+            <button id="show-stats" class="dashboard-button stats-button" title="Statistics">📊</button>
+            <!-- CalendarDisplay inserts controls + year label here -->
+            <button id="menu-btn" class="dashboard-button menu-button">☰</button>
+        </div>
     </div>
     <div id="container">
     </div>
@@ -120,6 +121,48 @@
             });
         })();
     </script>
+    <!-- Menu Modal -->
+    <div id="menu-modal-overlay" class="menu-modal-overlay hidden">
+        <div class="menu-modal">
+            <div class="menu-modal-header">
+                <strong>Menu</strong>
+                <button class="menu-modal-close">&times;</button>
+            </div>
+            <div class="menu-modal-content">
+                <button id="reset-data" class="menu-item reset-button">🔄 Restart</button>
+                <button id="save-game" class="menu-item save-button">💾 Save</button>
+                <button id="load-game" class="menu-item load-button">📥 Load</button>
+            </div>
+        </div>
+    </div>
+    <!-- Help Modal -->
+    <div id="help-modal-overlay" class="menu-modal-overlay hidden">
+        <div class="menu-modal" style="width: 320px;">
+            <div class="menu-modal-header">
+                <strong>Controls</strong>
+                <button class="help-modal-close menu-modal-close">&times;</button>
+            </div>
+            <div class="help-modal-content">
+                <div class="help-section">
+                    <h4>Camera</h4>
+                    <div class="help-row"><kbd>W</kbd> <kbd>A</kbd> <kbd>S</kbd> <kbd>D</kbd> / Arrow keys <span>Rotate globe</span></div>
+                    <div class="help-row"><kbd>+</kbd> / <kbd>-</kbd> <span>Zoom in / out</span></div>
+                    <div class="help-row"><kbd>C</kbd> <span>Reset camera</span></div>
+                    <div class="help-row">Scroll wheel <span>Zoom</span></div>
+                    <div class="help-row">Click + drag <span>Rotate</span></div>
+                </div>
+                <div class="help-section">
+                    <h4>Interaction</h4>
+                    <div class="help-row">Click tile <span>Select &amp; inspect</span></div>
+                    <div class="help-row">Tile search <span>Jump to tile by ID</span></div>
+                </div>
+                <div class="help-section">
+                    <h4>Time</h4>
+                    <div class="help-row">Moon button <span>Cycle: Stop / Daily / Monthly</span></div>
+                </div>
+            </div>
+        </div>
+    </div>
     <!-- Rust ECS population updates now handled via Socket.IO events in UIManager -->
     <!-- ref:include analytics -->
     <!-- endref -->

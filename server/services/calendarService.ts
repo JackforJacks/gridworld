@@ -2,12 +2,14 @@ import EventEmitter from 'events';
 import calendarConfig from '../config/calendar';
 import serverConfig from '../config/server';
 import { getCalendarState, setCalendarState } from '../models/calendarState';
+import rustSimulation from './rustSimulation';
 
 interface SpeedMode {
     name: string;
     daysPerTick: number;
     description: string;
     populationUpdatesPerTick: number;
+    intervalMs: number;
 }
 
 interface SpeedModes {
@@ -58,32 +60,22 @@ class CalendarService extends EventEmitter {
         this.io = io;
         this.config = calendarConfig;
 
-        // Speed modes - defines how much game time passes per real second
-        // This can remain defined here or be moved to config if preferred
+        // Speed modes: daily (1 day/sec) and monthly (1 month/sec via faster ticks)
+        // Monthly runs 8 individual daily ticks at 125ms intervals (8 × 125ms = 1000ms)
         this.speedModes = {
             '1_day': {
                 name: '1 Day/sec',
                 daysPerTick: 1,
                 description: 'Advance 1 day every second',
-                populationUpdatesPerTick: 1
-            },
-            '4_day': {
-                name: '4 Days/sec',
-                daysPerTick: 4,
-                description: 'Advance 4 days every second',
-                populationUpdatesPerTick: 4
+                populationUpdatesPerTick: 1,
+                intervalMs: 1000
             },
             '1_month': {
                 name: '1 Month/sec',
-                daysPerTick: this.config.daysPerMonth, // Use configured daysPerMonth
-                description: 'Advance 1 month every second',
-                populationUpdatesPerTick: this.config.daysPerMonth
-            },
-            '4_month': {
-                name: '4 Months/sec',
-                daysPerTick: this.config.daysPerMonth * 4,
-                description: 'Advance 4 months every second',
-                populationUpdatesPerTick: this.config.daysPerMonth * 4
+                daysPerTick: 1,
+                description: 'Advance 1 month every second (8 daily ticks at 125ms)',
+                populationUpdatesPerTick: 1,
+                intervalMs: Math.floor(1000 / this.config.daysPerMonth) // 125ms for 8 days/month
             }
         };
 
@@ -127,13 +119,25 @@ class CalendarService extends EventEmitter {
         if (this._initialized) return;
 
         await this.loadStateFromDB();
+
+        // Sync date from Rust ECS (source of truth)
+        try {
+            const rustCal = rustSimulation.getCalendar();
+            if (rustCal) {
+                this.currentDate = { day: rustCal.day, month: rustCal.month, year: rustCal.year };
+                if (serverConfig.verboseLogs) console.log(`📅 Calendar synced from Rust: Y${rustCal.year} M${rustCal.month} D${rustCal.day}`);
+            }
+        } catch (e) {
+            // Rust simulation may not be initialized yet; keep DB/config date
+            if (serverConfig.verboseLogs) console.warn('📅 Could not sync from Rust, using DB date');
+        }
+
         this._initialized = true;
 
         if (serverConfig.verboseLogs) console.log('📅 Calendar Service initialized:', {
             daysPerMonth: this.internalConfig.daysPerMonth,
             monthsPerYear: this.internalConfig.monthsPerYear,
             currentSpeed: this.speedModes[this.currentSpeed].name,
-            realTimeInterval: `${this.internalConfig.realTimeTickMs}ms`,
             startDate: this.getFormattedDate()
         });
 
@@ -144,7 +148,7 @@ class CalendarService extends EventEmitter {
     }
 
     /**
-     * Start the calendar ticking system (always 1 second intervals)
+     * Start the calendar ticking system at the current speed mode's interval
      */
     start() {
         if (this.state.isRunning) {
@@ -156,10 +160,11 @@ class CalendarService extends EventEmitter {
         this.state.startTime = this.state.startTime || Date.now();
         this.state.lastTickTime = Date.now();
 
+        const intervalMs = this.speedModes[this.currentSpeed].intervalMs;
         this.tickTimer = setInterval(() => {
             this.tick();
-        }, this.internalConfig.realTimeTickMs); // Use internalConfig for realTimeTickMs
-        if (serverConfig.verboseLogs) console.log(`🟢 Calendar started - ${this.speedModes[this.currentSpeed].name} (${this.internalConfig.realTimeTickMs}ms intervals)`);
+        }, intervalMs);
+        if (serverConfig.verboseLogs) console.log(`🟢 Calendar started - ${this.speedModes[this.currentSpeed].name} (${intervalMs}ms intervals)`);
 
         const stateData = this.getState();
         this.emit('started', stateData);
@@ -238,7 +243,7 @@ class CalendarService extends EventEmitter {
     }
 
     /**
-     * Advance time based on current speed mode
+     * Advance time by exactly 1 day (called at speed-dependent intervals)
      */
     async tick(): Promise<void> {
         if (!this.state.isRunning) {
@@ -248,30 +253,21 @@ class CalendarService extends EventEmitter {
         this.state.totalTicks++;
         this.state.lastTickTime = Date.now();
 
-        const speedMode = this.speedModes[this.currentSpeed];
-        const daysToAdvance = speedMode.daysPerTick;
-
         const previousDate = { ...this.currentDate };
-        const eventsTriggered: Array<{ type: string; date: CurrentDate; message: string }> = [];
+        const eventsTriggered = this.advanceOneDay();
 
-        // Advance the specified number of days
-        for (let i = 0; i < daysToAdvance; i++) {
-            const dayEvents = this.advanceOneDay();
-            eventsTriggered.push(...dayEvents);
-        }
-
-        this.state.totalDays += daysToAdvance;
+        this.state.totalDays++;
 
         // Prepare event data
         const eventData = {
             previousDate,
             currentDate: { ...this.currentDate },
-            daysAdvanced: daysToAdvance,
-            speedMode: speedMode.name,
+            daysAdvanced: 1,
+            speedMode: this.speedModes[this.currentSpeed].name,
             totalTicks: this.state.totalTicks,
             totalDaysAdvanced: this.state.totalDays,
             eventsTriggered,
-            populationUpdates: speedMode.populationUpdatesPerTick,
+            populationUpdates: 1,
             state: this.getState()
         };
 
@@ -283,9 +279,6 @@ class CalendarService extends EventEmitter {
             this.io.emit('calendarTick', eventData);
             this.io.emit('calendarState', this.getState());
         }
-
-        // Note: Calendar state is no longer saved automatically on every tick
-        // It is saved during explicit save operations and autosave
     }
 
     /**
@@ -342,8 +335,17 @@ class CalendarService extends EventEmitter {
         const oldSpeed = this.currentSpeed;
         this.currentSpeed = speedKey;
 
-        // If running, no need to restart timer since interval is always 1 second
-        if (serverConfig.verboseLogs) console.log(`⚡ Speed changed from ${this.speedModes[oldSpeed].name} to ${this.speedModes[speedKey].name}`);
+        // Restart timer with new interval if running
+        if (this.state.isRunning && this.tickTimer) {
+            clearInterval(this.tickTimer);
+            const intervalMs = this.speedModes[speedKey].intervalMs;
+            this.tickTimer = setInterval(() => {
+                this.tick();
+            }, intervalMs);
+            if (serverConfig.verboseLogs) console.log(`⚡ Speed changed: ${this.speedModes[oldSpeed].name} → ${this.speedModes[speedKey].name} (${intervalMs}ms intervals)`);
+        } else {
+            if (serverConfig.verboseLogs) console.log(`⚡ Speed changed: ${this.speedModes[oldSpeed].name} → ${this.speedModes[speedKey].name}`);
+        }
 
         this.emit('speedChanged', {
             oldSpeed: this.speedModes[oldSpeed],
