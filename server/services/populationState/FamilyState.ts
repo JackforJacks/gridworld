@@ -453,54 +453,6 @@ class FamilyState {
         }
     }
 
-    // =========== SYNC ===========
-
-    /**
-     * Full sync from Postgres: refill Redis family hash
-     */
-    static async syncFromPostgres(): Promise<{ skipped?: boolean; reason?: string; success?: boolean; total?: number }> {
-        const pool = require('../../config/database').default;
-        if (!storage.isAvailable()) return { skipped: true, reason: 'storage not available' };
-        try {
-            console.log('[FamilyState] Syncing families from Postgres to storage...');
-            // Clear family hash
-            await storage.del('family');
-
-            // Load families in batches
-            const batchSize = 5000;
-            let offset = 0;
-            let total = 0;
-
-            while (true) {
-                const res = await pool.query('SELECT id, husband_id, wife_id, tile_id, pregnancy, delivery_date, children_ids FROM family ORDER BY id LIMIT $1 OFFSET $2', [batchSize, offset]);
-                if (!res.rows || res.rows.length === 0) break;
-                const pipeline = storage.pipeline();
-                for (const f of res.rows) {
-                    const id = f.id.toString();
-                    const familyObj: FamilyData = {
-                        id: f.id,
-                        husband_id: f.husband_id,
-                        wife_id: f.wife_id,
-                        tile_id: f.tile_id,
-                        pregnancy: f.pregnancy || false,
-                        delivery_date: f.delivery_date || null,
-                        children_ids: f.children_ids || []
-                    };
-                    pipeline.hset('family', id, JSON.stringify(familyObj));
-                }
-                await pipeline.exec();
-                total += res.rows.length;
-                offset += res.rows.length;
-            }
-
-            console.log(`[FamilyState] Synced ${total} families to storage`);
-            return { success: true, total };
-        } catch (err: unknown) {
-            const message = err instanceof Error ? (err as Error).message : String(err);
-            console.error('[FamilyState] syncFromPostgres failed:', message);
-            throw err;
-        }
-    }
 }
 
 export default FamilyState;

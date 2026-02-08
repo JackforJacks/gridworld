@@ -62,7 +62,6 @@ class PeopleState {
     static getDemographicStats = Demographics.getDemographicStats;
 
     // =========== SYNC ===========
-    static syncFromPostgres = PopulationSync.syncFromPostgres;
     static repairIfNeeded = PopulationSync.repairIfNeeded;
 }
 

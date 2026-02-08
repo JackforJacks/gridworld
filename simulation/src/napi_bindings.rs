@@ -245,11 +245,71 @@ pub fn export_world(world: External<WorldHandle>) -> String {
 pub fn import_world(world: External<WorldHandle>, json: String) -> napi::Result<JsImportResult> {
     let result = world.lock().unwrap().import_world(&json)
         .map_err(|e| napi::Error::from_reason(e))?;
-    
+
     Ok(JsImportResult {
         population: result.population,
         partners: result.partners,
         mothers: result.mothers,
         calendar_year: result.calendar_year as i32,
+    })
+}
+
+// ============================================================================
+// File-based persistence (bincode)
+// ============================================================================
+
+/// Result of save_to_file
+#[napi(object)]
+pub struct JsSaveStats {
+    pub population: u32,
+    pub file_bytes: i64,
+}
+
+/// Result of load_from_file
+#[napi(object)]
+pub struct JsLoadFileResult {
+    pub population: u32,
+    pub partners: u32,
+    pub mothers: u32,
+    pub calendar_year: i32,
+    pub seed: u32,
+    pub node_state_json: String,
+}
+
+/// Save world + Node state to a bincode file
+#[napi]
+pub fn save_to_file(
+    world: External<WorldHandle>,
+    node_state_json: String,
+    seed: u32,
+    file_path: String,
+) -> napi::Result<JsSaveStats> {
+    let w = world.lock().unwrap();
+    let stats = w.save_to_file(&node_state_json, seed, &file_path)
+        .map_err(|e| napi::Error::from_reason(e))?;
+
+    Ok(JsSaveStats {
+        population: stats.population,
+        file_bytes: stats.file_bytes as i64,
+    })
+}
+
+/// Load world + Node state from a bincode file
+#[napi]
+pub fn load_from_file(
+    world: External<WorldHandle>,
+    file_path: String,
+) -> napi::Result<JsLoadFileResult> {
+    let mut w = world.lock().unwrap();
+    let result = w.load_from_file(&file_path)
+        .map_err(|e| napi::Error::from_reason(e))?;
+
+    Ok(JsLoadFileResult {
+        population: result.import_result.population,
+        partners: result.import_result.partners,
+        mothers: result.import_result.mothers,
+        calendar_year: result.import_result.calendar_year as i32,
+        seed: result.seed,
+        node_state_json: result.node_state_json,
     })
 }

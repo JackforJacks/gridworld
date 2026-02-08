@@ -1,5 +1,4 @@
 // Population Operations - Tile Initializer Module
-import { Pool } from 'pg';
 import serverConfig from '../../../config/server';
 import storage from '../../storage';
 import * as deps from '../dependencyContainer';
@@ -30,10 +29,10 @@ import { seedFamiliesForTiles } from './familySeeder';
  * @returns Formatted population data
  */
 export async function initializeTilePopulations(
-    pool: Pool,
-    calendarService: CalendarService | null,
-    serviceInstance: PopulationServiceInstance,
-    tileIds: number[],
+    _pool: unknown,
+    calendarService?: CalendarService | null,
+    serviceInstance?: PopulationServiceInstance,
+    tileIds?: number[],
     options: PopulationOptions = {}
 ): Promise<FormattedPopulationData> {
     const flag = options ? options.preserveDatabase : false;
@@ -67,7 +66,7 @@ export async function initializeTilePopulations(
         }
 
         // Select tiles for initialization
-        const selectedTiles = await selectTilesForInitialization(tileIds);
+        const selectedTiles = await selectTilesForInitialization(tileIds ?? []);
         if (selectedTiles.length === 0) {
             console.warn('[PopulationOperations] initializeTilePopulations: No tiles selected.');
             return {
@@ -84,12 +83,12 @@ export async function initializeTilePopulations(
         if (!preserveDatabase && !forceAll) {
             if (serverConfig.verboseLogs) console.log('⏱️ [initPop] Clearing data...');
             await clearStoragePopulation();
-            await pool.query('TRUNCATE TABLE family, people RESTART IDENTITY CASCADE');
+            // pool.query('TRUNCATE TABLE family, people RESTART IDENTITY CASCADE') removed - no longer using Postgres directly
             if (serverConfig.verboseLogs) console.log(`⏱️ [initPop] Clear done in ${Date.now() - startTime}ms`);
         }
 
         // Get current date
-        const { currentYear, currentMonth, currentDay } = getCurrentDate(calendarService);
+        const { currentYear, currentMonth, currentDay } = getCurrentDate(calendarService ?? null);
 
         const calculator = deps.getCalculator() as CalculatorModule | null;
         if (!calculator) {
@@ -138,7 +137,7 @@ export async function initializeTilePopulations(
         }
 
         // Integrity verification
-        await runIntegrityCheck(pool, selectedTiles, tilePopulationTargets);
+        await runIntegrityCheck(selectedTiles, tilePopulationTargets);
 
         // Optionally persist to Postgres
         await persistToPostgres();
@@ -152,7 +151,7 @@ export async function initializeTilePopulations(
             console.log(`✅ [initPop] COMPLETE: ${updatedPeople.length} people, ${allFamilies.length} families in ${totalTime}ms`);
         }
 
-        const populations = await getFinalPopulations(pool, PopulationState);
+        const populations = await getFinalPopulations(PopulationState);
         logMismatches(populations, selectedTiles, tilePopulationTargets);
 
         // Broadcast update
@@ -295,12 +294,11 @@ function getCurrentDate(calendarService: CalendarService | null): { currentYear:
 }
 
 async function runIntegrityCheck(
-    pool: Pool,
     selectedTiles: number[],
     tilePopulationTargets: { [tileId: number]: number }
 ): Promise<void> {
     try {
-        const checkRes = await verifyAndRepairIntegrity(pool, selectedTiles, tilePopulationTargets, {
+        const checkRes = await verifyAndRepairIntegrity(undefined, selectedTiles, tilePopulationTargets, {
             repair: serverConfig.integrityRepairOnInit
         });
         if (!checkRes.ok) {
@@ -364,7 +362,6 @@ async function waitForStorageSync(
 }
 
 async function getFinalPopulations(
-    pool: Pool,
     PopulationState: PopulationStateModule
 ): Promise<TilePopulations> {
     // Count people by tile_id directly from the person hash.

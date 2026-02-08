@@ -15,4 +15,4 @@ pub mod napi_bindings;
 
 pub use components::*;
 pub use world::SimulationWorld;
-pub use persistence::{ExportData, ImportResult};
+pub use persistence::{ExportData, ImportResult, SaveStats, LoadFileResult};

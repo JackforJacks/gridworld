@@ -5,6 +5,9 @@ node_modules/
 dist/
 build/
 
+# Save files
+saves/
+
 # Rust/Cargo
 simulation/target/
 *.node

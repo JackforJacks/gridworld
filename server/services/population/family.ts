@@ -1,7 +1,6 @@
 // Population Family Operations - Enhanced with family table integration (Redis-first)
 import { addPeopleToTile, removePeopleFromTile } from './manager';
 import * as deps from './dependencyContainer';
-import { Pool } from 'pg';
 import { FamilyData, CalendarDate } from '../../../types/global';
 import storage from '../storage';
 import PopulationState from '../populationState';
@@ -21,11 +20,11 @@ interface PopulationServiceInstance {
 
 // Interface for family manager module
 interface FamilyManagerModule {
-    createFamily: (pool: Pool | null, husbandId: number, wifeId: number, tileId: number) => Promise<FamilyData | null>;
-    startPregnancy: (pool: Pool | null, calendarService: CalendarService | null, familyId: number) => Promise<boolean>;
-    deliverBaby: (pool: Pool | null, calendarService: CalendarService | null, familyId: number, populationServiceInstance: PopulationServiceInstance | null) => Promise<unknown>;
-    processDeliveries: (pool: Pool | null, calendarService: CalendarService | null, populationServiceInstance: PopulationServiceInstance | null, daysAdvanced?: number) => Promise<number>;
-    getFamiliesOnTile: (pool: Pool | null, tileId: number) => Promise<FamilyData[]>;
+    createFamily: (_pool: unknown, husbandId?: number, wifeId?: number, tileId?: number) => Promise<{ family: FamilyData | null } | null>;
+    startPregnancy: (_pool: unknown, calendarService?: CalendarService | null, familyId?: number) => Promise<boolean>;
+    deliverBaby: (_pool: unknown, calendarService?: CalendarService | null, familyId?: number, populationServiceInstance?: PopulationServiceInstance | null) => Promise<unknown>;
+    processDeliveries: (_pool: unknown, calendarService?: CalendarService | null, populationServiceInstance?: PopulationServiceInstance | null, daysAdvanced?: number) => Promise<number>;
+    getFamiliesOnTile: (_pool: unknown, tileId?: number) => Promise<FamilyData[]>;
 }
 
 // Interface for population state module
@@ -37,13 +36,13 @@ interface PopulationStateModule {
  * Enhanced Procreation function with family management - Redis-first implementation
  */
 async function Procreation(
-    pool: Pool,
+    _pool: unknown,
     calendarService: CalendarService | null,
     populationServiceInstance: PopulationServiceInstance | null,
     tileId: number,
     population: number
 ): Promise<void> {
-    void pool; // Unused - kept for API compatibility
+    void _pool; // Unused - kept for API compatibility
     try {
         // Get current population from Redis
         let currentCount = 0;
@@ -106,7 +105,7 @@ async function Procreation(
  * Creates random families from available adults on a tile - Redis-first implementation
  */
 async function createRandomFamilies(
-    _pool: Pool | null,
+    _pool: unknown,
     tileId: number,
     calendarService: CalendarService | null = null
 ): Promise<void> {

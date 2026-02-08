@@ -1,10 +1,10 @@
 /**
  * State Manager - Main Entry Point
- * Handles syncing state between Redis (hot data) and PostgreSQL (persistence)
- * 
+ * Handles syncing state between Redis (hot data) and bincode file (persistence)
+ *
  * This module has been refactored into:
- * - loadOperations/ - Loading state from PostgreSQL to Redis
- * - saveOperations.ts - Saving Redis state to PostgreSQL
+ * - loadOperations/ - Loading state from bincode file to Redis
+ * - saveOperations.ts - Saving Redis + Rust ECS state to bincode file
  * - storageOperations.ts - Redis CRUD operations
  */
 

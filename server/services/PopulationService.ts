@@ -1,12 +1,7 @@
 // @ts-check
 // Population Service - Main service orchestrator for population management
-import pool from '../config/database';
 import config from '../config/server';
-import { Pool } from 'pg';
 import { Server as SocketIOServer } from 'socket.io';
-
-// Repository Pattern for data access
-import PopulationRepository from '../repositories/PopulationRepository';
 
 // Event-driven architecture
 import populationEvents from '../events/populationEvents';
@@ -74,6 +69,9 @@ import { createRandomFamilies } from './population/family';
 import { formNewFamilies } from './population/familyManager';
 import { stopIntegrityAudit } from './population/initializer';
 
+// Population state (Redis-backed)
+import PopulationState from './populationState';
+
 // Statistics service for vital rates tracking
 import StatisticsService from './statisticsService';
 
@@ -108,8 +106,6 @@ interface EventLogEntry {
  * Main service orchestrator for population management using Repository Pattern and Event Emitters
  */
 class PopulationService {
-    #pool: Pool;
-    #repository: PopulationRepository;
     #socketService: SocketService;
 
     io: SocketIOServer;
@@ -139,10 +135,6 @@ class PopulationService {
         // Direct dependencies
         this.io = io;
         this.calendarService = calendarService;
-        this.#pool = pool;
-
-        // Repository for data access (implements Repository Pattern)
-        this.#repository = new PopulationRepository(pool);
 
         // Socket service for communication (decouples socket logic)
         this.#socketService = new SocketService(io);
@@ -209,22 +201,12 @@ class PopulationService {
     }
 
     /**
-     * Get repository instance (for testing/advanced use)
-     * @returns {PopulationRepository}
-     */
-    getRepository() {
-        return this.#repository;
-    }
-
-    /**
      * Get socket service instance
      * @returns {SocketService}
      */
     getSocketService() {
         return this.#socketService;
     }
-
-    getPool() { return this.#pool; }
 
     getStatisticsService(): StatisticsService {
         return this.statisticsService;
@@ -253,19 +235,19 @@ class PopulationService {
         }
     }
 
-    async loadData(): Promise<PopulationData> { return await loadPopulationData(this.#pool); }
+    async loadData(): Promise<PopulationData> { return await loadPopulationData(null); }
     async saveData(): Promise<void> { return await savePopulationData(); }
     async getPopulations(): Promise<PopulationData> { return await this.loadData(); }
     getFormattedPopulationData(populations: PopulationData | null = null): unknown { return formatPopulationData(populations); }
 
     async updatePopulation(tileId: number | string, population: number): Promise<void> {
-        await updateTilePopulation(this.#pool, this.calendarService, this, tileId, population);
+        await updateTilePopulation(null, this.calendarService, this, tileId, population);
     }
     async resetPopulation(options: Record<string, unknown> = {}) {
-        return await resetAllPopulation(this.#pool, this, options);
+        return await resetAllPopulation(null, this, options);
     }
     async initializeTilePopulations(tileIds: number[], options: Record<string, unknown> = {}) {
-        return await initializeTilePopulations(this.#pool, this.calendarService, this, tileIds, options);
+        return await initializeTilePopulations(null, this.calendarService, this, tileIds, options);
     }
     async updateTilePopulations(tilePopulations: Array<{ tileId: number; population: number }>) {
         // Convert array to object format expected by updateMultipleTilePopulations
@@ -273,10 +255,10 @@ class PopulationService {
         for (const { tileId, population } of tilePopulations) {
             tilePopulationsObj[String(tileId)] = population;
         }
-        return await updateMultipleTilePopulations(this.#pool, this.calendarService, this, tilePopulationsObj);
+        return await updateMultipleTilePopulations(null, this.calendarService, this, tilePopulationsObj);
     }
     async regeneratePopulationWithNewAgeDistribution(): Promise<unknown> {
-        return await regeneratePopulationWithNewAgeDistribution(this.#pool, this.calendarService, this);
+        return await regeneratePopulationWithNewAgeDistribution(null, this.calendarService, this);
     }
 
     /**
@@ -288,7 +270,7 @@ class PopulationService {
             const { tiles = null, repair = false } = options;
             const start = Date.now();
             if (metrics?.auditRunCounter) metrics.auditRunCounter.inc({ source: 'manual', repair: repair ? 'true' : 'false' });
-            const res = await verifyAndRepairIntegrity(this.#pool, tiles, {}, { repair });
+            const res = await verifyAndRepairIntegrity(null, tiles, {}, { repair });
             const durationSec = (Date.now() - start) / 1000;
             if (metrics && metrics.auditDuration) metrics.auditDuration.observe(durationSec);
             if (!res.ok) {
@@ -312,7 +294,7 @@ class PopulationService {
     async updateGrowthRate(rate: number) { return await updateGrowthRate(this, rate); }
 
     async applySenescenceManually() {
-        const deaths = await applySenescence(this.#pool, this.calendarService, this);
+        const deaths = await applySenescence(null, this.calendarService, this);
         if (deaths > 0) await this.broadcastUpdate('senescenceApplied');
         const populations = await this.loadData();
         return {
@@ -326,28 +308,28 @@ class PopulationService {
     async createFamiliesForExistingPopulation() {
         try {
 
-            // Use repository to get tiles with population
-            const tilePopulations = await this.#repository.getTilePopulations();
-            const tileIds = tilePopulations.map(tp => tp.tile_id);
+            // Use PopulationState (Redis) to get tiles with population
+            const tilePopulationsMap = await PopulationState.getAllTilePopulations();
+            const tileIds = Object.keys(tilePopulationsMap).map(Number).filter(id => tilePopulationsMap[id] > 0);
 
-            // Batch fetch: Get all families once upfront to avoid N+1 queries
-            const allFamiliesBefore = await this.#repository.getAllFamilies({});
+            // Batch fetch: Get all families once upfront
+            const allFamiliesBefore = await PopulationState.getAllFamilies();
             const beforeCountByTile = new Map<number, number>();
             for (const family of allFamiliesBefore) {
-                const tileId = family.tile_id;
+                const tileId = (family as any).tile_id;
                 beforeCountByTile.set(tileId, (beforeCountByTile.get(tileId) || 0) + 1);
             }
 
             // Process all tiles in parallel for family creation
             await Promise.all(
-                tileIds.map(tileId => createRandomFamilies(this.#pool, tileId, this.calendarService))
+                tileIds.map(tileId => createRandomFamilies(null, tileId, this.calendarService))
             );
 
             // Batch fetch: Get all families once after to compute delta
-            const allFamiliesAfter = await this.#repository.getAllFamilies({});
+            const allFamiliesAfter = await PopulationState.getAllFamilies();
             const afterCountByTile = new Map<number, number>();
             for (const family of allFamiliesAfter) {
-                const tileId = family.tile_id;
+                const tileId = (family as any).tile_id;
                 afterCountByTile.set(tileId, (afterCountByTile.get(tileId) || 0) + 1);
             }
 
@@ -387,12 +369,12 @@ class PopulationService {
 
     // Statistics and reporting: delegate directly to PopStats
     async getPopulationStats() {
-        return await getPopulationStats(this.#pool, this.calendarService, this);
+        return await getPopulationStats(null, this.calendarService, this);
     }
     async getAllPopulationData() {
-        return await getAllPopulationData(this.#pool, this.calendarService, this);
+        return await getAllPopulationData(null, this.calendarService, this);
     } async printPeopleSample(limit = 10) {
-        await printPeopleSample(this.#pool, limit);
+        await printPeopleSample(null, limit);
     }
 
     // Rate tracking methods
@@ -513,16 +495,16 @@ class PopulationService {
 
         try {
             // 1. Apply senescence (aging deaths) - probability adjusted for days passed
-            await applySenescence(this.#pool, this.calendarService, this, daysAdvanced);
+            await applySenescence(null, this.calendarService, this, daysAdvanced);
 
             // 2. Form new families from bachelors (run once per tick, families form over time)
-            const newFamilies = await formNewFamilies(this.#pool, this.calendarService);
+            const newFamilies = await formNewFamilies(null, this.calendarService);
             if (newFamilies > 0) {
                 // Quiet: formed new families on tick (log suppressed)
             }
 
             // 3. Process births and new pregnancies (adjusted for days passed)
-            await processDailyFamilyEvents(this.#pool, this.calendarService, this, daysAdvanced);
+            await processDailyFamilyEvents(null, this.calendarService, this, daysAdvanced);
 
             // 4. Broadcast updated population data
             await this.broadcastUpdate('populationUpdate');

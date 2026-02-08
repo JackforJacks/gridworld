@@ -13,7 +13,12 @@
       "Bash(npm run build:*)",
       "Bash(ls:*)",
       "Bash(taskkill:*)",
-      "Bash(git checkout:*)"
+      "Bash(git checkout:*)",
+      "Bash(cargo build:*)",
+      "Bash(npx napi build:*)",
+      "Bash(copy:*)",
+      "Bash(find:*)",
+      "Bash(xxd:*)"
     ]
   }
 }

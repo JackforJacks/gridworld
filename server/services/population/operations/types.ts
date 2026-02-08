@@ -1,5 +1,4 @@
 // Population Operations - Shared Type Definitions
-import { Pool } from 'pg';
 
 /** Calendar date structure */
 export interface CalendarDate {

@@ -4,11 +4,10 @@
  */
 
 import * as THREE from 'three';
-import { Pool, PoolClient } from 'pg';
 import { Redis } from 'ioredis';
 
 // Re-export for convenience
-export { Pool, PoolClient, Redis };
+export { Redis };
 
 /**
  * Environment configuration
@@ -16,11 +15,6 @@ export { Pool, PoolClient, Redis };
 export interface EnvironmentConfig {
     NODE_ENV: string;
     PORT: string;
-    PGHOST: string;
-    PGPORT: string;
-    PGUSER: string;
-    PGPASSWORD: string;
-    PGDATABASE: string;
     REDIS_HOST: string;
     REDIS_PORT: string;
     REDIS_PASSWORD?: string;

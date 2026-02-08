@@ -54,17 +54,6 @@ function validateTilePopulations(tilePopulations) {
 }
 
 /**
- * Validates database pool instance
- * @param {Object} pool - Database pool to validate
- * @throws {Error} If pool is invalid
- */
-function validateDatabasePool(pool) {
-    if (!pool || typeof pool.query !== 'function') {
-        throw new Error('Invalid database pool: must have a query method');
-    }
-}
-
-/**
  * Validates service dependencies
  * @param {Object} serviceInstance - Service instance to validate
  * @param {Object} calendarService - Calendar service to validate
@@ -85,6 +74,5 @@ export {
     validatePopulationCount,
     validateGrowthRate,
     validateTilePopulations,
-    validateDatabasePool,
-    validateServiceDependencies
+validateServiceDependencies
 };

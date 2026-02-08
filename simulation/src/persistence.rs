@@ -1,9 +1,12 @@
 //! Persistence module for export/import of simulation state
 //!
-//! Serializes the entire ECS world to JSON for database storage and restores it.
+//! Supports two formats:
+//! - JSON export/import (for live sync with Node.js)
+//! - Bincode save files (for fast local persistence)
 
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
+use std::path::Path;
 use hecs::World;
 
 use crate::components::*;
@@ -41,16 +44,12 @@ pub struct ExportedPerson {
     pub birth_month: u8,
     pub birth_day: u8,
     /// PersonId of partner (None = single)
-    #[serde(skip_serializing_if = "Option::is_none")]
     pub partner_id: Option<u64>,
     /// PersonId of mother (None = genesis seed)
-    #[serde(skip_serializing_if = "Option::is_none")]
     pub mother_id: Option<u64>,
     /// Fertility data (only for women who've given birth)
-    #[serde(skip_serializing_if = "Option::is_none")]
     pub fertility: Option<ExportedFertility>,
     /// Pregnancy data (only for currently pregnant women)
-    #[serde(skip_serializing_if = "Option::is_none")]
     pub pregnancy: Option<ExportedPregnancy>,
 }
 
@@ -98,33 +97,82 @@ pub struct ExportedPregnancy {
 impl crate::world::SimulationWorld {
     /// Export entire world state to JSON string
     pub fn export_world(&self) -> String {
+        let export_data = self.build_export_data();
+        serde_json::to_string(&export_data).unwrap_or_else(|_| "{}".to_string())
+    }
+
+    /// Import world state from JSON string, replacing current state
+    pub fn import_world(&mut self, json: &str) -> Result<ImportResult, String> {
+        let data: ExportData = serde_json::from_str(json)
+            .map_err(|e| format!("JSON parse error: {}", e))?;
+        self.import_from_export_data(data)
+    }
+}
+
+/// Result of import operation
+#[derive(Debug, Clone)]
+pub struct ImportResult {
+    pub population: u32,
+    pub partners: u32,
+    pub mothers: u32,
+    pub calendar_year: u16,
+}
+
+// ============================================================================
+// Bincode Save File
+// ============================================================================
+
+/// On-disk save file format (bincode-serialized)
+#[derive(Serialize, Deserialize)]
+pub struct SaveFile {
+    pub version: u8,
+    pub seed: u32,
+    pub ecs_data: ExportData,
+    /// Node-side state (families, person extensions) stored as raw JSON bytes
+    pub node_state: Vec<u8>,
+}
+
+/// Stats returned after saving
+#[derive(Debug, Clone)]
+pub struct SaveStats {
+    pub population: u32,
+    pub file_bytes: u64,
+}
+
+/// Stats returned after loading
+#[derive(Debug, Clone)]
+pub struct LoadFileResult {
+    pub import_result: ImportResult,
+    pub seed: u32,
+    pub node_state_json: String,
+}
+
+impl crate::world::SimulationWorld {
+    /// Build ExportData from current world state (shared by export_world and save_to_file)
+    fn build_export_data(&self) -> ExportData {
         let mut people: Vec<ExportedPerson> = Vec::new();
-        
-        // Build PersonId -> Entity map for Partner/Mother reference lookup
+
         let mut person_id_to_entity: HashMap<u64, hecs::Entity> = HashMap::new();
         let mut entity_to_person_id: HashMap<hecs::Entity, u64> = HashMap::new();
-        
-        // First pass: collect all PersonIds and map to entities
+
         for (entity, person) in self.world.query::<&Person>().iter() {
             person_id_to_entity.insert(person.id.0, entity);
             entity_to_person_id.insert(entity, person.id.0);
         }
-        
-        // Second pass: export all people with components
+
         for (entity, (person, tile, birth, sex)) in self
             .world
             .query::<(&Person, &TileId, &BirthDate, &Sex)>()
             .iter()
         {
-            // Get optional components
             let partner_id = self.world.get::<&Partner>(entity)
                 .ok()
                 .and_then(|p| entity_to_person_id.get(&p.0).copied());
-            
+
             let mother_id = self.world.get::<&Mother>(entity)
                 .ok()
                 .and_then(|m| entity_to_person_id.get(&m.0).copied());
-            
+
             let fertility = self.world.get::<&Fertility>(entity)
                 .ok()
                 .map(|f| ExportedFertility {
@@ -132,14 +180,14 @@ impl crate::world::SimulationWorld {
                     last_birth_month: f.last_birth_month,
                     children_born: f.children_born,
                 });
-            
+
             let pregnancy = self.world.get::<&Pregnant>(entity)
                 .ok()
                 .map(|p| ExportedPregnancy {
                     due_year: p.due_year,
                     due_month: p.due_month,
                 });
-            
+
             people.push(ExportedPerson {
                 person_id: person.id.0,
                 tile_id: tile.0,
@@ -155,8 +203,8 @@ impl crate::world::SimulationWorld {
                 pregnancy,
             });
         }
-        
-        let export_data = ExportData {
+
+        ExportData {
             version: 1,
             calendar: CalendarData {
                 year: self.calendar.year,
@@ -165,31 +213,21 @@ impl crate::world::SimulationWorld {
             },
             next_person_id: self.next_person_id,
             people,
-        };
-        
-        serde_json::to_string(&export_data).unwrap_or_else(|_| "{}".to_string())
+        }
     }
 
-    /// Import world state from JSON string, replacing current state
-    pub fn import_world(&mut self, json: &str) -> Result<ImportResult, String> {
-        let data: ExportData = serde_json::from_str(json)
-            .map_err(|e| format!("JSON parse error: {}", e))?;
-        
-        // Validate version
+    /// Import from ExportData (shared by import_world and load_from_file)
+    fn import_from_export_data(&mut self, data: ExportData) -> Result<ImportResult, String> {
         if data.version != 1 {
             return Err(format!("Unsupported export version: {}", data.version));
         }
-        
-        // Clear existing world
+
         self.world.clear();
-        
-        // Restore calendar
         self.calendar = Calendar::new(data.calendar.year, data.calendar.month, data.calendar.day);
         self.next_person_id = data.next_person_id;
-        
-        // First pass: spawn all entities with basic components, build PersonId -> Entity map
+
         let mut person_id_to_entity: HashMap<u64, hecs::Entity> = HashMap::new();
-        
+
         for person in &data.people {
             let entity = self.world.spawn((
                 Person {
@@ -201,8 +239,7 @@ impl crate::world::SimulationWorld {
                 BirthDate::new(person.birth_year, person.birth_month, person.birth_day),
                 Sex::from(person.sex),
             ));
-            
-            // Add Fertility if present
+
             if let Some(ref fert) = person.fertility {
                 let _ = self.world.insert_one(entity, Fertility {
                     last_birth_year: fert.last_birth_year,
@@ -210,34 +247,30 @@ impl crate::world::SimulationWorld {
                     children_born: fert.children_born,
                 });
             }
-            
-            // Add Pregnancy if present
+
             if let Some(ref preg) = person.pregnancy {
                 let _ = self.world.insert_one(entity, Pregnant {
                     due_year: preg.due_year,
                     due_month: preg.due_month,
                 });
             }
-            
+
             person_id_to_entity.insert(person.person_id, entity);
         }
-        
-        // Second pass: restore Partner and Mother references
+
         let mut partners_added = 0u32;
         let mut mothers_added = 0u32;
-        
+
         for person in &data.people {
             let entity = person_id_to_entity[&person.person_id];
-            
-            // Restore Partner
+
             if let Some(partner_pid) = person.partner_id {
                 if let Some(&partner_entity) = person_id_to_entity.get(&partner_pid) {
                     let _ = self.world.insert_one(entity, Partner(partner_entity));
                     partners_added += 1;
                 }
             }
-            
-            // Restore Mother
+
             if let Some(mother_pid) = person.mother_id {
                 if let Some(&mother_entity) = person_id_to_entity.get(&mother_pid) {
                     let _ = self.world.insert_one(entity, Mother(mother_entity));
@@ -245,7 +278,7 @@ impl crate::world::SimulationWorld {
                 }
             }
         }
-        
+
         Ok(ImportResult {
             population: data.people.len() as u32,
             partners: partners_added,
@@ -253,13 +286,63 @@ impl crate::world::SimulationWorld {
             calendar_year: self.calendar.year,
         })
     }
-}
 
-/// Result of import operation
-#[derive(Debug, Clone)]
-pub struct ImportResult {
-    pub population: u32,
-    pub partners: u32,
-    pub mothers: u32,
-    pub calendar_year: u16,
+    /// Save world + Node state to a bincode file (atomic write via tmp + rename)
+    pub fn save_to_file(&self, node_state_json: &str, seed: u32, path: &str) -> Result<SaveStats, String> {
+        let ecs_data = self.build_export_data();
+        let population = ecs_data.people.len() as u32;
+
+        let save_file = SaveFile {
+            version: 1,
+            seed,
+            ecs_data,
+            node_state: node_state_json.as_bytes().to_vec(),
+        };
+
+        let encoded = bincode::serialize(&save_file)
+            .map_err(|e| format!("Bincode serialize error: {}", e))?;
+
+        let file_bytes = encoded.len() as u64;
+
+        // Atomic write: write to .tmp then rename
+        let tmp_path = format!("{}.tmp", path);
+
+        // Ensure parent directory exists
+        if let Some(parent) = Path::new(path).parent() {
+            std::fs::create_dir_all(parent)
+                .map_err(|e| format!("Failed to create save directory: {}", e))?;
+        }
+
+        std::fs::write(&tmp_path, &encoded)
+            .map_err(|e| format!("Failed to write tmp file: {}", e))?;
+
+        std::fs::rename(&tmp_path, path)
+            .map_err(|e| format!("Failed to rename tmp to final: {}", e))?;
+
+        Ok(SaveStats { population, file_bytes })
+    }
+
+    /// Load world + Node state from a bincode file
+    pub fn load_from_file(&mut self, path: &str) -> Result<LoadFileResult, String> {
+        let data = std::fs::read(path)
+            .map_err(|e| format!("Failed to read save file: {}", e))?;
+
+        let save_file: SaveFile = bincode::deserialize(&data)
+            .map_err(|e| format!("Bincode deserialize error: {}", e))?;
+
+        if save_file.version != 1 {
+            return Err(format!("Unsupported save file version: {}", save_file.version));
+        }
+
+        let node_state_json = String::from_utf8(save_file.node_state)
+            .map_err(|e| format!("Invalid UTF-8 in node_state: {}", e))?;
+
+        let import_result = self.import_from_export_data(save_file.ecs_data)?;
+
+        Ok(LoadFileResult {
+            import_result,
+            seed: save_file.seed,
+            node_state_json,
+        })
+    }
 }

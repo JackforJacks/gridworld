@@ -110,21 +110,13 @@ class GridWorldServer {
             // Services already initialized
         }
 
-        // Load saved state into Redis
+        // Load saved state from bincode file into Redis + Rust ECS
         try {
             StateManager.setIo(this.io);
             StateManager.setCalendarService(calendarServiceInstance);
 
-            // Perform the load - Redis is already guaranteed to be ready
+            // Load from save file (restores both Redis state and Rust ECS)
             await StateManager.loadFromDatabase();
-
-            // Sync Rust ECS from Redis population data
-            try {
-                const rustSim = await import('./services/rustSimulation');
-                await rustSim.default.syncFromRedis();
-            } catch (e: unknown) {
-                console.warn('⚠️ Failed to sync Rust simulation from Redis:', (e as Error).message);
-            }
 
             // If storage reconnects later, re-sync automatically
             try {

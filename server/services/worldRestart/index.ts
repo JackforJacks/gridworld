@@ -137,7 +137,7 @@ export async function restartWorld(options: WorldRestartOptions = {}): Promise<W
 
         // Step 4: Generate tiles from hexasphere
         console.log('🗺️ [WorldRestart] Step 3/5: Generating tiles...');
-        const tilesGenerated = await generateTiles(seed);
+        const tilesGenerated = await generateTilesFromSeed(seed);
 
         // Step 5: Select habitable tiles, let Rust decide population counts, then create Redis people
         console.log('👥 [WorldRestart] Step 4/5: Creating population...');
@@ -286,7 +286,7 @@ interface TileData {
     neighbor_ids: string;
 }
 
-async function generateTiles(seed: number): Promise<number> {
+export async function generateTilesFromSeed(seed: number): Promise<number> {
     const radius = parseFloat(process.env.HEXASPHERE_RADIUS || '30');
     const subdivisions = parseFloat(process.env.HEXASPHERE_SUBDIVISIONS || '3');
     const tileWidthRatio = parseFloat(process.env.HEXASPHERE_TILE_WIDTH_RATIO || '1');
@@ -566,5 +566,6 @@ function broadcastRestart(io: SocketIO, seed: number): void {
 // ============================================================================
 
 export default {
-    restartWorld
+    restartWorld,
+    generateTilesFromSeed
 };

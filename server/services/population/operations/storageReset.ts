@@ -1,7 +1,6 @@
 // Population Operations - Storage Reset Module
 import serverConfig from '../../../config/server';
 import storage from '../../storage';
-import { Pool } from 'pg';
 import {
     PopulationOptions,
     PopulationServiceInstance,
@@ -61,15 +60,15 @@ export async function clearStoragePopulation(options: PopulationOptions = {}): P
  * @returns Formatted empty population data
  */
 export async function resetAllPopulation(
-    pool: Pool,
-    serviceInstance: PopulationServiceInstance,
+    _pool?: unknown,
+    serviceInstance?: PopulationServiceInstance,
     options: PopulationOptions = {}
 ): Promise<FormattedPopulationData> {
     const flag = options ? options.preserveDatabase : false;
     const preserveDatabase = flag === true || flag === 'true';
     if (preserveDatabase) {
-        const existingPopulations = await loadPopData(pool);
-        await serviceInstance.broadcastUpdate('populationReset');
+        const existingPopulations = await loadPopData();
+        await serviceInstance?.broadcastUpdate('populationReset');
         return formatPopData(existingPopulations);
     }
     if (serverConfig.verboseLogs) {
@@ -80,7 +79,7 @@ export async function resetAllPopulation(
         // Clear storage population data (Redis only) - Postgres is preserved until save
         await clearStoragePopulation();
         if (serverConfig.verboseLogs) console.log('[resetAllPopulation] Redis cleared. Broadcasting update...');
-        await serviceInstance.broadcastUpdate('populationReset');
+        await serviceInstance?.broadcastUpdate('populationReset');
         return formatPopData({});
     } catch (error: unknown) {
         console.error('[resetAllPopulation] Error details:', error);

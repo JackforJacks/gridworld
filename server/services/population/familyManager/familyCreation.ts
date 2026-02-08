@@ -2,7 +2,6 @@
 import { ErrorSeverity, safeExecute } from '../../../utils/errorHandler';
 import storage from '../../storage';
 import * as deps from '../dependencyContainer';
-import { Pool } from 'pg';
 import { withLock, coupleLockConfig } from '../lockUtils';
 import { FamilyRecord, PersonRecord } from './types';
 import { isMale, isFemale } from './helpers';
@@ -18,7 +17,7 @@ export interface CreateFamilyResult {
  * Creates a new family unit - storage-only, batched to Postgres on Save
  */
 export async function createFamily(
-    pool: Pool | null,
+    _pool: unknown,
     husbandId: number,
     wifeId: number,
     tileId: number

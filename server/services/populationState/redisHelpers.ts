@@ -3,7 +3,6 @@
  */
 
 import storage from '../storage';
-import pool, { ExtendedPool } from '../../config/database';
 
 /**
  * Check if Redis (or storage) is available
@@ -22,15 +21,7 @@ function getRedis() {
     return adapter.client || adapter;
 }
 
-/**
- * Get the Postgres pool
- */
-function getPool(): ExtendedPool {
-    return pool;
-}
-
 export {
     isRedisAvailable,
-    getRedis,
-    getPool
+    getRedis
 };

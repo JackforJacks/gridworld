@@ -47,6 +47,20 @@ export interface ImportResult {
     calendarYear: number;
 }
 
+export interface SaveFileStats {
+    population: number;
+    fileBytes: number;
+}
+
+export interface LoadFileResult {
+    population: number;
+    partners: number;
+    mothers: number;
+    calendarYear: number;
+    seed: number;
+    nodeStateJson: string;
+}
+
 class RustSimulationService {
     private world: unknown = null;
 
@@ -158,6 +172,24 @@ class RustSimulationService {
     importWorld(json: string): ImportResult {
         const result = simulation.importWorld(this.world, json) as ImportResult;
         console.log(`🦀 Imported Rust world: ${result.population} people, ${result.partners} partners, year ${result.calendarYear}`);
+        return result;
+    }
+
+    // ========================================================================
+    // File-based persistence (bincode)
+    // ========================================================================
+
+    /** Save world + Node state to a bincode file */
+    saveToFile(nodeStateJson: string, seed: number, filePath: string): SaveFileStats {
+        const result = simulation.saveToFile(this.world, nodeStateJson, seed, filePath) as SaveFileStats;
+        console.log(`🦀 Saved to ${filePath}: ${result.population} people, ${result.fileBytes} bytes`);
+        return result;
+    }
+
+    /** Load world + Node state from a bincode file */
+    loadFromFile(filePath: string): LoadFileResult {
+        const result = simulation.loadFromFile(this.world, filePath) as LoadFileResult;
+        console.log(`🦀 Loaded from ${filePath}: ${result.population} people, year ${result.calendarYear}`);
         return result;
     }
 

@@ -14,7 +14,6 @@
 import PeopleState from './PeopleState';
 import FamilyState from './FamilyState';
 import storage from '../storage';
-import { getPool } from './redisHelpers';
 import type { FamilyData } from '../../../types/global';
 
 /** Person input data type for add/update operations */
@@ -123,7 +122,6 @@ class PopulationState {
     static async reassignIds(mappings: IdMapping[]): Promise<void> { return PeopleState.reassignIds(mappings); }
     static async getAllTilePopulations(): Promise<Record<number, number>> { return PeopleState.getAllTilePopulations(); }
     static async getDemographicStats(currentDate: CurrentDate): Promise<DemographicStats | null> { return PeopleState.getDemographicStats(currentDate); }
-    static async syncFromPostgres(): Promise<ReturnType<typeof PeopleState.syncFromPostgres>> { return PeopleState.syncFromPostgres(); }
     static async repairIfNeeded(): Promise<ReturnType<typeof PeopleState.repairIfNeeded>> { return PeopleState.repairIfNeeded(); }
 
     // =========== BATCH OPERATIONS (delegates to PeopleState) ===========
@@ -159,4 +157,3 @@ export const getRedis = (): ReturnType<typeof storage.getAdapter> | typeof stora
     const adapter = storage.getAdapter ? storage.getAdapter() : storage;
     return adapter;
 };
-export { getPool };

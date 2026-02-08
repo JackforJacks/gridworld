@@ -2,7 +2,6 @@
 import { ErrorSeverity, safeExecute } from '../../../utils/errorHandler';
 import storage from '../../storage';
 import * as deps from '../dependencyContainer';
-import { Pool } from 'pg';
 import { withLock, familyLockConfig } from '../lockUtils';
 import { CalendarService, FamilyRecord, PersonRecord } from './types';
 import { getCurrentDate, parseBirthDate, calculateAgeFromDates, formatDate } from './helpers';
@@ -14,7 +13,7 @@ const MAX_PREGNANCY_AGE = 33;
  * Starts pregnancy for a family - storage-only
  */
 export async function startPregnancy(
-    pool: Pool | null,
+    _pool: unknown,
     calendarService: CalendarService | null,
     familyId: number
 ): Promise<FamilyRecord | null> {

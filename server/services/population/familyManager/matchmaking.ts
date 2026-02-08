@@ -2,7 +2,6 @@
 import storage from '../../storage';
 import serverConfig from '../../../config/server';
 import * as deps from '../dependencyContainer';
-import { Pool } from 'pg';
 import { CalendarService } from './types';
 import { getCurrentDate } from './helpers';
 import { createFamily, CreateFamilyResult } from './familyCreation';
@@ -15,8 +14,8 @@ const IMMEDIATE_PREGNANCY_CHANCE = 0.40;
  * Forms new families from eligible bachelors - uses Redis for people data
  */
 export async function formNewFamilies(
-    pool: Pool | null,
-    calendarService: CalendarService | null
+    _pool: unknown,
+    calendarService?: CalendarService | null
 ): Promise<number> {
     try {
         const PopulationState = deps.getPopulationState();
@@ -25,7 +24,7 @@ export async function formNewFamilies(
             return 0;
         }
 
-        const currentDate = getCurrentDate(calendarService);
+        const currentDate = getCurrentDate(calendarService ?? null);
         const { year, month, day } = currentDate;
 
         // Get tiles with eligible people
@@ -37,8 +36,8 @@ export async function formNewFamilies(
 
         for (const tileId of tileSet) {
             const tileFamilies = await processTileMatchmaking(
-                pool,
-                calendarService,
+                undefined,
+                calendarService ?? null,
                 PopulationState,
                 tileId,
                 year,
@@ -61,7 +60,7 @@ export async function formNewFamilies(
 
 /** Process matchmaking for a single tile */
 async function processTileMatchmaking(
-    pool: Pool | null,
+    _pool: unknown,
     calendarService: CalendarService | null,
     PopulationState: any,
     tileId: string,
@@ -91,7 +90,7 @@ async function processTileMatchmaking(
 
         for (let i = 0; i < pairs; i++) {
             const result = await attemptOnePairing(
-                pool,
+                undefined,
                 calendarService,
                 PopulationState,
                 tileId,
@@ -124,7 +123,7 @@ async function processTileMatchmaking(
 
 /** Attempt a single pairing on a tile */
 async function attemptOnePairing(
-    pool: Pool | null,
+    _pool: unknown,
     calendarService: CalendarService | null,
     PopulationState: any,
     tileId: string,
@@ -163,7 +162,7 @@ async function attemptOnePairing(
     await storage.srem(femaleSetKey, femaleId);
 
     try {
-        const result = await createFamily(pool, parseInt(maleId), parseInt(femaleId), parseInt(tileId));
+        const result = await createFamily(undefined, parseInt(maleId), parseInt(femaleId), parseInt(tileId));
 
         if (!result.family) {
             // Handle based on failure reason
@@ -207,7 +206,7 @@ async function attemptOnePairing(
         // Chance to start immediate pregnancy
         if (Math.random() < IMMEDIATE_PREGNANCY_CHANCE) {
             try {
-                await startPregnancy(pool, calendarService, result.family.id);
+                await startPregnancy(undefined, calendarService, result.family.id);
             } catch { /* ignore */ }
         }
 

@@ -9,7 +9,6 @@ import {
     BASE_ANNUAL_DEATH_CHANCE,
     DEATH_CHANCE_INCREASE_PER_YEAR
 } from '../../config/gameBalance';
-import { Pool } from 'pg';
 import { CalendarDate, PersonData, FamilyData } from '../../../types/global';
 
 // ===== Type Definitions =====
@@ -76,8 +75,8 @@ interface CalculatorModule {
 
 /** FamilyManager module interface */
 interface FamilyManagerModule {
-    processDeliveries(pool: Pool | null, calendarService: CalendarService, serviceInstance: PopulationServiceInstance, daysAdvanced: number): Promise<number>;
-    startPregnancy(pool: Pool | null, calendarService: CalendarService, familyId: number): Promise<boolean>;
+    processDeliveries(_pool: unknown, calendarService?: CalendarService, serviceInstance?: PopulationServiceInstance, daysAdvanced?: number): Promise<number>;
+    startPregnancy(_pool: unknown, calendarService?: CalendarService, familyId?: number): Promise<boolean>;
 }
 
 /**
@@ -178,7 +177,7 @@ async function updateGrowthRate(serviceInstance: PopulationServiceInstance, rate
  * @returns Number of deaths
  */
 async function applySenescence(
-    pool: Pool | null,
+    _pool: unknown,
     calendarService: CalendarService | null,
     populationServiceInstance: PopulationServiceInstance | null,
     daysAdvanced: number = 1
@@ -348,7 +347,7 @@ async function applySenescence(
  * @returns Family events summary
  */
 async function processDailyFamilyEvents(
-    pool: Pool | null,
+    _pool: unknown,
     calendarService: CalendarService | null,
     serviceInstance: PopulationServiceInstance | null,
     daysAdvanced: number = 1
@@ -368,7 +367,7 @@ async function processDailyFamilyEvents(
         }
 
         // Process deliveries for families ready to give birth (pass daysAdvanced for delivery timing)
-        const deliveries = await familyManager.processDeliveries(pool, calendarService as CalendarService, serviceInstance as PopulationServiceInstance, daysAdvanced);
+        const deliveries = await familyManager.processDeliveries(undefined, calendarService as CalendarService, serviceInstance as PopulationServiceInstance, daysAdvanced);
 
         // Get current calendar date for age calculations
         let currentDate: CalendarDate = { year: 1, month: 1, day: 1 };
@@ -405,7 +404,7 @@ async function processDailyFamilyEvents(
                 const multiDayPregnancyChance = 1 - Math.pow(1 - dailyPregnancyChance, daysAdvanced);
                 if (Math.random() < multiDayPregnancyChance) {
                     try {
-                        const started = await familyManager.startPregnancy(pool, calendarService as CalendarService, familyId);
+                        const started = await familyManager.startPregnancy(undefined, calendarService as CalendarService, familyId);
                         if (started) newPregnancies++;
                     } catch (error: unknown) {
                         // Silently ignore expected errors (wife too old, lock contention)

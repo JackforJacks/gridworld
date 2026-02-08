@@ -3,7 +3,6 @@ import { ErrorSeverity, safeExecute } from '../../../utils/errorHandler';
 import storage from '../../storage';
 import serverConfig from '../../../config/server';
 import * as deps from '../dependencyContainer';
-import { Pool } from 'pg';
 import { withLock, familyLockConfig } from '../lockUtils';
 import {
     scheduleRetry,
@@ -88,7 +87,7 @@ async function deliverBabyInternal(
  * This version acquires its own lock, for standalone use
  */
 export async function deliverBaby(
-    pool: Pool | null,
+    _pool: unknown,
     calendarService: CalendarService | null,
     populationServiceInstance: PopulationServiceInstance | null,
     familyId: number
@@ -121,7 +120,7 @@ export async function deliverBaby(
 /**
  * Gets all families on a specific tile - from Redis using HSCAN streaming
  */
-export async function getFamiliesOnTile(pool: Pool | null, tileId: number): Promise<FamilyRecord[]> {
+export async function getFamiliesOnTile(_pool: unknown, tileId?: number): Promise<FamilyRecord[]> {
     try {
         const families: FamilyRecord[] = [];
         const familyStream = storage.hscanStream('family', { count: 500 });
@@ -150,9 +149,9 @@ export async function getFamiliesOnTile(pool: Pool | null, tileId: number): Prom
  * Checks for families ready to deliver and processes births
  */
 export async function processDeliveries(
-    pool: Pool | null,
-    calendarService: CalendarService | null,
-    populationServiceInstance: PopulationServiceInstance | null,
+    _pool: unknown,
+    calendarService?: CalendarService | null,
+    populationServiceInstance?: PopulationServiceInstance | null,
     daysAdvanced: number = 1
 ): Promise<number> {
     try {
@@ -162,7 +161,7 @@ export async function processDeliveries(
             return 0;
         }
 
-        const currentDate = getCurrentDate(calendarService);
+        const currentDate = getCurrentDate(calendarService ?? null);
         const currentDateStr = formatDate(currentDate.year, currentDate.month, currentDate.day);
         const currentDateValue = new Date(currentDateStr).getTime();
 
@@ -182,9 +181,9 @@ export async function processDeliveries(
 
         for (const family of readyFamilies) {
             const delivered = await processOneDelivery(
-                pool,
-                calendarService,
-                populationServiceInstance,
+                undefined,
+                calendarService ?? null,
+                populationServiceInstance ?? null,
                 family,
                 PopulationState,
                 retryConfig
@@ -249,7 +248,7 @@ const MATERNAL_MORTALITY_RATE = 0.01;
 
 /** Process a single delivery with retry logic */
 async function processOneDelivery(
-    pool: Pool | null,
+    _pool: unknown,
     calendarService: CalendarService | null,
     populationServiceInstance: PopulationServiceInstance | null,
     family: FamilyRecord,
@@ -388,7 +387,7 @@ async function processOneDelivery(
 /**
  * Gets family statistics - from Redis using HSCAN streaming
  */
-export async function getFamilyStats(pool: Pool | null): Promise<FamilyStats> {
+export async function getFamilyStats(_pool: unknown): Promise<FamilyStats> {
     try {
         let totalFamilies = 0;
         let pregnantFamilies = 0;

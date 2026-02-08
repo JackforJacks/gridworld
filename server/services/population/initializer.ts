@@ -1,94 +1,9 @@
 // server/services/population/initializer.ts
-import { applySenescence } from './lifecycle';
 import { startRateTracking } from './PopStats';
 import config from '../../config/server'; // Added for autoSaveInterval
 import * as deps from './dependencyContainer';
-import { logError, ErrorSeverity, safeExecuteSync } from '../../utils/errorHandler';
+import { ErrorSeverity, safeExecuteSync } from '../../utils/errorHandler';
 import rustSimulation from '../rustSimulation';
-
-// Function to ensure the 'people' table and its indexes exist
-async function ensureTableExists(pool) {
-    try {
-        await pool.query(`
-            CREATE TABLE IF NOT EXISTS people (
-                id SERIAL PRIMARY KEY,
-                tile_id INTEGER,
-                sex BOOLEAN,
-                date_of_birth DATE,
-                residency INTEGER,
-                updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-            );
-        `);
-        try {
-            await pool.query(`
-                ALTER TABLE people ADD COLUMN IF NOT EXISTS residency INTEGER;
-            `);
-        } catch (alterError: unknown) {
-            console.warn('Note: residency column handling:', (alterError as Error).message, alterError);
-        }
-        await pool.query(`
-            CREATE INDEX IF NOT EXISTS idx_people_tile_id ON people(tile_id);
-        `);
-        await pool.query(`
-            CREATE INDEX IF NOT EXISTS idx_people_residency ON people(residency);
-        `);
-
-        // Create family table
-        await pool.query(`
-            CREATE TABLE IF NOT EXISTS family (
-                id SERIAL PRIMARY KEY,
-                husband_id INTEGER REFERENCES people(id) ON DELETE SET NULL,
-                wife_id INTEGER REFERENCES people(id) ON DELETE SET NULL,
-                pregnancy BOOLEAN DEFAULT FALSE,
-                delivery_date DATE,
-                children_ids INTEGER[] DEFAULT '{}',
-                tile_id INTEGER,
-                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-                updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-            );
-        `);
-
-        // Create indexes for the family table
-        await pool.query(`
-            CREATE INDEX IF NOT EXISTS idx_family_husband_id ON family(husband_id);
-        `);
-        await pool.query(`
-            CREATE INDEX IF NOT EXISTS idx_family_wife_id ON family(wife_id);
-        `);
-        await pool.query(`
-            CREATE INDEX IF NOT EXISTS idx_family_tile_id ON family(tile_id);
-        `);
-        await pool.query(`
-            CREATE INDEX IF NOT EXISTS idx_family_pregnancy ON family(pregnancy);
-        `);
-        await pool.query(`
-            CREATE INDEX IF NOT EXISTS idx_family_delivery_date ON family(delivery_date);
-        `);
-
-        // Add family_id column to people if not exists (after family table exists)
-        await pool.query(`
-            ALTER TABLE people ADD COLUMN IF NOT EXISTS family_id INTEGER REFERENCES family(id);
-        `);
-
-        if (config.verboseLogs) console.log('✅ Tables and indexes created successfully.');
-    } catch (error: unknown) {
-        console.error('Error ensuring table exists:', error);
-        // It might be critical, consider re-throwing or handling more gracefully
-        throw error;
-    }
-}
-
-// Function to initialize the database connection (simple check)
-async function initializeDatabase(pool) {
-    try {
-        await pool.query('SELECT NOW()');
-        if (config.verboseLogs) console.log('Database connected successfully');
-    } catch (error: unknown) {
-        console.error('Database connection error:', error);
-        // It might be critical, consider re-throwing or handling more gracefully
-        throw error;
-    }
-}
 
 // Function to start the auto-save interval
 function startAutoSave(serviceInstance) {
@@ -105,20 +20,17 @@ function startAutoSave(serviceInstance) {
                 calendarService.stop();
             }
 
-            // Perform save only if there are pending changes in Redis
+            // Save state to bincode file
             let saveResult = null;
             const StateManager = require('../stateManager').default;
             try {
-                const hasPending = StateManager.isRedisAvailable() && await StateManager.hasPendingChanges();
-                if (!hasPending) {
-                    if (config.verboseLogs) console.log('💤 Auto-save skipped (no pending changes in Redis).');
-                } else if (serviceInstance.saveData && typeof serviceInstance.saveData === 'function') {
+                if (serviceInstance.saveData && typeof serviceInstance.saveData === 'function') {
                     saveResult = await serviceInstance.saveData();
                 } else {
                     console.warn('[initializer] serviceInstance.saveData is not a function or not available.');
                 }
             } catch (err: unknown) {
-                console.warn('[initializer] Error checking pending changes for autosave:', (err as Error).message);
+                console.warn('[initializer] Error during autosave:', (err as Error).message);
             }
 
             // Save calendar state to database during autosave
@@ -222,16 +134,6 @@ async function initializePopulationService(serviceInstance, io, calendarService)
             }
         });
     }
-    // Use the new helper functions, passing the pool from serviceInstance
-    // Assuming serviceInstance has a way to provide its pool, e.g., a getter or direct access if not private
-    const pool = serviceInstance.getPool ? serviceInstance.getPool() : serviceInstance._pool || serviceInstance['#pool'];
-    if (!pool) {
-        console.error('Critical error: Database pool not found on serviceInstance. Cannot initialize population service.');
-        return; // Or throw an error
-    }
-
-    await ensureTableExists(pool);
-    await initializeDatabase(pool);
 
     if (serviceInstance.isGrowthEnabled) {
         // Assuming startGrowth is a method on serviceInstance that needs to be called
@@ -267,7 +169,6 @@ function startIntegrityAudit(serviceInstance) {
     }
     serviceInstance._integrityAuditInterval = setInterval(async () => {
         try {
-            const pool = serviceInstance.getPool ? serviceInstance.getPool() : serviceInstance._pool || serviceInstance['#pool'];
             const { verifyAndRepairIntegrity } = require('./population/integrity');
             const repair = config.integrityRepairOnSchedule || false;
             if (serviceInstance.io) serviceInstance.io.emit('integrityAuditStart', { repair });
@@ -280,7 +181,7 @@ function startIntegrityAudit(serviceInstance) {
             );
             const start = Date.now();
             if (metrics && metrics.auditRunCounter) metrics.auditRunCounter.inc({ source: 'scheduled', repair: repair ? 'true' : 'false' });
-            const res = await verifyAndRepairIntegrity(pool, null, {}, { repair });
+            const res = await verifyAndRepairIntegrity(null, null, {}, { repair });
             const durationSec = (Date.now() - start) / 1000;
             if (metrics && metrics.auditDuration) metrics.auditDuration.observe(durationSec);
             if (serviceInstance.io) serviceInstance.io.emit('integrityAuditComplete', res);
@@ -311,4 +212,4 @@ function stopIntegrityAudit(serviceInstance) {
     }
 }
 
-export { initializePopulationService, ensureTableExists, initializeDatabase, startAutoSave, startIntegrityAudit, stopIntegrityAudit };
+export { initializePopulationService, startAutoSave, startIntegrityAudit, stopIntegrityAudit };

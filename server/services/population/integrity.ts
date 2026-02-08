@@ -1,5 +1,4 @@
 import storage from '../storage';
-import { Pool } from 'pg';
 
 /** Options for the integrity check/repair function */
 interface IntegrityOptions {
@@ -17,8 +16,8 @@ interface IntegrityResult {
  * Currently a no-op stub - legacy membership checks have been removed.
  */
 async function verifyAndRepairIntegrity(
-    pool: Pool,
-    tiles: number[] | null = null,
+    _pool?: unknown,
+    tiles?: number[] | null,
     _targets: Record<string, unknown> = {},
     options: IntegrityOptions = {}
 ): Promise<IntegrityResult> {

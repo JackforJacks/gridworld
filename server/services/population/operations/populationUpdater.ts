@@ -1,5 +1,4 @@
 // Population Operations - Population Updater Module
-import { Pool } from 'pg';
 import { Procreation } from '../family';
 import { addPeopleToTile } from '../manager';
 import {
@@ -20,13 +19,13 @@ import { clearStoragePopulation } from './storageReset';
  * @param population - New population count
  */
 export async function updateTilePopulation(
-    pool: Pool,
+    _pool: unknown,
     calendarService: CalendarService | null,
     serviceInstance: PopulationServiceInstance,
     tileId: string | number,
     population: number
 ): Promise<void> {
-    await Procreation(pool, calendarService, serviceInstance, Number(tileId), population);
+    await Procreation(undefined, calendarService, serviceInstance, Number(tileId), population);
 }
 
 /**
@@ -38,43 +37,46 @@ export async function updateTilePopulation(
  * @returns Formatted population data
  */
 export async function updateMultipleTilePopulations(
-    pool: Pool,
-    calendarService: CalendarService | null,
-    serviceInstance: PopulationServiceInstance,
-    tilePopulations: TilePopulations
+    _pool: unknown,
+    calendarService?: CalendarService | null,
+    serviceInstance?: PopulationServiceInstance,
+    tilePopulations?: TilePopulations
 ): Promise<FormattedPopulationData> {
     if (!tilePopulations || typeof tilePopulations !== 'object') {
         throw new Error('tilePopulations must be an object');
+    }
+    if (!serviceInstance) {
+        throw new Error('serviceInstance is required');
     }
 
     let totalUpdated = 0;
     for (const [tileId, population] of Object.entries(tilePopulations)) {
         if (typeof population === 'number' && population >= 0) {
-            await updateTilePopulation(pool, calendarService, serviceInstance, tileId, population);
+            await updateTilePopulation(undefined, calendarService ?? null, serviceInstance, tileId, population);
             totalUpdated++;
         }
     }
 
-    const populations = await loadPopData(pool);
+    const populations = await loadPopData();
     return formatPopData(populations);
 }
 
 /**
  * Regenerates population with new age distribution
- * @param pool - Database pool instance
+ * @param _pool - Unused, kept for API compatibility
  * @param calendarService - Calendar service instance
  * @param serviceInstance - Population service instance
  * @returns Formatted population data
  */
 export async function regeneratePopulationWithNewAgeDistribution(
-    pool: Pool,
-    calendarService: CalendarService | null,
-    serviceInstance: PopulationServiceInstance
+    _pool: unknown,
+    calendarService?: CalendarService | null,
+    serviceInstance?: PopulationServiceInstance
 ): Promise<FormattedPopulationData> {
     try {
         console.log('🔄 Regenerating population with new age distribution...');
 
-        const existingPopulations = await loadPopData(pool);
+        const existingPopulations = await loadPopData();
         const tileIds = Object.keys(existingPopulations);
 
         if (tileIds.length === 0) {
@@ -85,7 +87,7 @@ export async function regeneratePopulationWithNewAgeDistribution(
         const currentPopulations = { ...existingPopulations };
         // Clear storage population data first
         await clearStoragePopulation();
-        await pool.query('TRUNCATE TABLE family, people RESTART IDENTITY CASCADE');
+        // pool.query('TRUNCATE TABLE family, people RESTART IDENTITY CASCADE') removed - no longer using Postgres directly
 
         // Get current date from calendar service
         let currentDate;
@@ -99,12 +101,12 @@ export async function regeneratePopulationWithNewAgeDistribution(
 
         for (const tileId of tileIds) {
             const populationCount = currentPopulations[tileId];
-            await addPeopleToTile(pool, tileId, populationCount, currentYear, currentMonth, currentDay, serviceInstance, false);
+            await addPeopleToTile(null, tileId, populationCount, currentYear, currentMonth, currentDay, serviceInstance, false);
             console.log(`✅ Regenerated ${populationCount} people for tile ${tileId}`);
         }
 
-        await serviceInstance.broadcastUpdate('populationRegenerated');
-        const populations = await loadPopData(pool);
+        await serviceInstance?.broadcastUpdate('populationRegenerated');
+        const populations = await loadPopData();
         console.log('🎉 Population regeneration complete!');
 
         return formatPopData(populations);

@@ -1,5 +1,4 @@
 // Population Operations - Helper Functions
-import { Pool } from 'pg';
 import * as deps from '../dependencyContainer';
 import {
     TilePopulations,
@@ -26,7 +25,7 @@ export function formatPopData(populations: TilePopulations | null = null): Forma
 }
 
 /** Helper function to load population data with proper typing */
-export async function loadPopData(_pool: Pool): Promise<TilePopulations> {
+export async function loadPopData(_pool?: unknown): Promise<TilePopulations> {
     try {
         const PopulationState = deps.getPopulationState() as unknown as PopulationStateModule | null;
         if (PopulationState) {
