@@ -667,3 +667,179 @@ pub fn calculate_recent_statistics(world: External<WorldHandle>, years: u32) -> 
         period_years: stats.period_years,
     }
 }
+
+// ============================================================================
+// Person Queries (Phase 5)
+// ============================================================================
+
+/// Person data for JavaScript
+#[napi(object)]
+pub struct JsPerson {
+    /// Person ID
+    pub id: i64,
+    /// First name
+    pub first_name: String,
+    /// Last name
+    pub last_name: String,
+    /// Tile ID (residency)
+    pub tile_id: i32,
+    /// Sex (true = male, false = female)
+    pub sex: bool,
+    /// Birth year
+    pub birth_year: i32,
+    /// Birth month (1-12)
+    pub birth_month: i32,
+    /// Birth day (1-8)
+    pub birth_day: i32,
+    /// Calculated age in years
+    pub age_years: i32,
+    /// Is person currently partnered/married
+    pub is_partnered: bool,
+    /// Is person currently pregnant (females only)
+    pub is_pregnant: bool,
+    /// Partner person ID (if partnered)
+    pub partner_id: Option<i64>,
+}
+
+/// Get all people from Rust ECS
+#[napi]
+pub fn get_all_people(world: External<WorldHandle>) -> Vec<JsPerson> {
+    use crate::components::{Person, Sex, BirthDate, TileId, Partner, Pregnant, PersonId};
+
+    let w = world.lock().unwrap();
+    let mut people = Vec::new();
+
+    // Query all entities with Person component
+    for (entity, (person, sex, birth_date, tile_id)) in
+        w.world.query::<(&Person, &Sex, &BirthDate, &TileId)>().iter()
+    {
+        // Check for optional components using EntityRef
+        let entity_ref = w.world.entity(entity).unwrap();
+        let is_partnered = entity_ref.get::<&Partner>().is_some();
+        let is_pregnant = entity_ref.get::<&Pregnant>().is_some();
+
+        let partner_id = if is_partnered {
+            entity_ref.get::<&Partner>()
+                .and_then(|partner| {
+                    w.world.entity(partner.0).ok()
+                        .and_then(|e| e.get::<&Person>())
+                        .map(|p| p.id.0 as i64)
+                })
+        } else {
+            None
+        };
+
+        people.push(JsPerson {
+            id: person.id.0 as i64,
+            first_name: person.first_name.clone(),
+            last_name: person.last_name.clone(),
+            tile_id: tile_id.0 as i32,
+            sex: matches!(sex, Sex::Male),
+            birth_year: birth_date.year as i32,
+            birth_month: birth_date.month as i32,
+            birth_day: birth_date.day as i32,
+            age_years: birth_date.age_years(&w.calendar) as i32,
+            is_partnered,
+            is_pregnant,
+            partner_id,
+        });
+    }
+
+    people
+}
+
+/// Get a specific person by ID
+#[napi]
+pub fn get_person(world: External<WorldHandle>, person_id: i64) -> Option<JsPerson> {
+    use crate::components::{Person, Sex, BirthDate, TileId, Partner, Pregnant, PersonId};
+
+    let w = world.lock().unwrap();
+    let target_id = PersonId(person_id as u64);
+
+    // Find entity with matching PersonId
+    for (entity, (person, sex, birth_date, tile_id)) in
+        w.world.query::<(&Person, &Sex, &BirthDate, &TileId)>().iter()
+    {
+        if person.id == target_id {
+            let entity_ref = w.world.entity(entity).unwrap();
+            let is_partnered = entity_ref.get::<&Partner>().is_some();
+            let is_pregnant = entity_ref.get::<&Pregnant>().is_some();
+
+            let partner_id = if is_partnered {
+                entity_ref.get::<&Partner>()
+                    .and_then(|partner| {
+                        w.world.entity(partner.0).ok()
+                            .and_then(|e| e.get::<&Person>())
+                            .map(|p| p.id.0 as i64)
+                    })
+            } else {
+                None
+            };
+
+            return Some(JsPerson {
+                id: person.id.0 as i64,
+                first_name: person.first_name.clone(),
+                last_name: person.last_name.clone(),
+                tile_id: tile_id.0 as i32,
+                sex: matches!(sex, Sex::Male),
+                birth_year: birth_date.year as i32,
+                birth_month: birth_date.month as i32,
+                birth_day: birth_date.day as i32,
+                age_years: birth_date.age_years(&w.calendar) as i32,
+                is_partnered,
+                is_pregnant,
+                partner_id,
+            });
+        }
+    }
+
+    None
+}
+
+/// Get all people on a specific tile
+#[napi]
+pub fn get_people_by_tile(world: External<WorldHandle>, tile_id: i32) -> Vec<JsPerson> {
+    use crate::components::{Person, Sex, BirthDate, TileId, Partner, Pregnant, PersonId};
+
+    let w = world.lock().unwrap();
+    let target_tile = TileId(tile_id as u16);
+    let mut people = Vec::new();
+
+    for (entity, (person, sex, birth_date, tile_id)) in
+        w.world.query::<(&Person, &Sex, &BirthDate, &TileId)>().iter()
+    {
+        if *tile_id == target_tile {
+            let entity_ref = w.world.entity(entity).unwrap();
+            let is_partnered = entity_ref.get::<&Partner>().is_some();
+            let is_pregnant = entity_ref.get::<&Pregnant>().is_some();
+
+            let partner_id = if is_partnered {
+                entity_ref.get::<&Partner>()
+                    .and_then(|partner| {
+                        w.world.entity(partner.0).ok()
+                            .and_then(|e| e.get::<&Person>())
+                            .map(|p| p.id.0 as i64)
+                    })
+            } else {
+                None
+            };
+
+            people.push(JsPerson {
+                id: person.id.0 as i64,
+                first_name: person.first_name.clone(),
+                last_name: person.last_name.clone(),
+                tile_id: tile_id.0 as i32,
+                sex: matches!(sex, Sex::Male),
+                birth_year: birth_date.year as i32,
+                birth_month: birth_date.month as i32,
+                birth_day: birth_date.day as i32,
+                age_years: birth_date.age_years(&w.calendar) as i32,
+                is_partnered,
+                is_pregnant,
+                partner_id,
+            });
+        }
+    }
+
+    people
+}

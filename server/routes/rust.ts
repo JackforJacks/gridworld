@@ -255,4 +255,49 @@ router.get('/statistics/recent', (req: Request, res: Response) => {
     }
 });
 
+// ============================================================================
+// Person Query Routes (Phase 5)
+// ============================================================================
+
+// GET /api/rust/people - Get all people
+router.get('/people', (req: Request, res: Response) => {
+    try {
+        const people = rustSimulation.getAllPeople();
+        res.json({ success: true, count: people.length, people });
+    } catch (error: unknown) {
+        console.error('Error getting all people:', error);
+        res.status(500).json({ success: false, error: (error as Error).message });
+    }
+});
+
+// GET /api/rust/people/:personId - Get a specific person
+router.get('/people/:personId', (req: Request, res: Response) => {
+    try {
+        const personId = parseInt(req.params.personId, 10);
+        const person = rustSimulation.getPerson(personId);
+
+        if (!person) {
+            res.status(404).json({ success: false, error: 'Person not found' });
+            return;
+        }
+
+        res.json({ success: true, person });
+    } catch (error: unknown) {
+        console.error('Error getting person:', error);
+        res.status(500).json({ success: false, error: (error as Error).message });
+    }
+});
+
+// GET /api/rust/people/tile/:tileId - Get all people on a tile
+router.get('/people/tile/:tileId', (req: Request, res: Response) => {
+    try {
+        const tileId = parseInt(req.params.tileId, 10);
+        const people = rustSimulation.getPeopleByTile(tileId);
+        res.json({ success: true, tileId, count: people.length, people });
+    } catch (error: unknown) {
+        console.error('Error getting people by tile:', error);
+        res.status(500).json({ success: false, error: (error as Error).message });
+    }
+});
+
 export default router;

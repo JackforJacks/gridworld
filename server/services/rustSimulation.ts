@@ -340,6 +340,36 @@ class RustSimulationService {
     calculateRecentStatistics(years: number): VitalStatistics {
         return simulation.calculateRecentStatistics(this.world, years) as VitalStatistics;
     }
+
+    // ========================================================================
+    // Person Queries (Phase 5)
+    // ========================================================================
+
+    /**
+     * Get all people from Rust ECS
+     * @returns Array of all people in the simulation
+     */
+    getAllPeople(): Person[] {
+        return simulation.getAllPeople(this.world) as Person[];
+    }
+
+    /**
+     * Get a specific person by ID
+     * @param personId - Person ID to fetch
+     * @returns Person data or null if not found
+     */
+    getPerson(personId: number): Person | null {
+        return simulation.getPerson(this.world, personId) as Person | null;
+    }
+
+    /**
+     * Get all people on a specific tile
+     * @param tileId - Tile ID to query
+     * @returns Array of people on the tile
+     */
+    getPeopleByTile(tileId: number): Person[] {
+        return simulation.getPeopleByTile(this.world, tileId) as Person[];
+    }
 }
 
 // VitalStatistics interface
@@ -353,6 +383,22 @@ export interface VitalStatistics {
     totalMarriages: number;
     population: number;
     periodYears: number;
+}
+
+// Person interface (Phase 5 - from Rust ECS)
+export interface Person {
+    id: number;
+    firstName: string;
+    lastName: string;
+    tileId: number;
+    sex: boolean; // true = male, false = female
+    birthYear: number;
+    birthMonth: number;
+    birthDay: number;
+    ageYears: number;
+    isPartnered: boolean;
+    isPregnant: boolean;
+    partnerId: number | null;
 }
 
 // Export singleton instance
