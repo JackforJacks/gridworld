@@ -21,7 +21,10 @@
       "Bash(xxd:*)",
       "Bash(test:*)",
       "Bash(git rm:*)",
-      "Bash(npm prune:*)"
+      "Bash(npm prune:*)",
+      "Bash(netstat:*)",
+      "Bash(npm run build:server:*)",
+      "Bash(curl:*)"
     ]
   }
 }

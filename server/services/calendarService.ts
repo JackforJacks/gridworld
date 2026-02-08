@@ -1,7 +1,7 @@
 import EventEmitter from 'events';
 import calendarConfig from '../config/calendar';
 import serverConfig from '../config/server';
-import rustSimulation from './rustSimulation';
+import rustSimulation, { TickEvent } from './rustSimulation';
 
 interface SpeedMode {
     name: string;
@@ -100,8 +100,8 @@ class CalendarService extends EventEmitter {
             lastTickTime: null
         };
 
-        // Tick management
-        this.tickTimer = null;
+        // Tick management (now handled by Rust)
+        this.tickTimer = null; // Deprecated - kept for type compatibility
         this.subscribers = new Set();
 
         // Internal config
@@ -151,6 +151,7 @@ class CalendarService extends EventEmitter {
 
     /**
      * Start the calendar ticking system at the current speed mode's interval
+     * Now using Rust background thread instead of Node.js setInterval
      */
     start() {
         if (this.state.isRunning) {
@@ -163,11 +164,15 @@ class CalendarService extends EventEmitter {
         this.state.lastTickTime = Date.now();
 
         const intervalMs = this.speedModes[this.currentSpeed].intervalMs;
-        this.tickTimer = setInterval(() => {
-            this.tick();
-        }, intervalMs);
+
+        // Start Rust calendar thread with callback
+        rustSimulation.startCalendar(intervalMs, (tickEvent: TickEvent) => {
+            // Handle tick event from Rust
+            this.handleRustTick(tickEvent);
+        });
+
         if (serverConfig.verboseLogs) {
-            console.log(`🟢 Calendar started - ${this.speedModes[this.currentSpeed].name} (${intervalMs}ms intervals)`);
+            console.log(`🟢 Calendar started (Rust-controlled) - ${this.speedModes[this.currentSpeed].name} (${intervalMs}ms intervals)`);
         }
 
         const stateData = this.getState();
@@ -184,6 +189,7 @@ class CalendarService extends EventEmitter {
 
     /**
      * Stop the calendar ticking system
+     * Now stops Rust background thread instead of Node.js setInterval
      */
     stop() {
         if (!this.state.isRunning) {
@@ -193,11 +199,10 @@ class CalendarService extends EventEmitter {
 
         this.state.isRunning = false;
 
-        if (this.tickTimer) {
-            clearInterval(this.tickTimer);
-            this.tickTimer = null;
-        }
-        if (serverConfig.verboseLogs) console.log('🔴 Calendar stopped');
+        // Stop Rust calendar thread
+        rustSimulation.stopCalendar();
+
+        if (serverConfig.verboseLogs) console.log('🔴 Calendar stopped (Rust thread stopped)');
 
         const stateData = this.getState();
         this.emit('stopped', stateData);
@@ -241,10 +246,10 @@ class CalendarService extends EventEmitter {
     }
 
     /**
-     * Tick handler - fires at speed-dependent intervals
-     * Emits 'tick' event that triggers PopulationService.tick() → rustSimulation.tick()
+     * Handle tick event from Rust calendar thread
+     * Called directly by Rust - the tick has already happened in Rust
      */
-    async tick(): Promise<void> {
+    private handleRustTick(tickEvent: TickEvent): void {
         if (!this.state.isRunning) {
             return;
         }
@@ -253,23 +258,36 @@ class CalendarService extends EventEmitter {
         this.state.lastTickTime = Date.now();
         this.state.totalDays++; // Approximate tracking
 
-        // Get current date from Rust (after PopulationService.tick() will advance it)
-        const previousDate = this.getCurrentDate();
+        // Calendar date already advanced by Rust
+        const currentDate = {
+            year: tickEvent.year,
+            month: tickEvent.month,
+            day: tickEvent.day,
+        };
 
-        // Prepare event data (PopulationService will handle actual Rust tick)
+        // Prepare event data for Node.js listeners
         const eventData = {
-            previousDate,
-            currentDate: this.getCurrentDate(), // Still previous, will be advanced by PopulationService
+            previousDate: currentDate, // We don't track previous, just use current
+            currentDate,
             daysAdvanced: 1,
             speedMode: this.speedModes[this.currentSpeed].name,
             totalTicks: this.state.totalTicks,
             totalDaysAdvanced: this.state.totalDays,
-            eventsTriggered: [], // Events computed after Rust tick in PopulationService
+            eventsTriggered: [], // Could populate from tickEvent
             populationUpdates: 1,
-            state: this.getState()
+            state: this.getState(),
+            // Include Rust tick results
+            tickResults: {
+                births: tickEvent.births,
+                deaths: tickEvent.deaths,
+                marriages: tickEvent.marriages,
+                pregnancies: tickEvent.pregnancies,
+                dissolutions: tickEvent.dissolutions,
+                population: tickEvent.population,
+            },
         };
 
-        // Emit tick event - PopulationService listens and calls rustSimulation.tick()
+        // Emit tick event - PopulationService can listen for statistics tracking
         this.emit('tick', eventData);
 
         // Broadcast to all socket clients
@@ -280,7 +298,16 @@ class CalendarService extends EventEmitter {
     }
 
     /**
+     * Tick handler - DEPRECATED, now using Rust calendar thread
+     * Kept for backward compatibility but no longer called by setInterval
+     */
+    async tick(): Promise<void> {
+        console.warn('⚠️ CalendarService.tick() called directly - this is deprecated. Use Rust calendar instead.');
+    }
+
+    /**
      * Change the calendar speed
+     * Now restarts Rust calendar thread with new interval
      */
     setSpeed(speedKey: string): boolean {
         if (!this.speedModes[speedKey]) {
@@ -290,14 +317,16 @@ class CalendarService extends EventEmitter {
         const oldSpeed = this.currentSpeed;
         this.currentSpeed = speedKey;
 
-        // Restart timer with new interval if running
-        if (this.state.isRunning && this.tickTimer) {
-            clearInterval(this.tickTimer);
-            const intervalMs = this.speedModes[speedKey].intervalMs;
-            this.tickTimer = setInterval(() => {
-                this.tick();
-            }, intervalMs);
+        // Restart Rust calendar with new interval if running
+        if (this.state.isRunning) {
+            const wasRunning = true;
+            // Stop current timer
+            this.stop();
+            // Start with new speed
+            this.start();
+
             if (serverConfig.verboseLogs) {
+                const intervalMs = this.speedModes[speedKey].intervalMs;
                 console.log(`⚡ Speed changed: ${this.speedModes[oldSpeed].name} → ${this.speedModes[speedKey].name} (${intervalMs}ms intervals)`);
             }
         } else {

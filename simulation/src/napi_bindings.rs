@@ -335,3 +335,118 @@ pub fn get_person_id_batch(world: External<WorldHandle>, count: u32) -> Vec<i64>
     w.next_person_id += count as u64;
     (start..start + count as u64).map(|id| id as i64).collect()
 }
+
+// ============================================================================
+// Calendar Auto-Ticking (Phase 1 - Rust-controlled timer)
+// ============================================================================
+
+use crate::calendar_runner::CalendarRunner;
+use std::sync::Mutex as StdMutex;
+use once_cell::sync::Lazy;
+use napi::threadsafe_function::{
+    ThreadsafeFunction, ThreadsafeFunctionCallMode, ErrorStrategy,
+};
+
+/// Global calendar runner (one per process)
+static CALENDAR_RUNNER: Lazy<StdMutex<Option<CalendarRunner>>> = Lazy::new(|| StdMutex::new(None));
+
+/// Extended tick result with calendar state for Node.js callbacks
+#[napi(object)]
+pub struct JsTickEvent {
+    pub births: u32,
+    pub deaths: u32,
+    pub marriages: u32,
+    pub pregnancies: u32,
+    pub dissolutions: u32,
+    pub population: u32,
+    pub year: i32,
+    pub month: u8,
+    pub day: u32,
+}
+
+/// Start the calendar auto-ticking in a background Rust thread
+///
+/// # Arguments
+/// * `world` - The simulation world
+/// * `interval_ms` - Milliseconds between ticks (1000 = daily speed, 125 = monthly speed)
+/// * `callback` - JavaScript function to call on each tick with tick results
+///
+/// # Example (Node.js)
+/// ```js
+/// rustSimulation.startCalendar(world, 1000, (tickEvent) => {
+///     console.log(`Tick: ${tickEvent.births} births, ${tickEvent.deaths} deaths`);
+///     io.emit('calendarTick', tickEvent);
+/// });
+/// ```
+#[napi]
+pub fn start_calendar(
+    world: External<WorldHandle>,
+    interval_ms: u32,
+    callback: JsFunction,
+) -> napi::Result<()> {
+    // Create threadsafe function that can be called from Rust thread
+    let tsfn: ThreadsafeFunction<JsTickEvent, ErrorStrategy::Fatal> = callback
+        .create_threadsafe_function(0, |ctx| {
+            Ok(vec![ctx.value])
+        })?;
+
+    // Clone the Arc for the runner thread
+    let world_clone = Arc::clone(&world);
+
+    // Create and start the calendar runner
+    let mut runner = CalendarRunner::new();
+    runner.start(
+        world_clone,
+        interval_ms as u64,
+        move |tick_result| {
+            // Get calendar state
+            let calendar = {
+                let w = world.lock().unwrap();
+                JsCalendar {
+                    day: w.calendar.day as u32,
+                    month: w.calendar.month,
+                    year: w.calendar.year as i32,
+                }
+            };
+
+            // Create event data for JavaScript
+            let event = JsTickEvent {
+                births: tick_result.births,
+                deaths: tick_result.deaths,
+                marriages: tick_result.marriages,
+                pregnancies: tick_result.pregnancies,
+                dissolutions: tick_result.dissolutions,
+                population: tick_result.population,
+                year: calendar.year,
+                month: calendar.month,
+                day: calendar.day,
+            };
+
+            // Call JavaScript callback from Rust thread (non-blocking)
+            tsfn.call(event, ThreadsafeFunctionCallMode::NonBlocking);
+        },
+    );
+
+    // Store the runner globally
+    let mut global_runner = CALENDAR_RUNNER.lock().unwrap();
+    *global_runner = Some(runner);
+
+    Ok(())
+}
+
+/// Stop the calendar auto-ticking
+#[napi]
+pub fn stop_calendar() -> napi::Result<()> {
+    let mut global_runner = CALENDAR_RUNNER.lock().unwrap();
+    if let Some(mut runner) = global_runner.take() {
+        runner.stop();
+    }
+    Ok(())
+}
+
+/// Check if calendar is currently running
+#[napi]
+pub fn is_calendar_running() -> bool {
+    let global_runner = CALENDAR_RUNNER.lock().unwrap();
+    global_runner.as_ref().map(|r| r.is_running()).unwrap_or(false)
+}

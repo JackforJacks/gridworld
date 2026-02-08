@@ -224,15 +224,35 @@ class PopulationService {
             this.statisticsService.initialize(calendarService);
         }
 
-        // Listen to calendar tick events for daily population updates
+        // Listen to calendar tick events for statistics tracking
+        // Rust now handles the actual tick - we just track births/deaths for statistics
         if (calendarService) {
-            calendarService.on('tick', async (eventData: CalendarEventData) => {
-                // Process tick with the number of days advanced (not looping)
-                if (eventData.daysAdvanced > 0) {
-                    await this.tick(eventData.daysAdvanced);
+            calendarService.on('tick', async (eventData: any) => {
+                // Event data now includes tickResults from Rust calendar thread
+                if (eventData.tickResults) {
+                    const { births, deaths, marriages, pregnancies, dissolutions } = eventData.tickResults;
+
+                    // Track births and deaths for statistics
+                    if (births > 0) this.trackBirths(births);
+                    if (deaths > 0) this.trackDeaths(deaths);
+
+                    // Add family events to eventLog
+                    const currentDate = eventData.currentDate || this.calendarService?.getCurrentDate() || { year: 4000, month: 1, day: 1 };
+                    for (let i = 0; i < marriages; i++) {
+                        this.eventLog.push({ type: 'marriage', date: { ...currentDate } });
+                    }
+                    for (let i = 0; i < pregnancies; i++) {
+                        this.eventLog.push({ type: 'pregnancy_started', date: { ...currentDate } });
+                    }
+                    for (let i = 0; i < dissolutions; i++) {
+                        this.eventLog.push({ type: 'dissolution', date: { ...currentDate } });
+                    }
+
+                    // Broadcast updated population data
+                    await this.broadcastUpdate('populationUpdate');
                 }
             });
-            if (config.verboseLogs) console.log('📅 Population service listening to calendar tick events');
+            if (config.verboseLogs) console.log('📅 Population service listening to Rust calendar tick events');
         }
     }
 
@@ -439,10 +459,14 @@ class PopulationService {
     }
 
     /**
-     * Tick method for population updates - now fully handled by Rust simulation
+     * Tick method - DEPRECATED
+     * Ticks are now fully handled by Rust calendar thread automatically.
+     * This method is kept for manual tick testing only.
      * @param daysAdvanced - Number of days that passed in this tick (default 1)
      */
     async tick(daysAdvanced = 1) {
+        console.warn('⚠️ PopulationService.tick() called manually - ticks are now automatic via Rust calendar thread');
+
         try {
             // Execute tick in Rust simulation (handles births, deaths, marriages, pregnancies, dissolutions)
             const result = daysAdvanced === 1

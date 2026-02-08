@@ -18,6 +18,18 @@ export interface TickResult {
     population: number;
 }
 
+export interface TickEvent {
+    births: number;
+    deaths: number;
+    marriages: number;
+    pregnancies: number;
+    dissolutions: number;
+    population: number;
+    year: number;
+    month: number;
+    day: number;
+}
+
 export interface TilePopulation {
     tileId: number;
     count: number;
@@ -205,6 +217,35 @@ class RustSimulationService {
     /** Get a batch of person IDs (more efficient than repeated calls) */
     getPersonIdBatch(count: number): number[] {
         return simulation.getPersonIdBatch(this.world, count) as number[];
+    }
+
+    // ========================================================================
+    // Calendar Auto-Ticking (Phase 1 - Rust-controlled timer)
+    // ========================================================================
+
+    /**
+     * Start calendar auto-ticking in a Rust background thread
+     * @param intervalMs - Milliseconds between ticks (1000 = daily, 125 = monthly)
+     * @param callback - Function called on each tick with tick results
+     */
+    startCalendar(intervalMs: number, callback: (event: TickEvent) => void): void {
+        simulation.startCalendar(this.world, intervalMs, callback);
+        console.log(`🦀 Rust calendar started (${intervalMs}ms intervals)`);
+    }
+
+    /**
+     * Stop calendar auto-ticking
+     */
+    stopCalendar(): void {
+        simulation.stopCalendar();
+        console.log('🦀 Rust calendar stopped');
+    }
+
+    /**
+     * Check if calendar is currently running
+     */
+    isCalendarRunning(): boolean {
+        return simulation.isCalendarRunning() as boolean;
     }
 }
 

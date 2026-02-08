@@ -1,5 +1,5 @@
 //! GridWorld Simulation Engine
-//! 
+//!
 //! High-performance population simulation using ECS architecture.
 //! Designed for 10M+ entities with parallel system execution.
 
@@ -11,6 +11,7 @@ pub mod systems;
 pub mod world;
 pub mod storage;
 pub mod persistence;
+pub mod calendar_runner;
 pub mod napi_bindings;
 
 pub use components::*;
