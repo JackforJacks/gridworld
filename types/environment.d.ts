@@ -15,12 +15,6 @@ declare global {
             PGPASSWORD: string;
             PGDATABASE: string;
 
-            // Redis
-            REDIS_HOST: string;
-            REDIS_PORT: string;
-            REDIS_PASSWORD?: string;
-            MOCK_REDIS?: string;
-
             // Calendar
             CALENDAR_INITIAL_YEAR?: string;
             CALENDAR_INITIAL_MONTH?: string;

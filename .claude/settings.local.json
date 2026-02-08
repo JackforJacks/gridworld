@@ -19,7 +19,9 @@
       "Bash(copy:*)",
       "Bash(find:*)",
       "Bash(xxd:*)",
-      "Bash(test:*)"
+      "Bash(test:*)",
+      "Bash(git rm:*)",
+      "Bash(npm prune:*)"
     ]
   }
 }

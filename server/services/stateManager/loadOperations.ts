@@ -6,9 +6,8 @@
 // Re-export from modular implementation
 export {
     loadFromDatabase,
-    clearExistingStorageState,
-    // populateFertileFamilies removed - families now managed by Rust ECS (Partner component)
-    populateEligibleSets
+    clearExistingStorageState
+    // populateFertileFamilies and populateEligibleSets removed - matchmaking/fertility now handled by Rust ECS
 } from './loadOperations/index';
 
 export type {

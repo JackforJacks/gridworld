@@ -1,5 +1,5 @@
 // Population Statistics and Reporting - Handles all population statistics and reporting functionality
-import storage from '../storage';
+// Storage removed - all data in Rust ECS
 import PopulationState from '../populationState';
 
 // ==================== UTILITY FUNCTIONS ====================
@@ -52,7 +52,7 @@ function getCalendarCutoffs(calendarService) {
 
 /**
  * Gets comprehensive population statistics with demographics and rates
- * Now reads from storage as the primary source, falls back to Postgres if storage is unavailable
+ * Uses Rust ECS as primary source
  */
 async function getPopulationStats(pool, calendarService, populationServiceInstance) {
     try {
@@ -68,14 +68,11 @@ async function getPopulationStats(pool, calendarService, populationServiceInstan
             elderly: 0,
             bachelors: 0
         };
-        // Only use storage (Redis) for all stats
-        if (storage.isAvailable()) {
-            // Parse currentDateStr to object for getDemographicStats
-            const [year, month, day] = currentDateStr.split('-').map(Number);
-            const storageStats = await PopulationState.getDemographicStats({ year, month, day });
-            if (storageStats) {
-                stats = storageStats;
-            }
+        // Use Rust ECS demographics
+        const [year, month, day] = currentDateStr.split('-').map(Number);
+        const rustStats = await PopulationState.getDemographicStats({ year, month, day });
+        if (rustStats) {
+            stats = rustStats;
         }
 
         const rates = calculateRates(populationServiceInstance);
@@ -139,46 +136,23 @@ async function getDemographicStats(pool, calendarService) {
 
 /**
  * Gets all population data including statistics (consolidated data function)
- * Uses storage as the only source of truth
+ * Uses Rust ECS as the primary source
  */
 async function getAllPopulationData(pool, calendarService, populationServiceInstance) {
-    const { loadPopulationData, formatPopulationData } = require('./dataOperations');
-    // PopulationState is imported at the top of the file
+    const { formatPopulationData } = require('./dataOperations');
 
-    // Get tile populations from storage (only source of truth)
+    // Get tile populations from Rust ECS
     let populations = {};
-    if (storage.isAvailable()) {
-        try {
-            // Poll a few times to capture batched/streamed writes that may be in progress
-            let best = {};
-            const MAX_POLLS = 10;
-            const POLL_MS = 100;
-            for (let i = 0; i < MAX_POLLS; i++) {
-                const current = await PopulationState.getAllTilePopulations();
-                const currentCount = current ? Object.keys(current).length : 0;
-                const bestCount = best ? Object.keys(best).length : 0;
-                if (current && currentCount > bestCount) {
-                    best = current;
-                }
-                // If we've captured at least 5 tiles, likely complete (init selects <=5 tiles)
-                if (Object.keys(best).length >= 5) break;
-                await new Promise(resolve => setTimeout(resolve, POLL_MS));
-            }
-            populations = best;
-        } catch (e: unknown) {
-            console.warn('[getAllPopulationData] storage.getAllTilePopulations failed:', (e as Error).message);
-        }
-    }
-
-    // If still empty, use loadPopulationData which also reads from Redis only
-    if (Object.keys(populations).length === 0) {
-        populations = await loadPopulationData(pool);
+    try {
+        populations = await PopulationState.getAllTilePopulations();
+    } catch (e: unknown) {
+        console.warn('[getAllPopulationData] getAllTilePopulations failed:', (e as Error).message);
     }
 
     const stats = await getPopulationStats(pool, calendarService, populationServiceInstance);
     // Family stats removed - use rustSimulation.getDemographics() for family data
 
-    // Use stats.totalPopulation (from Redis) as the only source of truth
+    // Use stats.totalPopulation (from Rust) as the source of truth
     const formatted = formatPopulationData(populations);
     formatted.totalPopulation = stats.totalPopulation;
 
@@ -194,54 +168,9 @@ async function getAllPopulationData(pool, calendarService, populationServiceInst
 async function getPopulationDistribution(_pool: unknown) {
     void _pool; // Unused - kept for API compatibility
     try {
-        if (!storage.isAvailable()) {
-            console.warn('[getPopulationDistribution] Storage not available');
-            return { totalTiles: 0, distribution: [] };
-        }
-
-        // Aggregate by tile using HSCAN streaming to avoid loading all people into memory
-        const tileStats: Record<number, { population: number; male: number; female: number }> = {};
-
-        const personStream = storage.hscanStream('person', { count: 500 });
-
-        for await (const result of personStream) {
-            const entries = result as string[];
-            for (let i = 0; i < entries.length; i += 2) {
-                const json = entries[i + 1];
-                if (!json) continue;
-
-                try {
-                    const person = JSON.parse(json);
-                    const tileId = person.tile_id;
-                    if (tileId === null || tileId === undefined) continue;
-
-                    if (!tileStats[tileId]) {
-                        tileStats[tileId] = { population: 0, male: 0, female: 0 };
-                    }
-                    tileStats[tileId].population++;
-                    if (person.sex === true) {
-                        tileStats[tileId].male++;
-                    } else {
-                        tileStats[tileId].female++;
-                    }
-                } catch { /* ignore parse errors */ }
-            }
-        }
-
-        // Convert to array sorted by population descending
-        const distribution = Object.entries(tileStats)
-            .map(([tileId, stats]) => ({
-                tileId: parseInt(tileId, 10),
-                population: stats.population,
-                male: stats.male,
-                female: stats.female
-            }))
-            .sort((a, b) => b.population - a.population);
-
-        return {
-            totalTiles: distribution.length,
-            distribution
-        };
+        // Storage removed - all data in Rust ECS
+        console.warn('[getPopulationDistribution] Storage removed - all data managed by Rust ECS');
+        return { totalTiles: 0, distribution: [] };
     } catch (error: unknown) {
         console.error('Error getting population distribution:', error);
         return { totalTiles: 0, distribution: [] };
@@ -254,39 +183,14 @@ async function getPopulationDistribution(_pool: unknown) {
 // ==================== UTILITY AND DEBUG FUNCTIONS ====================
 
 /**
- * Prints a sample of people data for debugging - uses HSCAN streaming
+ * Prints a sample of people data for debugging
+ * Storage removed - all data in Rust ECS
  */
 async function printPeopleSample(_pool: unknown, limit = 10) {
     void _pool; // Unused - kept for API compatibility
     try {
-        if (!storage.isAvailable()) {
-            console.warn('[printPeopleSample] Storage not available');
-            return;
-        }
-
-        const sample: Array<{ id: unknown; sex: unknown; date_of_birth: unknown }> = [];
-        const peopleStream = storage.hscanStream('person', { count: 100 });
-
-        outerLoop:
-        for await (const result of peopleStream) {
-            const entries = result as string[];
-            for (let i = 0; i < entries.length; i += 2) {
-                const json = entries[i + 1];
-                if (!json) continue;
-                try {
-                    const person = JSON.parse(json);
-                    sample.push({
-                        id: person.id,
-                        sex: person.sex,
-                        date_of_birth: person.date_of_birth
-                    });
-                    if (sample.length >= limit) break outerLoop;
-                } catch { /* skip */ }
-            }
-        }
-
-        console.log('Sample people from Redis:');
-        sample.forEach(person => console.log(person));
+        // Storage removed - all data managed by Rust ECS
+        console.warn('[printPeopleSample] Storage removed - all data managed by Rust ECS');
     } catch (err: unknown) {
         console.error('Error printing people sample:', err);
     }

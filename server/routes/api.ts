@@ -10,7 +10,6 @@ import statisticsRoutes from './statistics';
 import systemRoutes from './system';
 import rustRoutes from './rust';
 import StateManager from '../services/stateManager';
-import storage from '../services/storage';
 import serverConfig from '../config/server';
 import { validateBody } from '../middleware/validate';
 import { WorldRestartSchema } from '../schemas';
@@ -35,11 +34,6 @@ router.use('/rust', rustRoutes);
 // POST /api/save - Save game state
 router.post('/save', async (req: Request, res: Response) => {
     try {
-        if (!StateManager.isRedisAvailable()) {
-            console.warn('⚠️ Save attempted but Redis is not available');
-            return res.status(503).json({ success: false, error: 'Redis not available - cannot save in-memory state' });
-        }
-
         const result = await StateManager.saveToDatabase();
         res.json({ success: true, ...result });
     } catch (error: unknown) {
@@ -59,7 +53,7 @@ router.post('/sync', async (req: Request, res: Response) => {
     }
 });
 
-// GET /api/state - Get current Redis state status
+// GET /api/state - Get current state status
 router.get('/state', async (req: Request, res: Response) => {
     try {
         const peopleCount = await StateManager.getPopulationCount();

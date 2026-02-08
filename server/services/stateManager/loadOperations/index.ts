@@ -1,31 +1,25 @@
 // Load Operations - Main Orchestrator Module
-// Loads saved state from a local bincode file into Redis + Rust ECS
+// Loads saved state from a local bincode file into Rust ECS
 
 import fs from 'fs';
-import storage from '../../storage';
+// Storage removed - all data in Rust ECS
 import { LoadContext, LoadResult, PersonRow } from './types';
 import { clearExistingStorageState } from './storageClear';
-import { populateEligibleSets } from './populationSets';
-// FamilyRow and populateFertileFamilies removed - families now managed by Rust ECS
+// populateEligibleSets and populateFertileFamilies removed - matchmaking/fertility now handled by Rust ECS
 import { SAVE_FILE } from '../saveOperations';
 
 /** Chunk size for Redis pipeline writes */
 const PIPELINE_CHUNK_SIZE = 2000;
 
 /**
- * Load state from a bincode save file into Redis + Rust ECS.
+ * Load state from a bincode save file into Rust ECS.
  * Flow:
  *   1. Pause calendar
- *   2. Flush Redis
- *   3. Rust loadFromFile → restores ECS, returns nodeStateJson + seed
- *   4. Restore tiles, people + families to Redis from nodeStateJson
- *   6. Rebuild counts, eligible sets, fertile families
- *   7. Resume calendar
+ *   2. Rust loadFromFile → restores ECS, returns nodeStateJson + seed
+ *   3. Resume calendar
  */
 export async function loadFromDatabase(context: LoadContext): Promise<LoadResult> {
-    if (!storage.isAvailable()) {
-        throw new Error('Storage not available - cannot load');
-    }
+    // Storage removed - all data in Rust ECS
 
     // Check save file exists
     if (!fs.existsSync(SAVE_FILE)) {
@@ -103,8 +97,7 @@ function resumeCalendar(context: LoadContext, wasRunning: boolean): void {
 
 // Re-export modules that other parts of the codebase may use
 export { clearExistingStorageState } from './storageClear';
-export { populateEligibleSets } from './populationSets';
-// populateFertileFamilies removed - use Rust ECS for fertility/pregnancy management
+// populateEligibleSets and populateFertileFamilies removed - matchmaking/fertility now handled by Rust ECS
 
 // Re-export types
 export type {

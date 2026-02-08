@@ -1,77 +1,67 @@
 /**
- * PeopleState - Facade for Redis state management of people
- * 
- * This module re-exports functionality from specialized sub-modules:
- * - PersonCrud: Single-person CRUD operations
- * - BatchOperations: Batch operations for performance
- * - PendingOperations: Pending insert/update/delete tracking
- * - EligibleSets: Matchmaking eligibility sets
- * - Demographics: Population statistics
- * - PopulationSync: Sync between Redis and Postgres
+ * PeopleState - ID allocation only (all person data now managed by Rust ECS)
+ *
+ * All person data now managed by Rust ECS - use rustSimulation directly
  */
 
-// Re-export types
+// Re-export types for backward compatibility
 export * from './types';
 
-// Import all modules
-import * as PersonCrud from './PersonCrud';
-import * as BatchOperations from './BatchOperations';
-import * as PendingOperations from './PendingOperations';
-import * as EligibleSets from './EligibleSets';
-import * as Demographics from './Demographics';
-import * as PopulationSync from './PopulationSync';
+// Import rustSimulation for ID allocation and demographics
+import rustSimulation from '../rustSimulation';
+import type { DemographicStats, CurrentDate } from './types';
 
 /**
- * PeopleState class - Backward-compatible facade
- * Provides static methods that delegate to the specialized modules
+ * PeopleState class - ID allocation only
+ * All other methods removed - use rustSimulation directly for person data
  */
 class PeopleState {
+    // Flag to prevent tick processing during world restart
+    static isRestarting: boolean = false;
+
     // =========== ID ALLOCATION ===========
-    static getNextId = PersonCrud.getNextId;
-    static getIdBatch = PersonCrud.getIdBatch;
+    static async getNextId(): Promise<number> {
+        return rustSimulation.getNextPersonId();
+    }
 
-    // =========== SINGLE-PERSON CRUD ===========
-    static addPerson = PersonCrud.addPerson;
-    static removePerson = PersonCrud.removePerson;
-    static getPerson = PersonCrud.getPerson;
-    static updatePerson = PersonCrud.updatePerson;
-    static getAllPeople = PersonCrud.getAllPeople;
-    static getGlobalCounts = PersonCrud.getGlobalCounts;
-    static getTotalPopulation = PersonCrud.getTotalPopulation;
+    static async getIdBatch(count: number): Promise<number[]> {
+        const ids: number[] = [];
+        for (let i = 0; i < count; i++) {
+            ids.push(await rustSimulation.getNextPersonId());
+        }
+        return ids;
+    }
 
-    // =========== BATCH OPERATIONS ===========
-    static batchAddPersons = BatchOperations.batchAddPersons;
-    static batchRemovePersons = BatchOperations.batchRemovePersons;
-    static reassignIds = BatchOperations.reassignIds;
-    // Note: Family batch operations removed - families now managed by Rust ECS (Partner component)
+    // =========== DEMOGRAPHICS (delegates to Rust ECS) ===========
+    static async getDemographicStats(_currentDate: CurrentDate): Promise<DemographicStats> {
+        // Get demographics from Rust ECS
+        const demo = rustSimulation.getDemographics();
 
-    // =========== PENDING OPERATIONS ===========
-    static getPendingInserts = PendingOperations.getPendingInserts;
-    static getPendingUpdates = PendingOperations.getPendingUpdates;
-    static getPendingDeletes = PendingOperations.getPendingDeletes;
-    static clearPendingOperations = PendingOperations.clearPendingOperations;
+        // Convert to expected format
+        // Note: Rust doesn't track minors/working_age/elderly/bachelors separately yet
+        // Using placeholder values for now
+        return {
+            totalPopulation: demo.population,
+            male: demo.males,
+            female: demo.females,
+            minors: 0,
+            working_age: 0,
+            elderly: 0,
+            bachelors: demo.single
+        };
+    }
 
-    // =========== ELIGIBLE SETS ===========
-    static addEligiblePerson = EligibleSets.addEligiblePerson;
-    static removeEligiblePerson = EligibleSets.removeEligiblePerson;
-    static getEligiblePeople = EligibleSets.getEligiblePeople;
+    static async getAllTilePopulations(): Promise<{ [tileId: string]: number }> {
+        // Get tile populations from Rust ECS
+        const tileData = rustSimulation.getPopulationByTile();
 
-    // =========== DEMOGRAPHICS ===========
-    static getAllTilePopulations = Demographics.getAllTilePopulations;
-    static getDemographicStats = Demographics.getDemographicStats;
-
-    // =========== SYNC ===========
-    static repairIfNeeded = PopulationSync.repairIfNeeded;
+        // Convert array to object format
+        const result: { [tileId: string]: number } = {};
+        for (const { tileId, count } of tileData) {
+            result[String(tileId)] = count;
+        }
+        return result;
+    }
 }
 
 export default PeopleState;
-
-// Also export individual modules for direct access
-export {
-    PersonCrud,
-    BatchOperations,
-    PendingOperations,
-    EligibleSets,
-    Demographics,
-    PopulationSync
-};

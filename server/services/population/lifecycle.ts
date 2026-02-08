@@ -1,6 +1,6 @@
 // Population Lifecycle Management - Handles growth, aging, and life cycle events
 import config from '../../config/server';
-import storage from '../storage';
+// Storage removed - all data in Rust ECS
 import * as deps from './dependencyContainer';
 import { checkIsMale } from '../populationState/types';
 import {
@@ -60,7 +60,7 @@ interface PopulationStateModule {
     batchRemovePersons(personIds: number[], markForDeletion: boolean): Promise<void>;
     batchUpdateResidency(updates: ResidencyUpdate[]): Promise<void>;
     removeFertileFamily(familyId: number): Promise<void>;
-    addEligiblePerson(personId: number, isMale: boolean, tileId: number): Promise<boolean>;
+    // addEligiblePerson removed - matchmaking now handled by Rust ECS
 }
 
 /** Calculator module interface */
@@ -174,10 +174,11 @@ async function applySenescence(
     try {
         const PopulationState = deps.getPopulationState() as unknown as PopulationStateModule | null;
 
-        if (!PopulationState || !storage.isAvailable()) {
-            console.warn('⚠️ Storage not available - cannot process senescence');
+        if (!PopulationState) {
+            console.warn('⚠️ PopulationState not available - cannot process senescence');
             return 0;
         }
+        // Storage removed - all data in Rust ECS
 
         let currentYear = 4000, currentMonth = 1, currentDay = 1;
         try {
@@ -199,50 +200,9 @@ async function applySenescence(
             return 0;
         }
 
-        const deaths: number[] = [];
-
-        // Use HSCAN streaming to avoid loading all people into memory
-        const personStream = storage.hscanStream('person', { count: 500 });
-
-        for await (const result of personStream) {
-            const entries = result as string[];
-            for (let i = 0; i < entries.length; i += 2) {
-                const json = entries[i + 1];
-                if (!json) continue;
-
-                let person: PersonData | null = null;
-                try { person = JSON.parse(json) as PersonData; } catch { continue; }
-                if (!person || !person.date_of_birth) continue;
-
-                const age = calculator.calculateAge(person.date_of_birth, currentYear, currentMonth, currentDay);
-                if (age >= SENESCENCE_START_AGE) {
-                    // Annual death probability: starts at base rate, increases per year after senescence
-                    const annualDeathChance = BASE_ANNUAL_DEATH_CHANCE + (age - SENESCENCE_START_AGE) * DEATH_CHANCE_INCREASE_PER_YEAR;
-                    // Daily probability
-                    const dailyDeathChance = annualDeathChance / DAYS_PER_YEAR;
-                    // Probability of dying at least once in N days: 1 - (1 - p)^N
-                    const multiDayDeathChance = 1 - Math.pow(1 - dailyDeathChance, daysAdvanced);
-                    if (Math.random() < multiDayDeathChance) {
-                        deaths.push(person.id);
-                    }
-                }
-            }
-        }
-
-        if (deaths.length > 0) {
-            // Batch remove deceased persons from Redis
-            await PopulationState.batchRemovePersons(deaths, true);
-
-            // TODO: Surviving spouse re-eligibility logic
-            // Rust ECS automatically dissolves partnerships on death via Partner component
-            // Need to implement: Query Rust for surviving partners and re-add to eligible pool if age-appropriate
-            // For now, Rust handles partnership dissolution automatically
-
-            if (populationServiceInstance && typeof populationServiceInstance.trackDeaths === 'function') {
-                populationServiceInstance.trackDeaths(deaths.length);
-            }
-            return deaths.length;
-        }
+        // Storage removed - all data in Rust ECS
+        // Deaths are handled by Rust simulation via tick()
+        // This function is deprecated - senescence logic is now in Rust ECS
         return 0;
     } catch (error: unknown) {
         console.error('Error applying senescence:', error);

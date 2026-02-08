@@ -1,4 +1,4 @@
-import storage from '../storage';
+// Storage removed - all data in Rust ECS
 
 /** Options for the integrity check/repair function */
 interface IntegrityOptions {
@@ -21,8 +21,7 @@ async function verifyAndRepairIntegrity(
     _targets: Record<string, unknown> = {},
     options: IntegrityOptions = {}
 ): Promise<IntegrityResult> {
-    if (!storage.isAvailable()) return { ok: true, details: 'Storage unavailable' };
-
+    // Storage removed - all data in Rust ECS
     return { ok: true, details: [] };
 }
 

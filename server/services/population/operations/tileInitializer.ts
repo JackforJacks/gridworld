@@ -2,7 +2,7 @@
 // DEPRECATED: This module is legacy - population generation now handled by Rust ECS
 // via rustSimulation.seedPopulationOnTileRange() in worldRestart/index.ts
 import serverConfig from '../../../config/server';
-import storage from '../../storage';
+// Storage removed - all data in Rust ECS
 import * as deps from '../dependencyContainer';
 import { validateTileIds } from '../validation';
 import { savePopulationData } from '../dataOperations';
@@ -221,35 +221,8 @@ async function checkExistingPopulation(
 }
 
 async function selectTilesForInitialization(tileIds: number[]): Promise<number[]> {
-    // Fetch habitable tiles with cleared lands from Redis
+    // Storage removed - all data in Rust ECS
     const habitableFromDb: number[] = [];
-    try {
-        const tileData: Record<string, string> = await storage.hgetall('tile');
-        const landsData: Record<string, string> = await storage.hgetall('tile:lands');
-
-        if (tileData && landsData) {
-            for (const [tileId, tileJson] of Object.entries(tileData)) {
-                const tile = JSON.parse(tileJson);
-                const terrainType = tile.terrain_type || '';
-                const biome = tile.biome || '';
-                const tileIsHabitable = terrainType !== 'ocean' && terrainType !== 'mountains' &&
-                    biome !== 'desert' && biome !== 'tundra' && biome !== 'alpine';
-                if (tileIsHabitable) {
-                    const landsJson = landsData[tileId];
-                    if (landsJson) {
-                        const lands: Array<{ cleared?: boolean }> = JSON.parse(landsJson);
-                        const hasClearedLand = lands.some((land: { cleared?: boolean }) => land.cleared);
-                        if (hasClearedLand) {
-                            habitableFromDb.push(parseInt(tileId));
-                        }
-                    }
-                }
-            }
-        }
-    } catch (e: unknown) {
-        const errorMessage = e instanceof Error ? e.message : String(e);
-        console.error('[PopulationOperations] Failed to get habitable tiles from Redis:', errorMessage);
-    }
 
     let candidateTiles: number[];
     if (Array.isArray(tileIds) && tileIds.length > 0) {

@@ -19,20 +19,8 @@ interface CalculatorModule {
 interface PopulationStateModule {
     isRestarting: boolean;
     getNextId: () => Promise<number>;
-    getNextFamilyId: () => Promise<number>;
-    addPerson: (person: unknown, isNew?: boolean) => Promise<void>;
-    removePerson: (personId: number, markDeleted?: boolean) => Promise<void>;
-    getPerson: (personId: number) => Promise<unknown>;
-    updatePerson: (personId: number, updates: unknown) => Promise<void>;
-    getAllPeople: () => Promise<unknown[]>;
-    addFamily: (family: unknown, isNew?: boolean) => Promise<void>;
-    getFamily: (familyId: number) => Promise<unknown>;
-    updateFamily: (familyId: number, updates: unknown) => Promise<void>;
-    getAllFamilies: () => Promise<unknown[]>;
-    addEligiblePerson: (personId: number, isMale: boolean, tileId: number) => Promise<void>;
-    removeEligiblePerson: (personId: number, tileId?: number, sex?: string) => Promise<void>;
-    addFertileFamily: (familyId: number, year: number, month: number, day: number) => Promise<void>;
-    removeFertileFamily: (familyId: number) => Promise<void>;
+    getIdBatch: (count: number) => Promise<number[]>;
+    // All other methods removed - person data now managed by Rust ECS
     [key: string]: unknown;
 }
 

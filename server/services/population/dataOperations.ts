@@ -1,47 +1,38 @@
 // Population Data Operations - Handles data loading, saving, and formatting
 import { getTotalPopulation } from './PopStats';
-import storage from '../storage';
+// Storage removed - all data in Rust ECS
 
 /**
  * Loads population data from Redis (only source of truth)
+ * Storage removed - all data in Rust ECS
  * @param {Pool} pool - Database pool instance (unused, kept for API compatibility)
  * @returns {Object} Population data by tile ID
  */
 async function loadPopulationData(pool) {
     try {
-        // Wait for storage to be available if needed
-        if (!storage.isAvailable()) {
-            if (typeof storage.on === 'function') {
-                await Promise.race([
-                    new Promise(resolve => storage.on('ready', resolve)),
-                    new Promise(resolve => setTimeout(resolve, 2000))
-                ]);
-            } else {
-                await new Promise(resolve => setTimeout(resolve, 200));
-            }
-        }
+        // Storage removed - all data managed by Rust ECS
+        // Wait briefly for compatibility
+        await new Promise(resolve => setTimeout(resolve, 200));
 
-        if (storage.isAvailable()) {
-            try {
-                const PopulationState = require('../populationState').default;
-                // Poll a few times in case initialization is writing people in batches
-                for (let attempt = 0; attempt < 6; attempt++) {
-                    const populations = await PopulationState.getAllTilePopulations();
-                    if (Object.keys(populations).length > 0) {
-                        return populations;
-                    }
-                    // Small backoff between polls
-                    await new Promise(resolve => setTimeout(resolve, 100));
+        try {
+            const PopulationState = require('../populationState').default;
+            // Poll a few times in case initialization is writing people in batches
+            for (let attempt = 0; attempt < 6; attempt++) {
+                const populations = await PopulationState.getAllTilePopulations();
+                if (Object.keys(populations).length > 0) {
+                    return populations;
                 }
-            } catch (e: unknown) {
-                console.warn('[loadPopulationData] storage failed:', (e as Error).message);
+                // Small backoff between polls
+                await new Promise(resolve => setTimeout(resolve, 100));
             }
+        } catch (e: unknown) {
+            console.warn('[loadPopulationData] PopulationState failed:', (e as Error).message);
         }
 
-        // Return empty if Redis has no data (no Postgres fallback)
+        // Return empty if no data available
         return {};
     } catch (error: unknown) {
-        console.error('Error loading data from storage:', error);
+        console.error('Error loading data:', error);
         return {};
     }
 }

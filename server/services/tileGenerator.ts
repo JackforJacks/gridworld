@@ -1,10 +1,10 @@
 /**
  * Tile Generator Service
- * Generates tiles from hexasphere and stores in Redis
- * Can be called directly during startup without HTTP
+ * Tiles are now deterministic from seed - no Redis storage needed
+ * This module is deprecated - tiles generated on-demand by /api/tiles
  */
 
-import storage from './storage';
+// Storage removed - all data in Rust ECS
 import Hexasphere from '../../src/core/hexasphere/HexaSphere';
 import serverConfig from '../config/server';
 
@@ -91,15 +91,14 @@ function getLandTypeDistribution(rng: SeededRandomFn): { wasteland: number; fore
 }
 
 /**
- * Regenerate tiles from hexasphere and store in Redis
+ * Regenerate tiles from hexasphere
+ * Storage removed - tiles are now deterministic from seed
  * @param newSeed Optional new world seed (if not provided, uses current seed)
  * @returns Number of tiles generated
  */
 export async function regenerateTiles(newSeed?: number): Promise<number> {
-    if (!storage.isAvailable()) {
-        console.warn('[TileGenerator] Storage not available');
-        return 0;
-    }
+    // Storage removed - tiles are now deterministic from seed
+    console.warn('[TileGenerator] Storage removed - tiles are deterministic from seed');
 
     // Use provided seed or current world seed
     const seed = newSeed ?? worldSeed;
@@ -129,83 +128,10 @@ export async function regenerateTiles(newSeed?: number): Promise<number> {
 
         const hexasphere = new Hexasphere(radius, subdivisions, tileWidthRatio);
 
-        // Clear existing tile data in Redis
-        await storage.del('tile');
-        await storage.del('tile:fertility');
-        await storage.del('tile:lands');
-
-        // Store all tile data in Redis
-        const pipeline = storage.pipeline();
-
-        for (const tile of hexasphere.tiles) {
-            const props = tile.getProperties ? tile.getProperties() : tile;
-            const centerPoint = tile.centerPoint ? { x: tile.centerPoint.x, y: tile.centerPoint.y, z: tile.centerPoint.z } : null;
-            const terrainType = props.terrainType;
-            const biome = (centerPoint && terrainType !== 'ocean') ? calculateBiome(tile.centerPoint, terrainType, seededRandom) : null;
-            const fertility = calculateFertility(biome, terrainType, seededRandom);
-
-            const tileData = {
-                id: props.id,
-                center_x: centerPoint?.x || 0,
-                center_y: centerPoint?.y || 0,
-                center_z: centerPoint?.z || 0,
-                latitude: props.latitude || 0,
-                longitude: props.longitude || 0,
-                terrain_type: terrainType,
-                boundary_points: JSON.stringify(tile.boundary ? tile.boundary.map((p: { x: number; y: number; z: number }) => ({ x: p.x, y: p.y, z: p.z })) : []),
-                neighbor_ids: JSON.stringify(props.neighborIds || []),
-                biome: biome,
-                fertility: fertility
-            };
-
-            pipeline.hset('tile', props.id.toString(), JSON.stringify(tileData));
-            if (fertility !== null) {
-                pipeline.hset('tile:fertility', props.id.toString(), fertility.toString());
-            }
-        }
-
-        // Generate lands for eligible tiles
-        const eligibleTiles = hexasphere.tiles.filter((tile: { getProperties?: () => { terrainType: string }; terrainType?: string; centerPoint?: { x: number; y: number; z: number } }) => {
-            const props = tile.getProperties ? tile.getProperties() : tile;
-            const centerPoint = tile.centerPoint ? { x: tile.centerPoint.x, y: tile.centerPoint.y, z: tile.centerPoint.z } : null;
-            const terrainType = props.terrainType!;
-            const biome = (centerPoint && terrainType !== 'ocean') ? calculateBiome(tile.centerPoint!, terrainType, seededRandom) : null;
-            return terrainType !== 'ocean' && terrainType !== 'mountains' &&
-                (!biome || (biome !== 'desert' && biome !== 'tundra'));
-        });
-
-        for (const tile of eligibleTiles) {
-            const props = tile.getProperties ? tile.getProperties() : tile;
-            const rng = mulberry32(props.id);
-            const dist = getLandTypeDistribution(rng);
-            let landTypes: string[] = [];
-            landTypes = landTypes.concat(Array<string>(dist.wasteland).fill('wasteland'));
-            landTypes = landTypes.concat(Array<string>(dist.forest).fill('forest'));
-            landTypes = landTypes.concat(Array<string>(100 - landTypes.length).fill('cleared'));
-
-            // Shuffle
-            for (let i = landTypes.length - 1; i > 0; i--) {
-                const j = Math.floor(rng() * (i + 1));
-                [landTypes[i], landTypes[j]] = [landTypes[j], landTypes[i]];
-            }
-
-            const landsData: LandData[] = [];
-            for (let chunk_index = 0; chunk_index < 100; chunk_index++) {
-                landsData.push({
-                    tile_id: props.id,
-                    chunk_index: chunk_index,
-                    land_type: landTypes[chunk_index],
-                    cleared: landTypes[chunk_index] === 'cleared'
-                });
-            }
-
-            pipeline.hset('tile:lands', props.id.toString(), JSON.stringify(landsData));
-        }
-
-        await pipeline.exec();
+        // Storage removed - tiles are now deterministic from seed, no Redis storage needed
 
         const elapsed = Date.now() - startTime;
-        console.log(`[TileGenerator] ✅ Generated ${hexasphere.tiles.length} tiles + ${eligibleTiles.length * 100} land chunks in ${elapsed}ms`);
+        console.log(`[TileGenerator] ✅ Generated ${hexasphere.tiles.length} tiles (deterministic, no storage) in ${elapsed}ms`);
 
         return hexasphere.tiles.length;
     } finally {

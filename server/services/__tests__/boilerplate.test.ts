@@ -1,40 +1,36 @@
 // BOILERPLATE TEST (copy & rename this file for real tests)
-// - Purpose: show a minimal, focused test pattern using the repo's MemoryAdapter
+// - Purpose: show a minimal, focused test pattern
 // - Markers: keep tests small, deterministic, and independent
+// - Storage removed - all data in Rust ECS
 
-import MemoryAdapter from '../storage/memoryAdapter';
+describe('BOILERPLATE: simple counter test', () => {
+  let counter: { increment: (id: string) => void; get: (id: string) => number };
 
-describe('BOILERPLATE: simple counter using MemoryAdapter', () => {
-  let storage: InstanceType<typeof MemoryAdapter>;
-  let counter: { increment: (id: string) => Promise<void>; get: (id: string) => Promise<number> };
+  beforeEach(() => {
+    // Storage removed - all data in Rust ECS
+    const counters = new Map<string, number>();
 
-  beforeEach(async () => {
-    storage = new MemoryAdapter();
-    // ensure a clean bucket
-    await storage.hset('counters', 'initial', 0);
-
-    // Example unit: a tiny module that relies on storage
+    // Example unit: a tiny module
     counter = {
-      async increment(id) {
-        await storage.hincrby('counters', id, 1);
+      increment(id) {
+        counters.set(id, (counters.get(id) || 0) + 1);
       },
-      async get(id) {
-        const val = await storage.hget('counters', id);
-        return val ? parseInt(val, 10) : 0;
+      get(id) {
+        return counters.get(id) || 0;
       }
     };
   });
 
-  test('increments a counter by 1', async () => {
-    await counter.increment('x');
-    const v = await counter.get('x');
+  test('increments a counter by 1', () => {
+    counter.increment('x');
+    const v = counter.get('x');
     expect(v).toBe(1);
   });
 
-  test('increments multiple times', async () => {
-    await counter.increment('x');
-    await counter.increment('x');
-    expect(await counter.get('x')).toBe(2);
+  test('increments multiple times', () => {
+    counter.increment('x');
+    counter.increment('x');
+    expect(counter.get('x')).toBe(2);
   });
 
 });

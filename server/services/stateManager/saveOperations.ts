@@ -4,7 +4,7 @@
  */
 
 import fs from 'fs';
-import storage from '../storage';
+// Storage removed - all data in Rust ECS
 import { Server as SocketIOServer } from 'socket.io';
 import path from 'path';
 

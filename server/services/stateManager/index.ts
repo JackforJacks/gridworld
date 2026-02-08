@@ -1,14 +1,13 @@
 /**
  * State Manager - Main Entry Point
- * Handles syncing state between Redis (hot data) and bincode file (persistence)
+ * Handles syncing state between Rust ECS and bincode file (persistence)
  *
  * This module has been refactored into:
- * - loadOperations/ - Loading state from bincode file to Redis
- * - saveOperations.ts - Saving Redis + Rust ECS state to bincode file
- * - storageOperations.ts - Redis CRUD operations
+ * - loadOperations/ - Loading state from bincode file to Rust ECS
+ * - saveOperations.ts - Saving Rust ECS state to bincode file
+ * - storageOperations.ts - Storage operations (deprecated)
  */
 
-import storage from '../storage';
 import { loadFromDatabase } from './loadOperations';
 import { saveToDatabase } from './saveOperations';
 import * as redisOps from './storageOperations';
@@ -38,10 +37,10 @@ class StateManager {
     }
 
     /**
-     * Check if Redis is available
+     * Check if Redis is available (deprecated - always returns true as Rust ECS is always available)
      */
     static isRedisAvailable(): boolean {
-        return storage.isAvailable();
+        return true;
     }
 
     /**
@@ -53,14 +52,8 @@ class StateManager {
         const io = context && context.io ? context.io : this.io;
         let paused = false;
 
-        // Acquire a lock to prevent concurrent loads
-        const { acquireLock, releaseLock } = require('../../utils/lock');
-        const lockKey = 'state:load:lock';
-        const token = await acquireLock(lockKey, 60000, 5000);
-        if (!token) {
-            console.warn('[StateManager] loadFromDatabase skipped: could not acquire load lock');
-            return { people: 0, families: 0, skipped: true };
-        }
+        // Locking removed - Rust ECS handles concurrency with internal Mutex
+        // Redis-based distributed locks no longer needed
 
         try {
             // Pause the calendar if it's currently running to avoid tick events during load
@@ -90,79 +83,55 @@ class StateManager {
                     calendarService.start();
                 } catch (e: unknown) { /* ignore */ }
             }
-            // release lock
-            try { await releaseLock(lockKey, token); } catch (e: unknown) { console.warn('[StateManager] Failed to release lock:', (e as Error)?.message ?? e); }
         }
     }
 
     /**
-     * Check whether there are pending changes in Redis that require persisting to Postgres.
-     * Returns true if any pending insert/update/delete sets are non-empty.
+     * Check whether there are pending changes (deprecated - Rust ECS handles all state)
      */
     static async hasPendingChanges(): Promise<boolean> {
-        if (!storage.isAvailable()) return false;
-        const pendingSets = [
-            'pending:person:inserts',
-            'pending:person:updates',
-            'pending:person:deletes',
-            'pending:family:inserts',
-            'pending:family:updates',
-            'pending:family:deletes'
-        ];
-        for (const key of pendingSets) {
-            try {
-                const count = await storage.scard(key);
-                if (count && count > 0) return true;
-            } catch (_: unknown) { /* ignore */ }
-        }
         return false;
     }
 
     /**
-     * Save all Redis state back to PostgreSQL (skips if no pending changes)
+     * Save all Rust ECS state to bincode file
      */
     static async saveToDatabase(): Promise<any> {
-        if (!this.isRedisAvailable()) {
-            throw new Error('Redis is not available - cannot save in-memory state to database');
-        }
-        const hasPending = await this.hasPendingChanges();
-        if (!hasPending) {
-            console.log('[StateManager] No pending changes detected - proceeding with save flow for consistent results');
-            // Intentionally continue to call saveToDatabase so callers/tests receive a consistent result object
-        }
         return await saveToDatabase({
             calendarService: this.calendarService,
             io: this.io
         });
     }
 
-    // Delegate Redis operations to redisOperations module
-    static async getPerson(personId: number | string): Promise<any> {
-        return redisOps.getPerson(personId);
+    // Person data removed - all managed by Rust ECS
+    // Use rustSimulation directly for person data
+    static async getPerson(_personId: number | string): Promise<any> {
+        throw new Error('getPerson deprecated - use rustSimulation directly');
     }
 
-    static async updatePerson(personId: number | string, updates: any): Promise<any> {
-        return redisOps.updatePerson(personId, updates);
+    static async updatePerson(_personId: number | string, _updates: any): Promise<any> {
+        throw new Error('updatePerson deprecated - use rustSimulation directly');
     }
 
     static async getPopulationCount(): Promise<number> {
-        return redisOps.getPopulationCount();
+        // Return 0 for now - Rust ECS is source of truth
+        return 0;
     }
 
     static async getAllPeople(): Promise<any[]> {
-        return redisOps.getAllPeople();
+        throw new Error('getAllPeople deprecated - use rustSimulation directly');
     }
 
     static async getTileFertility(tileId: string): Promise<any> {
         return redisOps.getTileFertility(tileId);
     }
 
-    static async addPersonToStorage(person: any): Promise<any> {
-        return redisOps.addPersonToStorage(person);
+    static async addPersonToStorage(_person: any): Promise<any> {
+        throw new Error('addPersonToStorage deprecated - use rustSimulation directly');
     }
 
-    static async removePersonFromStorage(personId: number | string): Promise<any> {
-        return redisOps.removePersonFromStorage(personId);
+    static async removePersonFromStorage(_personId: number | string): Promise<any> {
+        throw new Error('removePersonFromStorage deprecated - use rustSimulation directly');
     }
 
     /**

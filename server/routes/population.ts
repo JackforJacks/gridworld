@@ -10,18 +10,6 @@ import {
 
 const router: Router = express.Router();
 
-// Enforce Redis-first: all population API calls require Redis to be available
-router.use((req, res, next) => {
-    try {
-        if (!StateManager.isRedisAvailable()) {
-            return res.status(503).json({ success: false, error: 'Redis not available - population API requires Redis as the source of truth' });
-        }
-    } catch (e: unknown) {
-        return res.status(500).json({ success: false, error: 'Server error checking storage availability' });
-    }
-    next();
-});
-
 // Get all population data
 router.get('/', async (req, res, next) => {
     try {

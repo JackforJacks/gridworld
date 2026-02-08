@@ -4,10 +4,6 @@
  */
 
 import * as THREE from 'three';
-import { Redis } from 'ioredis';
-
-// Re-export for convenience
-export { Redis };
 
 /**
  * Environment configuration
@@ -15,9 +11,6 @@ export { Redis };
 export interface EnvironmentConfig {
     NODE_ENV: string;
     PORT: string;
-    REDIS_HOST: string;
-    REDIS_PORT: string;
-    REDIS_PASSWORD?: string;
     [key: string]: string | undefined;
 }
 

@@ -2,7 +2,7 @@
 // Tile generation is handled exclusively by /api/worldrestart
 import express, { Request, Response } from 'express';
 import serverConfig from '../config/server';
-import storage from '../services/storage';
+// Storage removed - all data in Rust ECS
 import Hexasphere from '../../src/core/hexasphere/HexaSphere';
 
 // __dirname is available in CommonJS mode (our server target)

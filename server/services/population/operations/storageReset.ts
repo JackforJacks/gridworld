@@ -1,6 +1,6 @@
 // Population Operations - Storage Reset Module
 import serverConfig from '../../../config/server';
-import storage from '../../storage';
+// Storage removed - all data in Rust ECS
 import {
     PopulationOptions,
     PopulationServiceInstance,
@@ -10,6 +10,7 @@ import { formatPopData, loadPopData } from './helpers';
 
 /**
  * Clears all population data from storage (Redis)
+ * Storage removed - all data in Rust ECS
  */
 export async function clearStoragePopulation(options: PopulationOptions = {}): Promise<void> {
     const flag = options ? options.preserveDatabase : false;
@@ -18,34 +19,8 @@ export async function clearStoragePopulation(options: PopulationOptions = {}): P
         console.log('[clearStoragePopulation] preserveDatabase=true, skipping storage clear');
         return;
     }
-    try {
-        if (!storage.isAvailable()) {
-            // Storage may not yet be ready (e.g., Redis connecting). Wait briefly for a 'ready' event
-            if (serverConfig.verboseLogs) console.log('[clearStoragePopulation] storage not available, waiting for ready event...');
-            await Promise.race([
-                new Promise<void>(resolve => storage.on('ready', resolve)),
-                new Promise<void>(resolve => setTimeout(resolve, 5000))
-            ]);
-            if (!storage.isAvailable()) {
-                console.warn('[clearStoragePopulation] storage remained unavailable after waiting; skipping clear');
-                return;
-            }
-        }
-
-        // Clear person hash
-        await storage.del('person');
-        // Clear all pending operations (prevent stale pending entries from previous sessions)
-        await storage.del('pending:person:inserts');
-        await storage.del('pending:person:updates');
-        await storage.del('pending:person:deletes');
-        // Note: Family hash and pending family operations removed - families now managed by Rust ECS
-        // Reset counts
-        await storage.del('counts:global');
-        if (serverConfig.verboseLogs) console.log('[clearStoragePopulation] Cleared storage population data');
-    } catch (err: unknown) {
-        const errorMessage = err instanceof Error ? err.message : String(err);
-        console.warn('[clearStoragePopulation] Failed to clear storage:', errorMessage);
-    }
+    // Storage removed - all data in Rust ECS
+    if (serverConfig.verboseLogs) console.log('[clearStoragePopulation] Storage removed - all data managed by Rust ECS');
 }
 
 /**

@@ -11,13 +11,13 @@ const serverConfig = {
     verboseLogs: (process.env.VERBOSE_LOGS === '1' || process.env.VERBOSE_LOGS === 'true'),
 
     // Integrity checks during initialization: when enabled, the initializer will attempt to repair
-    // duplicate Redis memberships and remove invalid entries. Use INIT_POP_REPAIR=1 to enable.
+    // duplicate memberships and remove invalid entries. Use INIT_POP_REPAIR=1 to enable.
     integrityRepairOnInit: (process.env.INIT_POP_REPAIR === '1' || process.env.INIT_POP_REPAIR === 'true'),
     // If true, initialization will fail (throw) when integrity issues are detected. Use INIT_POP_FAIL=1 to enable.
     integrityFailOnInit: (process.env.INIT_POP_FAIL === '1' || process.env.INIT_POP_FAIL === 'true'),
 
-    // Persist population created at initialization into Postgres (saveToDatabase).
-    // Default: disabled for Redis-first workflows. Set SAVE_POP_ON_INIT=1 or SAVE_POP_ON_INIT=true to enable the immediate save during restart.
+    // Persist population created at initialization into bincode file (saveToDatabase).
+    // Default: disabled. Set SAVE_POP_ON_INIT=1 or SAVE_POP_ON_INIT=true to enable the immediate save during restart.
     savePopulationOnInit: (process.env.SAVE_POP_ON_INIT === '1' || process.env.SAVE_POP_ON_INIT === 'true') ? true : false,
 
     // Scheduled integrity audit settings

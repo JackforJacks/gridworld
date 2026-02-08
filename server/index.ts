@@ -51,10 +51,6 @@ class GridWorldServer {
     }
 
     async initialize(): Promise<this> {
-        // Wait for Redis to be ready before proceeding - Redis is required
-        const storage = await import('./services/storage');
-        await storage.default.waitForReady();
-
         // Start memory tracker (samples every 60 seconds)
         memoryTracker.start(60000);
 
@@ -110,55 +106,16 @@ class GridWorldServer {
             // Services already initialized
         }
 
-        // Load saved state from bincode file into Redis + Rust ECS
+        // Load saved state from bincode file into Rust ECS
         try {
             StateManager.setIo(this.io);
             StateManager.setCalendarService(calendarServiceInstance);
 
-            // Load from save file (restores both Redis state and Rust ECS)
+            // Load from save file (restores Rust ECS state)
             await StateManager.loadFromDatabase();
 
-            // If storage reconnects later, re-sync automatically
-            try {
-                const storage = await import('./services/storage');
-                // Attach to storage events emitted when adapter becomes ready
-                if (typeof storage.default.on === 'function') {
-                    storage.default.on('ready', async () => {
-                        const PopulationStateModule = await import('./services/populationState');
-                        console.log(`[DEBUG] storage 'ready' event fired. isRestarting=${PopulationStateModule.default.isRestarting}`);
-                        try {
-                            // Skip reload if we're in the middle of a world restart
-                            // (worldrestart creates fresh data in Redis that shouldn't be overwritten)
-                            if (PopulationStateModule.default.isRestarting) {
-                                console.log('🔁 Storage adapter ready, but skipping reload (worldrestart in progress)');
-                                return;
-                            }
-                            console.log('🔁 Storage adapter ready, reloading state...');
-                            await StateManager.loadFromDatabase();
-                        } catch (e: unknown) {
-                            console.warn('⚠️ Failed to reload state after storage reconnect:', (e as Error).message);
-                        }
-                    });
-                }
-            } catch (e: unknown) {
-                console.warn('⚠️ Could not attach storage reconnect handler:', (e as Error).message);
-            }
 
-            // Periodic integrity monitor to auto-repair duplicate memberships if introduced at runtime
-            try {
-                const PopulationStateModule = await import('./services/populationState');
-                const PopulationState = PopulationStateModule.default;
-                // Run every 30s while server is running
-                setInterval(async () => {
-                    try {
-                        await PopulationState.repairIfNeeded();
-                        // Silently repair - no need to log successful repairs
-                    } catch (e: unknown) { /* ignore */ }
-                }, 30000);
-            } catch (e: unknown) {
-                const error = e as Error;
-                console.warn('⚠️ Failed to setup periodic population integrity monitor:', error?.message || e);
-            }
+            // Periodic integrity monitor removed - all managed by Rust ECS
         } catch (err: unknown) {
             console.error('❌ Failed to load state:', (err as Error).message);
             console.log('🌍 Creating fresh world instead...');
@@ -251,11 +208,6 @@ class GridWorldServer {
     async shutdown(): Promise<void> {
         try {
             console.log('\n🛑 Shutting down server...');
-
-            // DEBUG: Check person hash at shutdown start (use hlen for efficiency)
-            const _storage = await import('./services/storage');
-            const personCount = await _storage.default.hlen('person');
-            console.log(`[DEBUG] At shutdown start: person hash has ${personCount} entries`);
 
             // Stop memory tracker
             try { memoryTracker.stop(); } catch (e: unknown) { /* ignore */ }

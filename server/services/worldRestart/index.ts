@@ -1,25 +1,22 @@
 /**
  * World Restart Service
  *
- * Unified, Redis-first world restart logic with data integrity guarantees.
+ * Unified world restart logic with data integrity guarantees.
  * This is the SINGLE source of truth for all restart operations.
  *
  * Flow:
- * 1. Flush Redis completely (clean slate)
- * 2. Generate new world seed
- * 3. Regenerate tiles from hexasphere
- * 4. Select habitable tiles (with strict validation)
- * 5. Create population on habitable tiles
- * 6. Verify data integrity
- * 7. Broadcast to clients
+ * 1. Generate new world seed
+ * 2. Select habitable tiles (with strict validation)
+ * 3. Create population on habitable tiles via Rust ECS
+ * 4. Verify data integrity
+ * 5. Broadcast to clients
  */
 
-import storage from '../storage';
+// Storage removed - all data in Rust ECS
 import rustSimulation from '../rustSimulation';
 import Hexasphere from '../../../src/core/hexasphere/HexaSphere';
 import {
     calculateTileProperties,
-    isHabitable,
 } from '../terrain';
 
 // ============================================================================
@@ -126,25 +123,21 @@ export async function restartWorld(options: WorldRestartOptions = {}): Promise<W
         // Step 1: Pause calendar if running
         const calendarWasRunning = pauseCalendar(options.context?.calendarService);
 
-        // Step 2: Flush Redis completely
-        console.log('🔄 [WorldRestart] Step 1/5: Flushing Redis...');
-        await flushRedis();
-
-        // Step 3: Reset ID allocators
-        console.log('🔢 [WorldRestart] Step 2/5: Resetting ID allocators...');
+        // Step 2: Reset ID allocators
+        console.log('🔢 [WorldRestart] Step 1/3: Resetting ID allocators...');
         await resetIdAllocators();
 
-        // Step 4: Tiles are deterministic - no generation needed
-        console.log('🗺️ [WorldRestart] Step 3/5: Skipping tile generation (deterministic from seed)...');
+        // Step 3: Tiles are deterministic - no generation needed
+        console.log('🗺️ [WorldRestart] Step 2/3: Skipping tile generation (deterministic from seed)...');
         const tilesGenerated = 0; // Tiles will be generated on-demand by client
 
-        // Step 5: Select habitable tiles, let Rust decide population counts, then create Redis people
-        console.log('👥 [WorldRestart] Step 4/5: Creating population...');
+        // Step 4: Select habitable tiles, let Rust decide population counts
+        console.log('👥 [WorldRestart] Step 3/3: Creating population...');
         const { habitableTiles, selectedTiles, people } = await createPopulation(seed, tileCount);
         console.log(`   🦀 Rust ECS seeded: ${rustSimulation.getPopulation()} people across ${selectedTiles.length} tiles`);
 
-        // Step 6: Verify data integrity
-        console.log('✅ [WorldRestart] Step 5/5: Verifying integrity...');
+        // Step 5: Verify data integrity
+        console.log('✅ [WorldRestart] Verifying integrity...');
         const integrity = await verifyIntegrity();
 
         // Reset calendar if requested
@@ -195,72 +188,7 @@ export async function restartWorld(options: WorldRestartOptions = {}): Promise<W
 }
 
 // ============================================================================
-// STEP 1: FLUSH REDIS
-// ============================================================================
-
-async function flushRedis(): Promise<void> {
-    if (!storage.isAvailable()) {
-        throw new Error('Redis storage not available');
-    }
-
-    // Try flushdb first
-    if (typeof storage.flushdb === 'function') {
-        await storage.flushdb();
-
-        // Verify flush succeeded
-        if (typeof storage.keys === 'function') {
-            const remaining = await storage.keys('*') || [];
-            if (remaining.length > 0) {
-                console.warn(`⚠️ [WorldRestart] ${remaining.length} keys remain after flushdb, clearing manually...`);
-                await clearRemainingKeys(remaining);
-            }
-        }
-    } else {
-        // Fallback: delete all known keys
-        await clearAllKnownKeys();
-    }
-}
-
-async function clearRemainingKeys(keys: string[]): Promise<void> {
-    const batchSize = 100;
-    for (let i = 0; i < keys.length; i += batchSize) {
-        const batch = keys.slice(i, i + batchSize);
-        await storage.del(...batch);
-    }
-}
-
-async function clearAllKnownKeys(): Promise<void> {
-    // Tiles removed - no longer in Redis
-    // People/families removed - now in Rust ECS only
-    // Locks removed - Rust Mutex handles concurrency
-    // Only clear legacy auxiliary keys if any exist
-
-    // Clear pattern-based keys (legacy systems only)
-    const patterns = [
-        'stats:*',         // Legacy statistics
-        'counts:*',        // Legacy counters
-        'id:seq:*',        // Legacy ID sequences (now Rust next_person_id)
-        'next:*'           // Legacy ID allocator
-        // 'lock:*' removed - Rust Mutex handles all locking
-        // 'eligible:*:*' removed - Rust matchmaking handles this
-        // 'fertile:*' removed - Rust Fertility component handles this
-        // 'pending:*' removed - no longer needed with Rust
-    ];
-
-    for (const pattern of patterns) {
-        const stream = storage.scanStream({ match: pattern, count: 1000 });
-        const keys: string[] = [];
-        for await (const resultKeys of stream) {
-            keys.push(...resultKeys);
-        }
-        if (keys.length > 0) {
-            await clearRemainingKeys(keys);
-        }
-    }
-}
-
-// ============================================================================
-// STEP 2: RESET ID ALLOCATORS
+// STEP 1: RESET ID ALLOCATORS
 // ============================================================================
 
 async function resetIdAllocators(): Promise<void> {
@@ -269,78 +197,7 @@ async function resetIdAllocators(): Promise<void> {
 }
 
 // ============================================================================
-// STEP 3: GENERATE TILES
-// ============================================================================
-
-interface TileData {
-    id: number;
-    center_x: number;
-    center_y: number;
-    center_z: number;
-    latitude: number;
-    longitude: number;
-    terrain_type: string;
-    biome: string | null;
-    fertility: number;
-    boundary_points: string;
-    neighbor_ids: string;
-}
-
-export async function generateTilesFromSeed(seed: number): Promise<number> {
-    const radius = parseFloat(process.env.HEXASPHERE_RADIUS || '30');
-    const subdivisions = parseFloat(process.env.HEXASPHERE_SUBDIVISIONS || '3');
-    const tileWidthRatio = parseFloat(process.env.HEXASPHERE_TILE_WIDTH_RATIO || '1');
-
-    // Create hexasphere for geometry only - terrain comes from centralized module
-    const hexasphere = new Hexasphere(radius, subdivisions, tileWidthRatio);
-    const pipeline = storage.pipeline();
-
-    let habitableCount = 0;
-
-    for (const tile of hexasphere.tiles) {
-        const centerPoint = tile.centerPoint;
-        const x = centerPoint?.x || 0;
-        const y = centerPoint?.y || 0;
-        const z = centerPoint?.z || 0;
-
-        // Get tile ID from hexasphere geometry
-        const props = tile.getProperties ? tile.getProperties() : tile;
-        const tileId = props.id;
-
-        // Calculate ALL terrain/biome properties from centralized module
-        const tileProps = calculateTileProperties(x, y, z, seed);
-
-        if (tileProps.isHabitable) habitableCount++;
-
-        const tileData: TileData = {
-            id: tileId,
-            center_x: x,
-            center_y: y,
-            center_z: z,
-            latitude: tileProps.latitude,
-            longitude: tileProps.longitude,
-            terrain_type: tileProps.terrainType,
-            biome: tileProps.biome,
-            fertility: tileProps.fertility,
-            boundary_points: JSON.stringify(tile.boundary?.map((p: { x: number; y: number; z: number }) => ({ x: p.x, y: p.y, z: p.z })) || []),
-            neighbor_ids: JSON.stringify(props.neighborIds || [])
-        };
-
-        pipeline.hset('tile', tileId.toString(), JSON.stringify(tileData));
-
-        if (tileProps.fertility > 0) {
-            pipeline.hset('tile:fertility', tileId.toString(), tileProps.fertility.toString());
-        }
-    }
-
-    await pipeline.exec();
-
-    console.log(`   Generated ${hexasphere.tiles.length} tiles (${habitableCount} habitable)`);
-    return hexasphere.tiles.length;
-}
-
-// ============================================================================
-// STEP 4: CREATE POPULATION
+// STEP 2: CREATE POPULATION
 // ============================================================================
 
 interface PopulationResult {
@@ -495,6 +352,5 @@ function broadcastRestart(io: SocketIO, seed: number): void {
 // ============================================================================
 
 export default {
-    restartWorld,
-    generateTilesFromSeed
+    restartWorld
 };

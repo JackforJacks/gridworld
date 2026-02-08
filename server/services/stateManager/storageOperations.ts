@@ -1,92 +1,79 @@
 /**
  * State Manager - Storage Operations
- * Handles storage CRUD operations for people and tiles
+ * Storage removed - all data in Rust ECS
  */
 
-import storage from '../storage';
+// Storage removed - all data in Rust ECS
 
 /**
  * Get a person from Redis
+ * Storage removed - all data in Rust ECS
  */
 async function getPerson(personId) {
-    const json = await storage.hget('person', personId.toString());
-    return json ? JSON.parse(json) : null;
+    console.warn('getPerson deprecated - use rustSimulation directly');
+    return null;
 }
 
 /**
- * Update a person in Redis (no database write)
+ * Update a person in Redis
+ * Storage removed - all data in Rust ECS
  */
 async function updatePerson(personId, updates) {
-    const person = await getPerson(personId);
-    if (!person) return null;
-
-    const updated = { ...person, ...updates };
-    await storage.hset('person', personId.toString(), JSON.stringify(updated));
-    return updated;
+    console.warn('updatePerson deprecated - use rustSimulation directly');
+    return null;
 }
 
 /**
  * Get all people from Redis
+ * Storage removed - all data in Rust ECS
  */
 async function getAllPeople() {
-    const data = await storage.hgetall('person');
-    return Object.values(data).map(json => JSON.parse(json as string));
+    console.warn('getAllPeople deprecated - use rustSimulation directly');
+    return [];
 }
 
 /**
- * Get population count from Redis (O(1) operation)
+ * Get population count from Redis
+ * Storage removed - all data in Rust ECS
  */
 async function getPopulationCount(): Promise<number> {
-    return await storage.hlen('person');
+    console.warn('getPopulationCount deprecated - use rustSimulation directly');
+    return 0;
 }
 
 /**
  * Get fertility for a tile from Redis
+ * Storage removed - all data in Rust ECS
  */
 async function getTileFertility(tileId) {
-    const val = await storage.hget('tile:fertility', tileId.toString());
-    return parseInt(val) || 0;
+    console.warn('getTileFertility deprecated - use rustSimulation directly');
+    return 0;
 }
 
 /**
  * Add a single person record to Redis
+ * Storage removed - all data in Rust ECS
  */
 async function addPersonToStorage(person) {
-    if (!storage.isAvailable()) return false;
-    try {
-        const id = person.id.toString();
-        await storage.hset('person', id, JSON.stringify(person));
-        return true;
-    } catch (err: unknown) {
-        console.warn('⚠️ Failed to add person to storage:', (err as Error).message);
-        return false;
-    }
+    console.warn('addPersonToStorage deprecated - use rustSimulation directly');
+    return false;
 }
 
 /**
  * Remove a person from Redis
+ * Storage removed - all data in Rust ECS
  */
 async function removePersonFromStorage(personId) {
-    if (!storage.isAvailable()) return false;
-    try {
-        const id = personId.toString();
-        await storage.hdel('person', id);
-        return true;
-    } catch (err: unknown) {
-        console.warn('⚠️ Failed to remove person from storage:', (err as Error).message);
-        return false;
-    }
+    console.warn('removePersonFromStorage deprecated - use rustSimulation directly');
+    return false;
 }
 
 /**
  * Clear all Redis state
+ * Storage removed - all data in Rust ECS
  */
 async function clearStorage() {
-    const keys = await storage.keys('*');
-    if (keys.length > 0) {
-        await storage.del(...keys);
-    }
-    console.log('🗑️ Storage state cleared');
+    console.log('🗑️ Storage removed - all data in Rust ECS');
 }
 
 export {

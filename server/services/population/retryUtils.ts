@@ -1,5 +1,5 @@
 // Retry Utility - Centralized retry logic with exponential backoff
-import storage from '../storage';
+// Storage removed - all data in Rust ECS
 import serverConfig from '../../config/server';
 
 export interface RetryConfig {
@@ -38,108 +38,37 @@ export async function scheduleRetry(
     itemId: string | number,
     config: RetryConfig
 ): Promise<RetryResult> {
-    const id = String(itemId);
-
-    try {
-        // Increment attempt counter
-        const attempts = await storage.hincrby(config.attemptsKey, id, 1);
-
-        if (attempts <= config.maxAttempts) {
-            // Calculate delay with exponential backoff
-            const delay = Math.round(
-                config.baseDelayMs * Math.pow(config.backoffMultiplier, attempts - 1)
-            );
-
-            // Schedule retry
-            await storage.zadd(config.retryQueueKey, Date.now() + delay, id);
-
-            // Track retry stats
-            if (config.retryStatsKey) {
-                try {
-                    await storage.incr(config.retryStatsKey);
-                } catch {
-                    // Ignore stats errors
-                }
-            }
-
-            return {
-                shouldRetry: true,
-                attemptNumber: attempts,
-                nextDelayMs: delay,
-                maxAttemptsReached: false
-            };
-        } else {
-            // Max attempts reached
-            if (config.failureStatsKey) {
-                try {
-                    await storage.incr(config.failureStatsKey);
-                } catch {
-                    // Ignore stats errors
-                }
-            }
-
-            return {
-                shouldRetry: false,
-                attemptNumber: attempts,
-                nextDelayMs: 0,
-                maxAttemptsReached: true
-            };
-        }
-    } catch (error) {
-        // On error, don't retry (fail-safe)
-        console.warn('[scheduleRetry] Failed to schedule retry:', error);
-        return {
-            shouldRetry: false,
-            attemptNumber: 0,
-            nextDelayMs: 0,
-            maxAttemptsReached: false
-        };
-    }
+    // Storage removed - all data in Rust ECS
+    console.warn('[scheduleRetry] Storage removed - retry logic deprecated');
+    return {
+        shouldRetry: false,
+        attemptNumber: 0,
+        nextDelayMs: 0,
+        maxAttemptsReached: false
+    };
 }
 
 /**
  * Clears retry tracking for an item after successful processing
+ * Storage removed - all data in Rust ECS
  */
 export async function clearRetryTracking(
     itemId: string | number,
     config: Pick<RetryConfig, 'attemptsKey' | 'retryQueueKey'>
 ): Promise<void> {
-    const id = String(itemId);
-    try {
-        await storage.hdel(config.attemptsKey, id);
-        await storage.zrem(config.retryQueueKey, id);
-    } catch (error) {
-        console.warn('[clearRetryTracking] Failed to clear tracking:', error);
-    }
+    // Storage removed - all data in Rust ECS
 }
 
 /**
  * Gets items due for retry from a retry queue
- * Removes them from the queue atomically
+ * Storage removed - all data in Rust ECS
  */
 export async function popDueRetries(
     retryQueueKey: string,
     now: number = Date.now()
 ): Promise<number[]> {
-    try {
-        const due = await storage.zrangebyscore(retryQueueKey, 0, now);
-        if (!due || due.length === 0) {
-            return [];
-        }
-
-        // Remove from queue
-        for (const id of due) {
-            try {
-                await storage.zrem(retryQueueKey, id);
-            } catch {
-                // Continue even if one fails
-            }
-        }
-
-        return due.map(id => parseInt(id, 10)).filter(id => !isNaN(id));
-    } catch {
-        return [];
-    }
+    // Storage removed - all data in Rust ECS
+    return [];
 }
 
 /**
