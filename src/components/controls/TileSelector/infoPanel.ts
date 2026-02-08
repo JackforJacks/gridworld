@@ -48,9 +48,9 @@ export function countLandTypes(lands: LandData[] | undefined): { forested: numbe
  */
 export function generateInfoPanelHTML(tile: HexTile): string {
     const terrainType = tile.terrainType || 'unknown';
-    const population = tile.population || 0;
+    // Use Rust population as the authoritative source
+    const population = tile.rustPopulation ?? tile.population ?? 0;
     const populationDisplay = population > 0 ? population.toLocaleString() : 'Uninhabited';
-    const rustPopulation = tile.rustPopulation ?? null;
     const biome = tile.biome || null;
     const fertility = tile.fertility ?? null;
     const landCounts = countLandTypes(tile.lands);
@@ -59,8 +59,7 @@ export function generateInfoPanelHTML(tile: HexTile): string {
         ? `${BIOME_ICONS[biome] || '🌍'} ${biome.charAt(0).toUpperCase() + biome.slice(1)}`
         : 'N/A';
 
-    const fertilityDisplay = fertility !== null ? `${fertility}/100` : 'N/A';
-    const fertilityIcon = getFertilityIcon(fertility);
+    const fertilityDisplay = fertility !== null ? `${fertility}` : 'N/A';
 
     return `
         <div class="tile-info-row">
@@ -82,19 +81,13 @@ export function generateInfoPanelHTML(tile: HexTile): string {
         ${fertility !== null ? `
         <div class="tile-info-row">
             <span class="label">Fertility:</span>
-            <span class="value fertility-${getFertilityClass(fertility)}">${fertilityIcon} ${fertilityDisplay}</span>
+            <span class="value fertility-${getFertilityClass(fertility)}">${fertilityDisplay}</span>
         </div>
         ` : ''}
         <div class="tile-info-row">
             <span class="label">Population:</span>
             <span class="value population-${population > 0 ? 'inhabited' : 'uninhabited'}">${populationDisplay}</span>
         </div>
-        ${rustPopulation !== null ? `
-        <div class="tile-info-row">
-            <span class="label">🦀 Rust Pop:</span>
-            <span class="value population-${rustPopulation > 0 ? 'inhabited' : 'uninhabited'}">${rustPopulation > 0 ? rustPopulation.toLocaleString() : '0'}</span>
-        </div>
-        ` : ''}
     `;
 }
 

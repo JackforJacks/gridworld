@@ -589,12 +589,15 @@ class UIManager {
                 const data = await res.json();
                 if (data.success) {
                     rustDemographics = data as RustDemographicsData;
+                    // Use Rust population as the authoritative source
+                    this.currentTotalPopulation = rustDemographics.population;
+                    stats.totalPopulation = rustDemographics.population;
                 }
             } catch (e) {
-                // Silent fail - Rust stats are optional
+                // Fallback to API stats if Rust is unavailable
+                this.currentTotalPopulation = stats.totalPopulation ?? 0;
             }
 
-            this.currentTotalPopulation = stats.totalPopulation ?? 0;
             const growthStats = populationManager.getGrowthStats();
             this.hideLoadingIndicator();
             this.showStatsModal(stats, growthStats, rustDemographics);
@@ -671,8 +674,8 @@ class UIManager {
 
             return `
                 ${SEP}
-                <h4>🦀 Rust ECS Demographics</h4>
-                ${statRow('ECS Population', d.population.toLocaleString())}
+                <h4>👥 Demographics</h4>
+                ${statRow('Population', d.population.toLocaleString())}
                 ${statRow('Males / Females', `${d.males.toLocaleString()} / ${d.females.toLocaleString()} (ratio: ${sexRatio})`)}
                 ${statRow('Partnered', `${d.partnered.toLocaleString()} (${partnerPct}%)`)}
                 ${statRow('Single', d.single.toLocaleString())}
@@ -801,27 +804,27 @@ class UIManager {
             if (eventType === 'connected') {
                 this.isConnected = eventData as boolean;
             }
-            // Handle real-time Rust ECS population updates
+            // Handle real-time population updates from Rust ECS
             if (eventType === 'rustPopulation') {
                 const rustData = eventData as RustTickData;
                 this.currentTotalPopulation = rustData.population;
-                this.updateRustPopulationDisplay(rustData);
+                this.updatePopulationDisplay(rustData);
             }
         });
         populationManager.connect();
     }
 
-    // Update the Rust ECS population display in real-time
+    // Update the population display in real-time (from Rust ECS)
     // Only touches the DOM when the value actually changes
-    private lastDisplayedRustPop: number = -1;
+    private lastDisplayedPop: number = -1;
 
-    updateRustPopulationDisplay(data: RustTickData): void {
-        if (data.population === this.lastDisplayedRustPop) return;
-        this.lastDisplayedRustPop = data.population;
+    updatePopulationDisplay(data: RustTickData): void {
+        if (data.population === this.lastDisplayedPop) return;
+        this.lastDisplayedPop = data.population;
 
-        const rustPopEl = document.getElementById('rust-pop-value');
-        if (rustPopEl) {
-            rustPopEl.textContent = data.population.toLocaleString();
+        const popEl = document.getElementById('pop-value');
+        if (popEl) {
+            popEl.textContent = data.population.toLocaleString();
         }
         // Also update stats modal if open
         this.updateStatsModalPopulation();
