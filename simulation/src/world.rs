@@ -39,6 +39,7 @@ impl SimulationWorld {
     }
     
     /// Seed population on a specific tile
+    /// Uses realistic age distribution and random names
     pub fn seed_population_on_tile(&mut self, count: usize, tile_id: u16) {
         let mut rng = rand::thread_rng();
 
@@ -46,15 +47,38 @@ impl SimulationWorld {
             let id = PersonId(self.next_person_id);
             self.next_person_id += 1;
 
-            let sex = if rng.gen::<bool>() { Sex::Male } else { Sex::Female };
-            let age_years: u16 = rng.gen_range(0..60);
+            // 51% male, 49% female
+            let sex = if rng.gen::<f64>() < 0.51 { Sex::Male } else { Sex::Female };
+
+            // Age distribution: 0-80, skewed toward young, average ~25
+            // 55% young (0-20), 23% adult (21-40), 17% middle (41-60), 5% elderly (61-80)
+            let rand_val = rng.gen::<f64>();
+            let age_years: u16 = if rand_val < 0.55 {
+                // 55% young (0-20), avg 10
+                rng.gen_range(0..21)
+            } else if rand_val < 0.78 {
+                // 23% adult (21-40), avg 30.5
+                rng.gen_range(21..41)
+            } else if rand_val < 0.95 {
+                // 17% middle-aged (41-60), avg 50.5
+                rng.gen_range(41..61)
+            } else {
+                // 5% elderly (61-80), avg 70.5
+                rng.gen_range(61..81)
+            };
+
             let birth_date = BirthDate::from_age(age_years, &self.calendar);
+
+            // Generate realistic names
+            let is_male = matches!(sex, Sex::Male);
+            let first_name = crate::names::random_first_name(is_male).to_string();
+            let last_name = crate::names::random_last_name().to_string();
 
             self.world.spawn((
                 Person {
                     id,
-                    first_name: format!("Person_{}", id.0),
-                    last_name: String::new(),
+                    first_name,
+                    last_name,
                 },
                 sex,
                 birth_date,

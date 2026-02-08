@@ -13,6 +13,7 @@ pub mod storage;
 pub mod persistence;
 pub mod calendar_runner;
 pub mod napi_bindings;
+pub mod names;
 
 pub use components::*;
 pub use world::SimulationWorld;

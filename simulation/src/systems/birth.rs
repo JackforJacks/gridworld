@@ -64,14 +64,25 @@ pub fn birth_system(world: &mut World, cal: &Calendar, next_person_id: &mut u64)
         // Create child entity
         let child_id = PersonId(*next_person_id);
         *next_person_id += 1;
-        
+
         let sex = if rng.gen::<bool>() { Sex::Male } else { Sex::Female };
-        
+
+        // Generate realistic name for newborn
+        let is_male = matches!(sex, Sex::Male);
+        let first_name = crate::names::random_first_name(is_male).to_string();
+
+        // Try to inherit mother's last name
+        let last_name = if let Ok(mother_person) = world.get::<&Person>(mother_entity) {
+            mother_person.last_name.clone()
+        } else {
+            crate::names::random_last_name().to_string()
+        };
+
         let child = world.spawn((
             Person {
                 id: child_id,
-                first_name: format!("Child_{}", child_id.0),
-                last_name: String::new(),
+                first_name,
+                last_name,
             },
             sex,
             BirthDate::new(cal.year, cal.month, cal.day),
