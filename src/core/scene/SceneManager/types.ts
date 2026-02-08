@@ -20,8 +20,8 @@ export interface HexTile {
     terrainType?: string;
     biome?: string;
     population?: number;
-    boundary: AnyPoint[];
-    centerPoint: AnyPoint & { getLatLon?: () => { lat: number; lon: number } };
+    boundary: BoundaryPoint[];
+    centerPoint: BoundaryPoint & { getLatLon?: () => { lat: number; lon: number } };
     getProperties?: () => Record<string, unknown>;
 }
 

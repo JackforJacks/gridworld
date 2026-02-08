@@ -2,7 +2,7 @@
 // Pre-built overlay system: geometry built once, visibility toggled via per-vertex alpha.
 // Zero runtime geometry allocation. Single draw call for all overlays.
 import * as THREE from 'three';
-import { HexTile, AnyPoint } from './types';
+import { HexTile, BoundaryPoint } from './types';
 import { normalizePoint } from './geometryBuilder';
 
 /** Overlay configuration */
@@ -66,7 +66,7 @@ function vertexKey(x: number, y: number, z: number): string {
  */
 export function createFlashOverlay(tile: HexTile): THREE.Line | null {
     const center = normalizePoint(tile.centerPoint);
-    const boundaryPoints = tile.boundary.map((p: AnyPoint) => {
+    const boundaryPoints = tile.boundary.map((p: BoundaryPoint) => {
         const pt = normalizePoint(p);
         const scale = FLASH_CONFIG.scale;
         const sx = center.x + (pt.x - center.x) * scale;
@@ -104,7 +104,7 @@ export function buildMergedBorderGeometry(tiles: HexTile[]): THREE.BufferGeometr
     const allPoints: number[] = [];
 
     for (const tile of tiles) {
-        const boundary = tile.boundary.map((p: AnyPoint) => normalizePoint(p));
+        const boundary = tile.boundary.map((p: BoundaryPoint) => normalizePoint(p));
         if (boundary.length < 3) continue;
 
         for (let i = 0; i < boundary.length; i++) {
@@ -185,7 +185,7 @@ function buildPrebuiltOverlayGeometry(
     let baseVertex = 0;
 
     for (const tile of habitableTiles) {
-        const boundary = tile.boundary.map((p: AnyPoint) => normalizePoint(p));
+        const boundary = tile.boundary.map((p: BoundaryPoint) => normalizePoint(p));
         if (boundary.length < 3) continue;
 
         const tileId = String(tile.id);

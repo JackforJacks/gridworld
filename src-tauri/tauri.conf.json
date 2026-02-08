@@ -4,6 +4,8 @@
   "version": "0.1.0",
   "identifier": "com.gridworld.app",
   "build": {
+    "beforeBuildCommand": "npm run build",
+    "beforeDevCommand": "npm run dev",
     "devUrl": "http://localhost:8080",
     "frontendDist": "../dist"
   },

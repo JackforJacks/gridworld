@@ -155,7 +155,7 @@ export async function initializeTilePopulations(
 ): Promise<void> {
     try {
         const tileIdStrings = habitableTileIds.map(id => String(id));
-        await populationManager.initializeTilePopulations(tileIdStrings);
+        await populationManager.refreshTilePopulations();
         updateTilePopulations(hexasphere);
         checkPopulationThresholds(hexasphere, tileColorIndices, overlayManager);
     } catch (error: unknown) {
@@ -189,7 +189,7 @@ export async function reinitializePopulation(
 
     try {
         const tileIdStrings = ids.map(id => String(id));
-        await populationManager.initializeTilePopulations(tileIdStrings);
+        await populationManager.refreshTilePopulations();
         updateTilePopulations(hexasphere);
         checkPopulationThresholds(hexasphere, tileColorIndices, overlayManager);
     } catch (error: unknown) {
