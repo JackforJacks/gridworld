@@ -232,18 +232,19 @@ async function clearRemainingKeys(keys: string[]): Promise<void> {
 async function clearAllKnownKeys(): Promise<void> {
     // Tiles removed - no longer in Redis
     // People/families removed - now in Rust ECS only
-    // Only clear auxiliary keys if any exist
+    // Locks removed - Rust Mutex handles concurrency
+    // Only clear legacy auxiliary keys if any exist
 
-    // Clear pattern-based keys
+    // Clear pattern-based keys (legacy systems only)
     const patterns = [
-        'eligible:*:*',
-        'pending:*',
-        'fertile:*',
-        'lock:*',
-        'stats:*',
-        'counts:*',
-        'id:seq:*',
-        'next:*'
+        'stats:*',         // Legacy statistics
+        'counts:*',        // Legacy counters
+        'id:seq:*',        // Legacy ID sequences (now Rust next_person_id)
+        'next:*'           // Legacy ID allocator
+        // 'lock:*' removed - Rust Mutex handles all locking
+        // 'eligible:*:*' removed - Rust matchmaking handles this
+        // 'fertile:*' removed - Rust Fertility component handles this
+        // 'pending:*' removed - no longer needed with Rust
     ];
 
     for (const pattern of patterns) {

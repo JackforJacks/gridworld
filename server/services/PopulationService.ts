@@ -18,7 +18,7 @@ import CalendarService from './calendarService';
  */
 
 // Core modules
-import { applySenescence, processDailyFamilyEvents } from './population/lifecycle';
+import { applySenescence } from './population/lifecycle';
 import {
     stopRateTracking,
     startRateTracking,
@@ -63,11 +63,12 @@ import {
     setupRealtimeListeners
 } from './population/communication';
 
-// Additional modules for integrity, family management
+// Additional modules for integrity
 import { verifyAndRepairIntegrity } from './population/integrity';
-import { createRandomFamilies } from './population/family';
-import { formNewFamilies } from './population/familyManager';
 import { stopIntegrityAudit } from './population/initializer';
+
+// Rust simulation for family management
+import rustSimulation from './rustSimulation';
 
 // Population state (Redis-backed)
 import PopulationState from './populationState';
@@ -306,65 +307,16 @@ class PopulationService {
     }
 
     async createFamiliesForExistingPopulation() {
-        try {
+        // This method is deprecated - Rust simulation handles family creation automatically
+        console.warn('⚠️ createFamiliesForExistingPopulation is deprecated - Rust simulation handles family creation');
 
-            // Use PopulationState (Redis) to get tiles with population
-            const tilePopulationsMap = await PopulationState.getAllTilePopulations();
-            const tileIds = Object.keys(tilePopulationsMap).map(Number).filter(id => tilePopulationsMap[id] > 0);
-
-            // Batch fetch: Get all families once upfront
-            const allFamiliesBefore = await PopulationState.getAllFamilies();
-            const beforeCountByTile = new Map<number, number>();
-            for (const family of allFamiliesBefore) {
-                const tileId = (family as any).tile_id;
-                beforeCountByTile.set(tileId, (beforeCountByTile.get(tileId) || 0) + 1);
-            }
-
-            // Process all tiles in parallel for family creation
-            await Promise.all(
-                tileIds.map(tileId => createRandomFamilies(null, tileId, this.calendarService))
-            );
-
-            // Batch fetch: Get all families once after to compute delta
-            const allFamiliesAfter = await PopulationState.getAllFamilies();
-            const afterCountByTile = new Map<number, number>();
-            for (const family of allFamiliesAfter) {
-                const tileId = (family as any).tile_id;
-                afterCountByTile.set(tileId, (afterCountByTile.get(tileId) || 0) + 1);
-            }
-
-            // Calculate totals and emit events
-            let totalFamiliesCreated = 0;
-            for (const tileId of tileIds) {
-                const beforeCount = beforeCountByTile.get(tileId) || 0;
-                const afterCount = afterCountByTile.get(tileId) || 0;
-                const newFamilies = afterCount - beforeCount;
-                totalFamiliesCreated += newFamilies;
-
-                if (newFamilies > 0) {
-                    if (config.verboseLogs) console.log(`🏠 Created ${newFamilies} new families on tile ${tileId}`);
-                    // Emit family created events
-                    for (let i = 0; i < newFamilies; i++) {
-                        this.events.emitFamilyCreated({ tileId });
-                    }
-                }
-            }
-
-            if (totalFamiliesCreated > 0) {
-                await this.broadcastUpdate('familiesCreated');
-            }
-
-            const populations = await this.loadData();
-            return {
-                success: true,
-                familiesCreated: totalFamiliesCreated,
-                message: `Created ${totalFamiliesCreated} new families across ${tileIds.length} tiles`,
-                data: this.getFormattedPopulationData(populations)
-            };
-        } catch (error: unknown) {
-            console.error('Error creating families for existing population:', error);
-            throw error;
-        }
+        const populations = await this.loadData();
+        return {
+            success: true,
+            familiesCreated: 0,
+            message: 'Family creation is now handled by Rust simulation',
+            data: this.getFormattedPopulationData(populations)
+        };
     }
 
     // Statistics and reporting: delegate directly to PopStats
@@ -487,26 +439,30 @@ class PopulationService {
     }
 
     /**
-     * Tick method for population updates - processes births, deaths (senescence), and family formation
+     * Tick method for population updates - now fully handled by Rust simulation
      * @param daysAdvanced - Number of days that passed in this tick (default 1)
      */
     async tick(daysAdvanced = 1) {
-        // Quiet: population tick started (log suppressed)
-
         try {
-            // 1. Apply senescence (aging deaths) - probability adjusted for days passed
-            await applySenescence(null, this.calendarService, this, daysAdvanced);
+            // Execute tick in Rust simulation (handles births, deaths, marriages, pregnancies, dissolutions)
+            const result = daysAdvanced === 1
+                ? rustSimulation.tick()
+                : rustSimulation.tickMany(daysAdvanced);
 
-            // 2. Form new families from bachelors (run once per tick, families form over time)
-            const newFamilies = await formNewFamilies(null, this.calendarService);
-            if (newFamilies > 0) {
-                // Quiet: formed new families on tick (log suppressed)
+            // Track births and deaths for statistics
+            if (result.births > 0) {
+                this.trackBirths(result.births);
+            }
+            if (result.deaths > 0) {
+                this.trackDeaths(result.deaths);
             }
 
-            // 3. Process births and new pregnancies (adjusted for days passed)
-            await processDailyFamilyEvents(null, this.calendarService, this, daysAdvanced);
+            // Log significant events
+            if (config.verboseLogs && (result.births > 0 || result.deaths > 0 || result.marriages > 0)) {
+                console.log(`🦀 Rust tick: ${result.births} births, ${result.deaths} deaths, ${result.marriages} marriages, pop=${result.population}`);
+            }
 
-            // 4. Broadcast updated population data
+            // Broadcast updated population data
             await this.broadcastUpdate('populationUpdate');
         } catch (error: unknown) {
             console.error('Error during tick:', error);

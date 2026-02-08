@@ -1,5 +1,4 @@
 // Population Operations - Population Updater Module
-import { Procreation } from '../family';
 import { addPeopleToTile } from '../manager';
 import {
     CalendarService,
@@ -25,7 +24,9 @@ export async function updateTilePopulation(
     tileId: string | number,
     population: number
 ): Promise<void> {
-    await Procreation(undefined, calendarService, serviceInstance, Number(tileId), population);
+    // Procreation removed - Rust simulation handles population updates
+    console.warn('⚠️ updateTilePopulation is deprecated - Rust simulation handles population updates');
+    // This function is now a no-op
 }
 
 /**

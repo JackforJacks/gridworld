@@ -18,7 +18,8 @@
       "Bash(npx napi build:*)",
       "Bash(copy:*)",
       "Bash(find:*)",
-      "Bash(xxd:*)"
+      "Bash(xxd:*)",
+      "Bash(test:*)"
     ]
   }
 }

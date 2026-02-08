@@ -45,12 +45,6 @@ interface ResidencyUpdate {
     newResidency: number;
 }
 
-/** Family events result */
-interface FamilyEventsResult {
-    deliveries: number;
-    newPregnancies: number;
-}
-
 /** PopulationState module interface */
 interface PopulationStateModule {
     isRestarting: boolean;
@@ -71,12 +65,6 @@ interface PopulationStateModule {
 /** Calculator module interface */
 interface CalculatorModule {
     calculateAge(birthDate: string, currentYear: number, currentMonth: number, currentDay: number): number;
-}
-
-/** FamilyManager module interface */
-interface FamilyManagerModule {
-    processDeliveries(_pool: unknown, calendarService?: CalendarService, serviceInstance?: PopulationServiceInstance, daysAdvanced?: number): Promise<number>;
-    startPregnancy(_pool: unknown, calendarService?: CalendarService, familyId?: number): Promise<boolean>;
 }
 
 /**
@@ -338,142 +326,7 @@ async function applySenescence(
     }
 }
 
-/**
- * Processes family events (pregnancies, births) for the tick
- * @param pool - Database pool instance
- * @param calendarService - Calendar service instance
- * @param serviceInstance - Population service instance
- * @param daysAdvanced - Number of days that passed in this tick (default 1)
- * @returns Family events summary
- */
-async function processDailyFamilyEvents(
-    _pool: unknown,
-    calendarService: CalendarService | null,
-    serviceInstance: PopulationServiceInstance | null,
-    daysAdvanced: number = 1
-): Promise<FamilyEventsResult> {
-    try {
-        const familyManager = deps.getFamilyManager() as FamilyManagerModule | null;
-        const PopulationState = deps.getPopulationState() as unknown as PopulationStateModule | null;
-        const calculator = deps.getCalculator() as CalculatorModule | null;
-
-        if (!familyManager || !PopulationState || !calculator) {
-            return { deliveries: 0, newPregnancies: 0 };
-        }
-
-        // Skip if restart is in progress
-        if (PopulationState.isRestarting) {
-            return { deliveries: 0, newPregnancies: 0 };
-        }
-
-        // Process deliveries for families ready to give birth (pass daysAdvanced for delivery timing)
-        const deliveries = await familyManager.processDeliveries(undefined, calendarService as CalendarService, serviceInstance as PopulationServiceInstance, daysAdvanced);
-
-        // Get current calendar date for age calculations
-        let currentDate: CalendarDate = { year: 1, month: 1, day: 1 };
-        if (calendarService && typeof calendarService.getCurrentDate === 'function') {
-            currentDate = calendarService.getCurrentDate();
-        }
-
-        // Use storage-based fertile family set for faster pregnancy processing
-        const candidateCount = parseInt(await storage.scard('eligible:pregnancy:families'), 10) || 0;
-        const sampleCount = Math.min(candidateCount, 60); // sample up to 60 and process up to 30
-        const sampled: string[] = sampleCount > 0 ? (await storage.smembers('eligible:pregnancy:families')).sort(() => 0.5 - Math.random()).slice(0, sampleCount) : [];
-
-        let newPregnancies = 0;
-        for (const fid of sampled) {
-            const familyId = parseInt(fid, 10);
-            try {
-                const family = await PopulationState.getFamily(familyId);
-                if (!family) continue;
-                // Ensure family is still eligible
-                if (family.pregnancy) continue;
-
-                const wife = family.wife_id !== null ? await PopulationState.getPerson(family.wife_id) : null;
-                if (!wife || !wife.date_of_birth) continue;
-                const wifeAge = calculator.calculateAge(wife.date_of_birth, currentDate.year, currentDate.month, currentDate.day);
-                if (wifeAge > 33) {
-                    // Remove from fertile set if aged out
-                    try { await PopulationState.removeFertileFamily(familyId); } catch (e: unknown) { console.warn('[lifecycle] Failed to remove aged-out family from fertile set:', familyId, (e as Error)?.message ?? e); }
-                    continue;
-                }
-
-                // 25% daily chance of pregnancy, adjusted for multiple days
-                // Probability of pregnancy in N days: 1 - (1 - 0.25)^N
-                const dailyPregnancyChance = 0.25;
-                const multiDayPregnancyChance = 1 - Math.pow(1 - dailyPregnancyChance, daysAdvanced);
-                if (Math.random() < multiDayPregnancyChance) {
-                    try {
-                        const started = await familyManager.startPregnancy(undefined, calendarService as CalendarService, familyId);
-                        if (started) newPregnancies++;
-                    } catch (error: unknown) {
-                        // Silently ignore expected errors (wife too old, lock contention)
-                        // The family will be removed from the set or retried automatically
-                    }
-                }
-            } catch (err: unknown) {
-                // Silently ignore processing errors - they'll be retried next tick
-            }
-        }
-
-        // Release children who reach adulthood (age >= 16) from their family - use HSCAN streaming
-        let releasedAdults = 0;
-        const personStream = storage.hscanStream('person', { count: 500 });
-
-        for await (const result of personStream) {
-            const entries = result as string[];
-            for (let i = 0; i < entries.length; i += 2) {
-                const json = entries[i + 1];
-                if (!json) continue;
-
-                let person: PersonData | null = null;
-                try { person = JSON.parse(json) as PersonData; } catch { continue; }
-                if (!person || !person.family_id || !person.date_of_birth) continue;
-
-                const age = calculator.calculateAge(person.date_of_birth, currentDate.year, currentDate.month, currentDate.day);
-                if (age >= 16) {
-                    // Check if this person is a child (not the husband or wife) - use Redis
-                    const family = await PopulationState.getFamily(person.family_id);
-                    if (family) {
-                        if (person.id !== family.husband_id && person.id !== family.wife_id) {
-                            await PopulationState.updatePerson(person.id, { family_id: null });
-                            // Also remove from children_ids
-                            const newChildrenIds = (family.children_ids || []).filter(cid => cid !== person.id);
-                            await PopulationState.updateFamily(family.id, { children_ids: newChildrenIds });
-
-                            // Add newly released adult to eligible matchmaking sets
-                            try {
-                                // Use shared helper that handles all formats
-                                const isMale = checkIsMale(person.sex);
-                                const maxAge = isMale ? 45 : 33;
-                                if (person.tile_id !== null && age >= 16 && age <= maxAge) {
-                                    await PopulationState.addEligiblePerson(person.id, isMale, person.tile_id);
-                                }
-                            } catch (e: unknown) {
-                                const eMessage = e instanceof Error ? e.message : String(e);
-                                console.warn('[lifecycle] addEligiblePerson failed for released adult:', eMessage);
-                            }
-
-                            releasedAdults++;
-                        }
-                    }
-                }
-            }
-        }
-
-        if (deliveries > 0 || newPregnancies > 0) {
-            // Quiet: daily family events occurred (log suppressed)
-        }
-
-        return {
-            deliveries,
-            newPregnancies
-        };
-    } catch (error: unknown) {
-        console.error('Error processing daily family events:', error);
-        return { deliveries: 0, newPregnancies: 0 };
-    }
-}
+// processDailyFamilyEvents removed - now handled by Rust simulation
 
 export {
     startGrowth,
@@ -481,8 +334,7 @@ export {
     updatePopulations,
     calculateGrowthForTile,
     updateGrowthRate,
-    applySenescence,
-    processDailyFamilyEvents
+    applySenescence
 };
 
 export type { PopulationData };

@@ -37,22 +37,11 @@ interface PopulationStateModule {
 }
 
 // Cache for lazy-loaded modules
-let _familyManager: unknown = null;
 let _lifecycle: unknown = null;
 let _populationState: PopulationStateModule | null = null;
 let _stateManager: unknown = null;
 let _calculator: CalculatorModule | null = null;
 let _lock: LockModule | null = null;
-
-/**
- * Get familyManager module (lazy loaded)
- */
-function getFamilyManager(): unknown {
-    if (!_familyManager) {
-        _familyManager = require('./familyManager');
-    }
-    return _familyManager;
-}
 
 /**
  * Get lifecycle module (lazy loaded)
@@ -108,7 +97,6 @@ function getLock(): LockModule {
  * Reset all cached modules (useful for testing)
  */
 function reset(): void {
-    _familyManager = null;
     _lifecycle = null;
     _populationState = null;
     _stateManager = null;
@@ -117,7 +105,6 @@ function reset(): void {
 }
 
 export {
-    getFamilyManager,
     getLifecycle,
     getPopulationState,
     getStateManager,
