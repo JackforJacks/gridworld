@@ -1,0 +1,9 @@
+{
+  "$schema": "https://raw.githubusercontent.com/nicegui-org/nicegui/main/nicegui/native/.tauri/src-tauri/gen/schemas/desktop-schema.json",
+  "identifier": "default",
+  "description": "Default capability for GridWorld",
+  "windows": ["*"],
+  "permissions": [
+    "core:default"
+  ]
+}

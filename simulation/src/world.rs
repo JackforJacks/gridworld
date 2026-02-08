@@ -7,6 +7,7 @@ use crate::components::*;
 use crate::systems;
 
 /// Result of a single simulation tick
+#[derive(serde::Serialize, Clone)]
 pub struct TickResult {
     pub births: u32,
     pub deaths: u32,
@@ -227,6 +228,7 @@ impl SimulationWorld {
 }
 
 /// Full demographics snapshot
+#[derive(serde::Serialize, Clone)]
 pub struct Demographics {
     pub population: u32,
     pub males: u32,
@@ -240,6 +242,7 @@ pub struct Demographics {
 }
 
 /// Vital statistics (Phase 3) - calculated from event log
+#[derive(serde::Serialize, Clone)]
 pub struct VitalStatistics {
     /// Births per 1000 population per year
     pub birth_rate: f64,

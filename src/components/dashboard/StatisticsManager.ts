@@ -1,4 +1,7 @@
 // Population Statistics UI Component
+import { getApiClient } from '../../services/api/ApiClient';
+import type { VitalStatistics } from '../../services/api/ApiClient';
+import populationManager from '../../managers/population/PopulationManager';
 
 // Declare Chart.js global type
 declare const Chart: ChartConstructor;
@@ -42,32 +45,6 @@ interface ChartOptions {
         y?: { beginAtZero?: boolean; title?: { display: boolean; text: string } };
         x?: { title?: { display: boolean; text: string } };
     };
-}
-
-// Statistics data interfaces
-interface StatisticsSummary {
-    currentPopulation: number;
-    currentYear: number | string;
-    currentYearBirths: number;
-    currentYearDeaths: number;
-    totalYears: number;
-    avgBirthRate: number;
-    avgDeathRate: number;
-}
-
-interface TodayStats {
-    births: number;
-    deaths: number;
-    familiesFormed: number;
-    pregnanciesStarted: number;
-}
-
-interface DashboardResponse {
-    success: boolean;
-    error?: string;
-    summary: StatisticsSummary;
-    today: TodayStats;
-    chart: ChartData;
 }
 
 class StatisticsManager {
@@ -173,7 +150,6 @@ class StatisticsManager {
             const script = document.createElement('script');
             script.src = 'https://cdn.jsdelivr.net/npm/chart.js';
             script.onload = () => {
-                // [log removed]
                 if (this.isVisible) {
                     this.updateDashboard();
                 }
@@ -214,29 +190,44 @@ class StatisticsManager {
         }
     }
 
-    // Combined dashboard update - fetches all stats in a single API call
+    // Combined dashboard update - fetches stats via Tauri invoke
     public async updateDashboard(): Promise<void> {
         try {
             const yearsSelect = document.getElementById('years-select') as HTMLSelectElement | null;
-            const selectedYears = yearsSelect?.value || '100';
-            const response = await fetch(`/api/statistics/dashboard?years=${selectedYears}`);
-            const result: DashboardResponse = await response.json();
+            const selectedYears = parseInt(yearsSelect?.value || '100', 10);
 
-            if (!result.success) {
-                throw new Error(result.error);
-            }
+            const api = getApiClient();
 
-            // Update summary section
-            this.renderSummary(result.summary, result.today);
+            // Fetch summary data in parallel
+            const [calendarState, currentYearStats, recentStats] = await Promise.all([
+                api.getCalendarState(),
+                api.getCurrentYearStatistics(),
+                api.getRecentStatistics(selectedYears),
+            ]);
 
-            // Update chart section
+            const currentYear = calendarState.date.year;
+            const tickData = populationManager.getRustTickData();
+
+            // Render summary
+            this.renderSummary(
+                recentStats.population,
+                currentYear,
+                currentYearStats.total_births,
+                currentYearStats.total_deaths,
+                recentStats.years_covered,
+                recentStats.birth_rate,
+                recentStats.death_rate,
+                tickData
+            );
+
+            // Build per-year chart data
             if (typeof Chart !== 'undefined') {
-                this.renderChart(result.chart, selectedYears);
+                await this.buildAndRenderChart(currentYear, selectedYears);
             }
         } catch (error: unknown) {
             console.error('Error updating dashboard:', error);
             const summaryDiv = document.getElementById('stats-summary');
-            const errorMessage = error instanceof Error ? (error as Error).message : 'Unknown error';
+            const errorMessage = error instanceof Error ? error.message : 'Unknown error';
             if (summaryDiv) {
                 summaryDiv.innerHTML = `
                     <p style="color: #f44336;">Error loading statistics: ${errorMessage}</p>
@@ -245,7 +236,16 @@ class StatisticsManager {
         }
     }
 
-    private renderSummary(summary: StatisticsSummary, today: TodayStats): void {
+    private renderSummary(
+        population: number,
+        currentYear: number,
+        currentYearBirths: number,
+        currentYearDeaths: number,
+        totalYears: number,
+        avgBirthRate: number,
+        avgDeathRate: number,
+        tickData: { births: number; deaths: number; marriages: number; pregnancies: number }
+    ): void {
         const summaryDiv = document.getElementById('stats-summary');
         if (!summaryDiv) return;
 
@@ -253,47 +253,102 @@ class StatisticsManager {
             <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-bottom: 10px;">
                 <div style="background: rgba(255,255,255,0.1); padding: 8px; border-radius: 4px;">
                     <div style="font-weight: bold; color: #4CAF50;">Current Population</div>
-                    <div style="font-size: 18px;">${(summary.currentPopulation || 0).toLocaleString()}</div>
+                    <div style="font-size: 18px;">${(population || 0).toLocaleString()}</div>
                 </div>
                 <div style="background: rgba(255,255,255,0.1); padding: 8px; border-radius: 4px;">
                     <div style="font-weight: bold; color: #2196F3;">Current Year</div>
-                    <div style="font-size: 18px;">${summary.currentYear || 'N/A'}</div>
+                    <div style="font-size: 18px;">${currentYear || 'N/A'}</div>
                 </div>
             </div>
-            
+
             <div style="margin: 10px 0;">
-                <div style="font-weight: bold; margin-bottom: 5px;">This Year (${summary.currentYear}):</div>
+                <div style="font-weight: bold; margin-bottom: 5px;">This Year (${currentYear}):</div>
                 <div style="margin-left: 10px;">
-                    • Births: ${summary.currentYearBirths || 0}</div>
+                    • Births: ${currentYearBirths || 0}</div>
                 <div style="margin-left: 10px;">
-                    • Deaths: ${summary.currentYearDeaths || 0}</div>
+                    • Deaths: ${currentYearDeaths || 0}</div>
             </div>
-            
+
             <div style="margin: 10px 0;">
-                <div style="font-weight: bold; margin-bottom: 5px;">Today:</div>
+                <div style="font-weight: bold; margin-bottom: 5px;">Last Tick:</div>
                 <div style="margin-left: 10px;">
-                    • Births: ${today?.births || 0}</div>
+                    • Births: ${tickData?.births || 0}</div>
                 <div style="margin-left: 10px;">
-                    • Deaths: ${today?.deaths || 0}</div>
+                    • Deaths: ${tickData?.deaths || 0}</div>
                 <div style="margin-left: 10px;">
-                    • Families Formed: ${today?.familiesFormed || 0}</div>
+                    • Marriages: ${tickData?.marriages || 0}</div>
                 <div style="margin-left: 10px;">
-                    • Pregnancies Started: ${today?.pregnanciesStarted || 0}</div>
+                    • Pregnancies: ${tickData?.pregnancies || 0}</div>
             </div>
-            
-            ${summary.totalYears > 0 ? `
+
+            ${totalYears > 0 ? `
             <div style="margin: 10px 0;">
-                <div style="font-weight: bold; margin-bottom: 5px;">Historical Average (${summary.totalYears} years):</div>
+                <div style="font-weight: bold; margin-bottom: 5px;">Historical Average (${totalYears} years):</div>
                 <div style="margin-left: 10px;">
-                    • Birth Rate: ${summary.avgBirthRate}/1000</div>
+                    • Birth Rate: ${avgBirthRate.toFixed(1)}/1000</div>
                 <div style="margin-left: 10px;">
-                    • Death Rate: ${summary.avgDeathRate}/1000</div>
+                    • Death Rate: ${avgDeathRate.toFixed(1)}/1000</div>
             </div>
             ` : '<div style="color: #999; font-style: italic;">No historical data yet (need at least 1 completed year)</div>'}
         `;
     }
 
-    private renderChart(chartData: ChartData, selectedYears: string | number): void {
+    /**
+     * Build per-year chart data by calling getVitalStatistics for each year
+     */
+    private async buildAndRenderChart(currentYear: number, years: number): Promise<void> {
+        const startYear = currentYear - years;
+        const api = getApiClient();
+
+        // Batch all per-year requests in parallel (Tauri IPC is fast, no network overhead)
+        const yearRange: number[] = [];
+        for (let y = startYear + 1; y <= currentYear; y++) {
+            yearRange.push(y);
+        }
+
+        const yearResults = await Promise.all(
+            yearRange.map(y => api.getVitalStatistics(y, y))
+        );
+
+        const chartLabels: number[] = [];
+        const birthRates: number[] = [];
+        const deathRates: number[] = [];
+
+        for (let i = 0; i < yearRange.length; i++) {
+            const stats = yearResults[i];
+            if (stats.years_covered > 0) {
+                chartLabels.push(yearRange[i]);
+                birthRates.push(stats.birth_rate);
+                deathRates.push(stats.death_rate);
+            }
+        }
+
+        const chartData: ChartData = {
+            labels: chartLabels,
+            datasets: [
+                {
+                    label: 'Birth Rate',
+                    data: birthRates,
+                    borderColor: '#4CAF50',
+                    backgroundColor: 'rgba(76, 175, 80, 0.1)',
+                    tension: 0.3,
+                    pointRadius: 1,
+                },
+                {
+                    label: 'Death Rate',
+                    data: deathRates,
+                    borderColor: '#f44336',
+                    backgroundColor: 'rgba(244, 67, 54, 0.1)',
+                    tension: 0.3,
+                    pointRadius: 1,
+                },
+            ],
+        };
+
+        this.renderChart(chartData);
+    }
+
+    private renderChart(chartData: ChartData): void {
         const chartContainer = document.getElementById('chart-container');
         if (!chartData || !chartData.labels || chartData.labels.length === 0) {
             if (chartContainer) {
@@ -301,6 +356,11 @@ class StatisticsManager {
                     '<p style="color: #666; text-align: center; padding: 20px;">No data available yet. Let the simulation run for at least one year.</p>';
             }
             return;
+        }
+
+        // Ensure canvas exists
+        if (chartContainer && !document.getElementById('vitalRatesChart')) {
+            chartContainer.innerHTML = '<canvas id="vitalRatesChart" width="360" height="200"></canvas>';
         }
 
         const canvas = document.getElementById('vitalRatesChart') as HTMLCanvasElement | null;
@@ -312,7 +372,6 @@ class StatisticsManager {
             this.chart.destroy();
         }
 
-        // Chart.js expects datasets directly from the server response
         this.chart = new Chart(ctx, {
             type: 'line',
             data: chartData,

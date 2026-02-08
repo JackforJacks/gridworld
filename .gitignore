@@ -9,8 +9,17 @@ build/
 saves/
 
 # Rust/Cargo
+target/
 simulation/target/
+src-tauri/target/
 *.node
+
+# Tauri
+src-tauri/gen/
+src-tauri/WixTools/
+src-tauri/icons/
+*.exe
+*.msi
 
 # Development
 .env

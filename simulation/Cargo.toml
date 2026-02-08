@@ -7,13 +7,8 @@ description = "High-performance population simulation engine for GridWorld"
 [lib]
 name = "simulation"
 path = "src/lib.rs"
-crate-type = ["cdylib"]
 
 [dependencies]
-# N-API for Node.js bindings
-napi = { version = "2", features = ["napi4"] }
-napi-derive = "2"
-
 # ECS
 hecs = "0.10"
 
@@ -45,14 +40,3 @@ anyhow = "1.0"
 
 # Lazy static initialization
 once_cell = "1.19"
-
-[build-dependencies]
-napi-build = "2"
-
-[profile.release]
-opt-level = 3
-lto = "thin"
-codegen-units = 1
-
-[profile.dev]
-opt-level = 1  # Slightly optimize even in dev for simulation performance

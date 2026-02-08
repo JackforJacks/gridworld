@@ -28,7 +28,14 @@
       "Bash(lsof:*)",
       "Read(//c/Users/giaco/OneDrive/Documenti/github/GridWorld/**)",
       "Bash(npm uninstall:*)",
-      "Bash(del:*)"
+      "Bash(del:*)",
+      "Bash(npm install:*)",
+      "Bash(cargo check:*)",
+      "Bash(npx tauri icon --help:*)",
+      "Bash(python:*)",
+      "Bash(npx tauri icon:*)",
+      "Bash(findstr:*)",
+      "Bash(cargo clean:*)"
     ]
   }
 }

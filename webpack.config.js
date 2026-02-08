@@ -150,46 +150,6 @@ module.exports = (env, argv) => {
         progress: true,
         webSocketURL: 'ws://localhost:8080/ws'
       },
-      proxy: [
-        {
-          context: ['/api'],
-          target: 'http://localhost:3000',
-          changeOrigin: true,
-          timeout: 300000,      // 5 minutes for long save operations
-          proxyTimeout: 300000, // 5 minutes for long save operations
-          onError: (err, req, res) => {
-            // Silently handle connection resets - common with long-polling
-            if (err.code !== 'ECONNRESET') {
-              console.log('API proxy error:', err.message);
-            }
-          },
-        },
-        {
-          context: ['/socket.io'],
-          target: 'http://localhost:3000',
-          ws: true,
-          changeOrigin: true,
-          timeout: 30000,
-          proxyTimeout: 30000,
-          onError: (err, req, res) => {
-            // Silently handle connection resets - common with Socket.IO polling
-            if (err.code !== 'ECONNRESET' && err.code !== 'ECONNREFUSED') {
-              console.log('WebSocket proxy error:', err.message);
-            }
-          },
-          onProxyReqWs: (proxyReq, req, socket) => {
-            socket.on('error', (err) => {
-              // Silently handle socket errors - normal during reconnects
-              if (err.code !== 'ECONNRESET') {
-                console.log('WebSocket socket error:', err.message);
-              }
-            });
-          },
-          headers: {
-            'Connection': 'keep-alive',
-          },
-        },
-      ],
     },
 
     resolve: {
@@ -220,13 +180,6 @@ module.exports = (env, argv) => {
             name: 'three',
             chunks: 'all',
             priority: 30,
-            reuseExistingChunk: true
-          },
-          socketio: {
-            test: /[\\/]node_modules[\\/]socket\.io/,
-            name: 'socketio',
-            chunks: 'all',
-            priority: 25,
             reuseExistingChunk: true
           },
           vendor: {

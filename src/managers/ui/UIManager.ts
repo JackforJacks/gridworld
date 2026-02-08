@@ -4,6 +4,7 @@
 import populationManager, { RustTickData } from '../population/PopulationManager';
 import { getAppContext } from '../../core/AppContext';
 import { getApiClient } from '../../services/api/ApiClient';
+import type { Demographics, VitalStatistics } from '../../services/api/ApiClient';
 
 // Interface for SceneManager to avoid circular dependencies
 interface SceneManagerLike {
@@ -18,56 +19,9 @@ interface CameraControllerLike {
     lookAtPoint(point: { x: number; y: number; z: number }): void;
 }
 
-// Interface for growth stats from PopulationManager
-interface GrowthStats {
-    currentRate: number;
-    interval: number;
-    totalTiles: number;
-    averagePopulationPerTile: number;
-    lastUpdated: string;
-}
-
-// Interface for population stats API response
-interface PopulationApiStats {
-    male?: number;
-    female?: number;
-    minors?: number;
-    working_age?: number;
-    elderly?: number;
-    bachelors?: number;
-    birthRate?: number;
-    deathRate?: number;
-    birthCount?: number;
-    deathCount?: number;
-    totalBirthCount?: number;
-    totalDeathCount?: number;
-    totalFamilies?: number;
-    pregnantFamilies?: number;
-    familiesWithChildren?: number;
-    avgChildrenPerFamily?: number;
-    totalPopulation?: number;
-    totalTiles?: number;
-}
-
-// Interface for stats data
+// Interface for stats data (from SceneManager.getPopulationStats)
 interface StatsData {
     totalPopulation?: number;
-    male?: number;
-    female?: number;
-    minors?: number;
-    working_age?: number;
-    elderly?: number;
-    bachelors?: number;
-    birthRate?: number;
-    deathRate?: number;
-    birthCount?: number;
-    deathCount?: number;
-    totalBirthCount?: number;
-    totalDeathCount?: number;
-    totalFamilies?: number;
-    pregnantFamilies?: number;
-    familiesWithChildren?: number;
-    avgChildrenPerFamily?: number;
     totalTiles?: number;
     habitableTiles?: number;
     populatedTiles?: number;
@@ -86,25 +40,6 @@ interface StatsData {
 // Chart.js instance interface
 interface ChartInstance {
     destroy(): void;
-}
-
-// Rust ECS demographics response
-interface RustDemographicsData {
-    success: boolean;
-    population: number;
-    males: number;
-    females: number;
-    partnered: number;
-    single: number;
-    pregnant: number;
-    averageAge: number;
-    age0_4: number;
-    age5_14: number;
-    age15_29: number;
-    age30_49: number;
-    age50_69: number;
-    age70_89: number;
-    age90Plus: number;
 }
 
 // Extended window interface for local use
@@ -131,36 +66,10 @@ function fmtPct(value: number | undefined, fallback = '0.00'): string {
     return value !== undefined ? value.toFixed(2) : fallback;
 }
 
-/** Format a decimal for display */
-function fmtDec(value: number | undefined, decimals = 1, fallback = '0.0'): string {
-    return value !== undefined ? value.toFixed(decimals) : fallback;
-}
-
 /** Create a stat row HTML */
 function statRow(label: string, value: string, id?: string): string {
     const idAttr = id ? ` id="${id}"` : '';
     return `<p><strong>${label}:</strong> <span${idAttr}>${value}</span></p>`;
-}
-
-/** Merge API stats into stats object */
-function mergeApiStats(stats: StatsData, popData: PopulationApiStats): void {
-    const keys: (keyof PopulationApiStats)[] = [
-        'male', 'female', 'minors', 'working_age', 'elderly', 'bachelors',
-        'birthRate', 'deathRate', 'birthCount', 'deathCount',
-        'totalBirthCount', 'totalDeathCount',
-        'totalFamilies', 'pregnantFamilies', 'familiesWithChildren',
-        'avgChildrenPerFamily', 'totalPopulation',
-        'totalTiles'  // Use server's tile count (more accurate after world restart)
-    ];
-    for (const key of keys) {
-        if (popData[key] !== undefined) {
-            (stats as Record<string, number>)[key] = Number(popData[key]);
-        }
-    }
-    // Also update populatedTiles from server data if available
-    if (popData.totalTiles !== undefined) {
-        stats.populatedTiles = Number(popData.totalTiles);
-    }
 }
 
 class UIManager {
@@ -169,19 +78,17 @@ class UIManager {
     private sceneManager: SceneManagerLike | null;
     private cameraController: CameraControllerLike | null;
     private currentTotalPopulation: number;
-    private isConnected: boolean;
     private loadingIndicator: HTMLElement | null;
     private messageTimeout: ReturnType<typeof setTimeout> | null;
 
     constructor(sceneManager: SceneManagerLike | null) {
         this.isInitialized = false;
         this.populationUnsubscribe = null;
-        this.sceneManager = sceneManager; // Store sceneManager instance
+        this.sceneManager = sceneManager;
         this.cameraController = null;
-        this.currentTotalPopulation = 0; // Store current total population
-        this.isConnected = false; // Store connection status
-        this.loadingIndicator = null; // Store loading indicator element
-        this.messageTimeout = null; // Store message timeout
+        this.currentTotalPopulation = 0;
+        this.loadingIndicator = null;
+        this.messageTimeout = null;
     }
 
     /** Set the camera controller for tile search functionality */
@@ -189,8 +96,7 @@ class UIManager {
         this.cameraController = controller;
     }
 
-    initialize(): void { // sceneManager parameter removed
-        // this.sceneManager = sceneManager; // This line removed
+    initialize(): void {
         this.setupControlsPanel();
         this.setupPopulationDisplay();
         this.setupResetButtons();
@@ -199,22 +105,17 @@ class UIManager {
     }
 
     getContainer(): HTMLElement {
-        // Return the main container element where the renderer should be attached
         return document.getElementById('container') || document.body;
     }
 
     showLoadingIndicator(message: string = 'Loading...'): void {
-        // Remove existing loading indicator if any
         this.hideLoadingIndicator();
-
-        // Create loading indicator
         const indicator = document.createElement('div');
         indicator.className = 'loading-indicator';
         indicator.innerHTML = `
             <div class="loading-indicator-spinner"></div>
             <span>${message}</span>
         `;
-
         document.body.appendChild(indicator);
         this.loadingIndicator = indicator;
     }
@@ -227,38 +128,28 @@ class UIManager {
     }
 
     showMessage(message: string, type: string = 'info', duration: number = 3000): void {
-        // Clear any existing message timeout
         if (this.messageTimeout) {
             clearTimeout(this.messageTimeout);
             this.messageTimeout = null;
         }
-
-        // Remove existing message if any
         const existingMessage = document.querySelector('.message-element');
         if (existingMessage) {
             existingMessage.remove();
         }
-
-        // Create message element
         const messageElement = document.createElement('div');
         messageElement.className = `message-element ${type}`;
         messageElement.textContent = message;
-
         document.body.appendChild(messageElement);
-
-        // Show message with animation
         setTimeout(() => {
             messageElement.classList.add('visible');
         }, 10);
-
-        // Auto-hide message after duration
         this.messageTimeout = setTimeout(() => {
             messageElement.classList.remove('visible');
             setTimeout(() => {
                 if (messageElement.parentNode) {
                     messageElement.remove();
                 }
-            }, 300); // Wait for fade-out animation
+            }, 300);
         }, duration);
     }
 
@@ -299,15 +190,10 @@ class UIManager {
     }
 
     setupPopulationDisplay(): void {
-        // Move population display into the dashboard
         const dashboard = document.getElementById('dashboard');
         if (!dashboard) return;
-
-        // Remove old population panel if it exists
         const oldPanel = document.getElementById('population-panel');
         if (oldPanel) oldPanel.remove();
-
-        // The year display logic is handled by the CalendarDisplay component
     }
 
     setupResetButtons(): void {
@@ -320,7 +206,6 @@ class UIManager {
 
         if (resetDataButton) {
             resetDataButton.addEventListener('click', () => {
-                // Close menu modal before starting restart
                 const menuOverlay = document.getElementById('menu-modal-overlay');
                 if (menuOverlay && !menuOverlay.classList.contains('hidden')) {
                     menuOverlay.classList.add('hidden');
@@ -348,7 +233,6 @@ class UIManager {
             });
         }
 
-        // Tile search functionality
         const handleTileSearch = () => {
             if (tileSearchInput) {
                 const tileId = tileSearchInput.value.trim();
@@ -370,7 +254,6 @@ class UIManager {
             });
         }
 
-        // Menu modal open/close
         this.setupMenuModal();
     }
 
@@ -411,8 +294,6 @@ class UIManager {
     async handleSaveGame(): Promise<void> {
         const saveButton = document.getElementById('save-game') as HTMLButtonElement | null;
         if (!saveButton) return;
-
-        // Prevent double-clicking
         if (saveButton.disabled) return;
 
         const originalText = saveButton.innerHTML;
@@ -421,23 +302,19 @@ class UIManager {
         saveButton.innerHTML = '⏳ Saving...';
 
         try {
-            const result = await getApiClient().saveGame();
+            await getApiClient().saveWorld('saves/world.bin');
 
-            if (result.success) {
-                saveButton.classList.remove('saving');
-                saveButton.classList.add('saved');
-                saveButton.innerHTML = '✅ Saved!';
+            saveButton.classList.remove('saving');
+            saveButton.classList.add('saved');
+            saveButton.innerHTML = '✅ Saved!';
 
-                setTimeout(() => {
-                    saveButton.innerHTML = originalText;
-                    saveButton.classList.remove('saved');
-                    saveButton.disabled = false;
-                }, 2000);
-            } else {
-                throw new Error(result.error || 'Save failed');
-            }
+            setTimeout(() => {
+                saveButton.innerHTML = originalText;
+                saveButton.classList.remove('saved');
+                saveButton.disabled = false;
+            }, 2000);
         } catch (error: unknown) {
-            console.error('❌ Save failed:', error);
+            console.error('Save failed:', error);
             saveButton.classList.remove('saving');
             saveButton.innerHTML = '❌ Failed';
 
@@ -451,8 +328,6 @@ class UIManager {
     async handleLoadGame(): Promise<void> {
         const loadButton = document.getElementById('load-game') as HTMLButtonElement | null;
         if (!loadButton) return;
-
-        // Prevent double-clicking
         if (loadButton.disabled) return;
 
         const originalText = loadButton.innerHTML;
@@ -461,38 +336,29 @@ class UIManager {
         loadButton.innerHTML = '⏳ Loading...';
 
         try {
-            const result = await getApiClient().syncGame();
+            await getApiClient().loadWorld('saves/world.bin');
 
-            // Check for explicit failure or skipped load
-            if (result.success && !result.skipped) {
-                // Regenerate the world with loaded seed (no page reload)
-                if (this.sceneManager) {
-                    // Regenerate hexasphere with new seed
-                    await this.sceneManager.createHexasphere();
+            // Regenerate the world with loaded seed (no page reload)
+            if (this.sceneManager) {
+                await this.sceneManager.createHexasphere();
 
-                    // Refresh calendar from loaded state
-                    const ctx = getAppContext();
-                    if (ctx.calendarManager?.initialize) {
-                        await ctx.calendarManager.initialize();
-                    }
+                const ctx = getAppContext();
+                if (ctx.calendarManager?.initialize) {
+                    await ctx.calendarManager.initialize();
                 }
-
-                loadButton.classList.remove('loading');
-                loadButton.classList.add('loaded');
-                loadButton.innerHTML = '✅ Loaded!';
-
-                // Reset button after a delay
-                setTimeout(() => {
-                    loadButton.innerHTML = originalText;
-                    loadButton.classList.remove('loaded');
-                    loadButton.disabled = false;
-                }, 2000);
-            } else {
-                // Either success:false or skipped:true means load didn't complete properly
-                throw new Error(result.error || (result.skipped ? 'Load skipped - storage unavailable' : 'Load failed'));
             }
+
+            loadButton.classList.remove('loading');
+            loadButton.classList.add('loaded');
+            loadButton.innerHTML = '✅ Loaded!';
+
+            setTimeout(() => {
+                loadButton.innerHTML = originalText;
+                loadButton.classList.remove('loaded');
+                loadButton.disabled = false;
+            }, 2000);
         } catch (error: unknown) {
-            console.error('❌ Load failed:', error);
+            console.error('Load failed:', error);
             loadButton.classList.remove('loading');
             loadButton.classList.add('error');
             loadButton.innerHTML = '❌ Load Failed';
@@ -511,11 +377,10 @@ class UIManager {
             return;
         }
 
-        // Use SceneManager's regenerateTiles which handles confirmation and in-place refresh
         try {
             await this.sceneManager.regenerateTiles();
         } catch (error: unknown) {
-            console.error("❌ Error during world restart:", error);
+            console.error("Error during world restart:", error);
         }
     }
 
@@ -538,29 +403,9 @@ class UIManager {
             return;
         }
 
-        // Point camera at the tile
         if (this.cameraController) {
             this.cameraController.lookAtPoint(tileCenter);
         }
-    }
-
-    // Try multiple URLs until one succeeds; throws if all fail
-    async fetchWithFallback(urls: string[], options: RequestInit = {}): Promise<unknown> {
-        let lastErr: Error | null = null;
-        for (const url of urls) {
-            try {
-                const controller = new AbortController();
-                const timeoutId = setTimeout(() => controller.abort(), 90000); // 90s timeout per attempt
-                const resp = await fetch(url, { ...options, signal: controller.signal });
-                clearTimeout(timeoutId);
-                if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
-                return await resp.json();
-            } catch (err: unknown) {
-                lastErr = err instanceof Error ? err : new Error(String(err));
-                console.warn(`Fetch attempt failed for ${url}:`, lastErr.message);
-            }
-        }
-        throw lastErr || new Error('All fetch attempts failed');
     }
 
     async handleShowStats(): Promise<void> {
@@ -576,31 +421,26 @@ class UIManager {
             // Get tile stats from sceneManager
             const stats = (ctx.sceneManager.getPopulationStats?.() ?? {}) as StatsData;
 
-            // Fetch and merge demographic stats from backend API
-            const popData = await populationManager.makeApiRequest<PopulationApiStats>('/stats', 'GET');
-            if (popData) {
-                mergeApiStats(stats, popData);
-            }
-
-            // Fetch Rust ECS demographics
-            let rustDemographics: RustDemographicsData | null = null;
+            // Fetch demographics from Rust
+            let demographics: Demographics | null = null;
             try {
-                const res = await fetch('/api/rust/demographics');
-                const data = await res.json();
-                if (data.success) {
-                    rustDemographics = data as RustDemographicsData;
-                    // Use Rust population as the authoritative source
-                    this.currentTotalPopulation = rustDemographics.population;
-                    stats.totalPopulation = rustDemographics.population;
-                }
+                demographics = await getApiClient().getDemographics();
+                this.currentTotalPopulation = demographics.population;
+                stats.totalPopulation = demographics.population;
             } catch (e) {
-                // Fallback to API stats if Rust is unavailable
                 this.currentTotalPopulation = stats.totalPopulation ?? 0;
             }
 
-            const growthStats = populationManager.getGrowthStats();
+            // Fetch vital statistics
+            let vitalStats: VitalStatistics | null = null;
+            try {
+                vitalStats = await getApiClient().getRecentStatistics(100);
+            } catch {
+                // Vital stats not critical
+            }
+
             this.hideLoadingIndicator();
-            this.showStatsModal(stats, growthStats, rustDemographics);
+            this.showStatsModal(stats, demographics, vitalStats);
         } catch (error: unknown) {
             this.hideLoadingIndicator();
             console.error('Failed to get statistics:', error);
@@ -608,56 +448,48 @@ class UIManager {
         }
     }
 
-    showStatsModal(stats: StatsData, _growthStats: GrowthStats, rustDemographics?: RustDemographicsData | null): void {
-        // Remove existing modal if any
+    showStatsModal(stats: StatsData, demographics?: Demographics | null, vitalStats?: VitalStatistics | null): void {
         document.getElementById('stats-modal-overlay')?.remove();
-
-        // Pause calendar while stats modal is open
         getAppContext().calendarDisplay?.pauseCalendar();
 
-        // Create overlay
         const overlay = document.createElement('div');
         overlay.id = 'stats-modal-overlay';
         overlay.className = 'stats-modal-overlay';
-        overlay.innerHTML = this.generateStatsModalHTML(stats, rustDemographics);
+        overlay.innerHTML = this.generateStatsModalHTML(stats, demographics, vitalStats);
         document.body.appendChild(overlay);
 
-        // Attach event handlers
         this.attachStatsModalHandlers(overlay);
-
-        // Render the vital rates chart
         this.renderVitalRatesChart();
     }
 
     /** Generate stats modal HTML content */
-    private generateStatsModalHTML(stats: StatsData, rustDemographics?: RustDemographicsData | null): string {
+    private generateStatsModalHTML(stats: StatsData, demographics?: Demographics | null, vitalStats?: VitalStatistics | null): string {
         const SEP = '<hr class="stats-modal-separator">';
 
         // Biome section
         const biomeSection = stats.biomes ? `
             ${SEP}
-            <h4>🌿 Biome Distribution</h4>
-            ${this.biomeRow('🏔️ Tundra', stats.biomes.tundra)}
-            ${this.biomeRow('🏜️ Desert', stats.biomes.desert)}
-            ${this.biomeRow('🌾 Plains', stats.biomes.plains)}
-            ${this.biomeRow('🌱 Grassland', stats.biomes.grassland)}
-            ${this.biomeRow('⛰️ Alpine', stats.biomes.alpine)}
+            <h4>Biome Distribution</h4>
+            ${this.biomeRow('Tundra', stats.biomes.tundra)}
+            ${this.biomeRow('Desert', stats.biomes.desert)}
+            ${this.biomeRow('Plains', stats.biomes.plains)}
+            ${this.biomeRow('Grassland', stats.biomes.grassland)}
+            ${this.biomeRow('Alpine', stats.biomes.alpine)}
         ` : '';
 
-        // Rust ECS demographics section
-        const rustSection = rustDemographics ? (() => {
-            const d = rustDemographics;
+        // Demographics section (from Rust ECS)
+        const demoSection = demographics ? (() => {
+            const d = demographics;
             const sexRatio = d.females > 0 ? (d.males / d.females).toFixed(2) : 'N/A';
             const partnerPct = d.population > 0 ? ((d.partnered / d.population) * 100).toFixed(1) : '0.0';
-            // Build a simple ASCII bar chart for age brackets
             const brackets = [
-                { label: '0-4', count: d.age0_4 },
-                { label: '5-14', count: d.age5_14 },
-                { label: '15-29', count: d.age15_29 },
-                { label: '30-49', count: d.age30_49 },
-                { label: '50-69', count: d.age50_69 },
-                { label: '70-89', count: d.age70_89 },
-                { label: '90+', count: d.age90Plus },
+                { label: '0-4', count: d.age_brackets[0] },
+                { label: '5-14', count: d.age_brackets[1] },
+                { label: '15-29', count: d.age_brackets[2] },
+                { label: '30-49', count: d.age_brackets[3] },
+                { label: '50-69', count: d.age_brackets[4] },
+                { label: '70-89', count: d.age_brackets[5] },
+                { label: '90+', count: d.age_brackets[6] },
             ];
             const maxCount = Math.max(...brackets.map(b => b.count), 1);
             const barRows = brackets.map(b => {
@@ -674,13 +506,13 @@ class UIManager {
 
             return `
                 ${SEP}
-                <h4>👥 Demographics</h4>
+                <h4>Demographics</h4>
                 ${statRow('Population', d.population.toLocaleString())}
                 ${statRow('Males / Females', `${d.males.toLocaleString()} / ${d.females.toLocaleString()} (ratio: ${sexRatio})`)}
                 ${statRow('Partnered', `${d.partnered.toLocaleString()} (${partnerPct}%)`)}
                 ${statRow('Single', d.single.toLocaleString())}
-                ${statRow('🤰 Pregnant', (d.pregnant ?? 0).toLocaleString())}
-                ${statRow('Average Age', d.averageAge.toFixed(1) + ' years')}
+                ${statRow('Pregnant', (d.pregnant ?? 0).toLocaleString())}
+                ${statRow('Average Age', d.average_age.toFixed(1) + ' years')}
                 <div style="margin-top:8px;">
                     <strong>Age Distribution:</strong>
                     <div style="margin-top:4px;">${barRows}</div>
@@ -688,38 +520,34 @@ class UIManager {
             `;
         })() : '';
 
+        // Vital statistics section
+        const vitalSection = vitalStats ? `
+            ${SEP}
+            ${statRow('Birth Rate', fmtPct(vitalStats.birth_rate) + ' per 1000')}
+            ${statRow('Death Rate', fmtPct(vitalStats.death_rate) + ' per 1000')}
+            ${statRow('Marriage Rate', fmtPct(vitalStats.marriage_rate) + ' per 1000')}
+            ${statRow('Total Births', fmt(vitalStats.total_births, '0'))}
+            ${statRow('Total Deaths', fmt(vitalStats.total_deaths, '0'))}
+            ${statRow('Total Marriages', fmt(vitalStats.total_marriages, '0'))}
+        ` : '';
+
         return `
             <div class="stats-modal">
                 <div class="stats-modal-header">
-                    <h3>📊 Population Statistics</h3>
+                    <h3>Population Statistics</h3>
                     <button class="stats-modal-close">&times;</button>
                 </div>
                 <div class="stats-modal-content">
                     ${statRow('Total Population', fmt(stats.totalPopulation), 'stats-modal-total-population')}
-                    ${statRow('Male Population', fmt(stats.male), 'stats-modal-male-population')}
-                    ${statRow('Female Population', fmt(stats.female), 'stats-modal-female-population')}
-                    ${statRow('Minors (under 16)', fmt(stats.minors), 'stats-modal-minors')}
-                    ${statRow('Working Age (16-60)', fmt(stats.working_age), 'stats-modal-working-age')}
-                    ${statRow('Elderly (over 60)', fmt(stats.elderly), 'stats-modal-elderly')}
-                    ${statRow('Bachelors', fmt(stats.bachelors), 'stats-modal-bachelors')}
-                    ${SEP}
-                    ${statRow('Total Families', fmt(stats.totalFamilies, '0'), 'stats-modal-total-families')}
-                    ${statRow('Pregnant Families', fmt(stats.pregnantFamilies, '0'), 'stats-modal-pregnant-families')}
-                    ${statRow('Families with Children', fmt(stats.familiesWithChildren, '0'), 'stats-modal-families-with-children')}
-                    ${statRow('Avg. Children per Family', fmtDec(stats.avgChildrenPerFamily), 'stats-modal-avg-children')}
-                    ${SEP}
-                    ${statRow('Birth Rate', fmtPct(stats.birthRate) + ' %', 'stats-modal-birth-rate')}
-                    ${statRow('Death Rate', fmtPct(stats.deathRate) + ' %', 'stats-modal-death-rate')}
-                    ${statRow('Total Births', fmt(stats.totalBirthCount, '0'), 'stats-modal-birth-count')}
-                    ${statRow('Total Deaths', fmt(stats.totalDeathCount, '0'), 'stats-modal-death-count')}
                     ${SEP}
                     ${statRow('Total Tiles', String(stats.totalTiles ?? 'N/A'))}
                     ${statRow('Habitable Tiles', String(stats.habitableTiles ?? 'N/A'))}
                     ${statRow('Populated Tiles', String(stats.populatedTiles ?? 'N/A'))}
-                    ${statRow(`High Pop Tiles (≥${stats.threshold ?? 0})`, String(stats.highPopulationTiles ?? 'N/A'))}
+                    ${statRow('High Pop Tiles (>=' + (stats.threshold ?? 0) + ')', String(stats.highPopulationTiles ?? 'N/A'))}
                     ${statRow('Red Tiles', String(stats.redTiles ?? 'N/A'))}
                     ${biomeSection}
-                    ${rustSection}
+                    ${demoSection}
+                    ${vitalSection}
                     ${SEP}
                     <div style="margin: 24px 0;">
                         <h4>Vital Rates (per 1000 people, last 100 years)</h4>
@@ -755,13 +583,11 @@ class UIManager {
 
     async renderVitalRatesChart(): Promise<void> {
         try {
-            const response = await fetch('/api/statistics/vital-rates/100');
-            const result = await response.json();
-            if (!result.success) throw new Error(result.error || 'Failed to fetch vital rates');
-            const chartData = result.data;
+            // Get vital statistics from Rust for chart data
+            const vitalStats = await getApiClient().getRecentStatistics(100);
 
             if (!extendedWindow.Chart) {
-                throw new Error('Chart.js is not loaded. Please include <script src="https://cdn.jsdelivr.net/npm/chart.js"></script> in your HTML.');
+                throw new Error('Chart.js is not loaded.');
             }
 
             const chartCanvas = document.getElementById('vital-rates-chart') as HTMLCanvasElement | null;
@@ -776,8 +602,28 @@ class UIManager {
             if (extendedWindow.vitalRatesChartInstance) {
                 extendedWindow.vitalRatesChartInstance.destroy();
             }
+
+            // Build simple chart data from vital statistics
+            const chartData = {
+                labels: ['Recent'],
+                datasets: [
+                    {
+                        label: 'Birth Rate',
+                        data: [vitalStats.birth_rate],
+                        borderColor: 'rgb(75, 192, 192)',
+                        tension: 0.1,
+                    },
+                    {
+                        label: 'Death Rate',
+                        data: [vitalStats.death_rate],
+                        borderColor: 'rgb(255, 99, 132)',
+                        tension: 0.1,
+                    },
+                ],
+            };
+
             extendedWindow.vitalRatesChartInstance = new extendedWindow.Chart(ctx, {
-                type: 'line',
+                type: 'bar',
                 data: chartData,
                 options: {
                     responsive: true,
@@ -786,7 +632,6 @@ class UIManager {
                         title: { display: true, text: 'Birth and Death Rates per 1000 People' }
                     },
                     scales: {
-                        x: { title: { display: true, text: 'Year' } },
                         y: { title: { display: true, text: 'Rate per 1000' } }
                     }
                 }
@@ -794,17 +639,13 @@ class UIManager {
         } catch (err: unknown) {
             const chartContainer = document.getElementById('vital-rates-chart');
             if (chartContainer) {
-                chartContainer.outerHTML = `<div style="color:red;">Failed to load vital rates chart: ${err instanceof Error ? (err as Error).message : err}</div>`;
+                chartContainer.outerHTML = `<div style="color:red;">Failed to load vital rates chart: ${err instanceof Error ? err.message : err}</div>`;
             }
         }
     }
 
     connectToPopulationManager(): void {
         this.populationUnsubscribe = populationManager.subscribe((eventType: string, eventData: unknown) => {
-            if (eventType === 'connected') {
-                this.isConnected = eventData as boolean;
-            }
-            // Handle real-time population updates from Rust ECS
             if (eventType === 'rustPopulation') {
                 const rustData = eventData as RustTickData;
                 this.currentTotalPopulation = rustData.population;
@@ -814,8 +655,7 @@ class UIManager {
         populationManager.connect();
     }
 
-    // Update the population display in real-time (from Rust ECS)
-    // Only touches the DOM when the value actually changes
+    // Update the population display in real-time
     private lastDisplayedPop: number = -1;
 
     updatePopulationDisplay(data: RustTickData): void {
@@ -826,13 +666,12 @@ class UIManager {
         if (popEl) {
             popEl.textContent = data.population.toLocaleString();
         }
-        // Also update stats modal if open
         this.updateStatsModalPopulation();
     }
 
     updateStatsModalPopulation(): void {
         const totalPopElement = document.getElementById('stats-modal-total-population');
-        if (totalPopElement) { // Check if modal is open and element exists
+        if (totalPopElement) {
             totalPopElement.textContent = this.currentTotalPopulation.toLocaleString();
         }
     }

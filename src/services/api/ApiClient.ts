@@ -1,194 +1,172 @@
 /**
- * ApiClient - Centralized HTTP API service
- * 
- * Provides a single place for all REST API calls.
- * Handles error handling, response parsing, and base URL configuration.
+ * ApiClient - Centralized Tauri IPC service
+ *
+ * Replaces the old HTTP fetch-based API client with Tauri invoke() calls.
+ * All methods call Rust #[tauri::command] functions via IPC.
  */
 
-/** Standard API response wrapper */
-export interface ApiResponse<T = unknown> {
-    success: boolean;
-    data?: T;
-    error?: string;
-    message?: string;
-    skipped?: boolean;
-}
+import { invoke } from '@tauri-apps/api/core';
 
-/** Calendar state from API */
-export interface CalendarState {
-    year: number;
-    month: number;
-    day: number;
-    isRunning: boolean;
-    totalDays: number;
-    totalTicks: number;
-    startTime: string | null;
-    lastTickTime: string | null;
-    config: {
-        daysPerMonth?: number;
-        monthsPerYear?: number;
-        tickIntervalMs?: number;
-    };
-    formatted: {
-        short?: string;
-        long?: string;
-        iso?: string;
-    };
-}
+// ==================== Types matching Rust structs (snake_case) ====================
 
-/** Speed mode configuration */
-export interface SpeedMode {
-    name: string;
-    intervalMs: number;
-}
-
-/** Calendar statistics */
-export interface CalendarStats {
-    totalTicks: number;
-    totalDays: number;
-    uptime: number;
-    averageTickRate: number;
+/** App config from Rust get_config command */
+export interface AppConfig {
+    hexasphere: HexasphereConfig;
+    calendar: CalendarConfig;
+    seed: number;
 }
 
 /** Hexasphere configuration */
 export interface HexasphereConfig {
     radius: number;
     subdivisions: number;
-    tileWidthRatio: number;
+    tile_width_ratio: number;
 }
 
-/** Server configuration */
-export interface ServerConfig {
-    hexasphere: HexasphereConfig;
-    [key: string]: unknown;
+/** Calendar configuration */
+export interface CalendarConfig {
+    days_per_month: number;
+    months_per_year: number;
+    start_year: number;
 }
 
-/** Tile data from API */
-export interface TileData {
-    id: number | string;
-    boundary: Array<{ x: number; y: number; z: number }>;
-    centerPoint: { x: number; y: number; z: number };
-    terrainType: string;
-    biome: string;
-}
-
-/** Tiles API response */
-export interface TilesResponse {
-    tiles: TileData[];
-    count: number;
-}
-
-/** Compact tile state for a single tile (from /api/tile-state) */
-export interface CompactTileState {
-    t: string;      // terrainType
-    b: string | null; // biome
-}
-
-/** Tile state API response (no geometry, just state) */
-export interface TileStateResponse {
-    count: number;
-    state: Record<string, CompactTileState>;
-}
-
-/** Population data */
-export interface PopulationData {
-    globalData: {
-        lastUpdated: number;
-        growth: {
-            rate: number;
-            interval: number;
-        };
-    };
-    tilePopulations: Record<string, number>;
-    totalPopulation: number;
-}
-
-/** Statistics data */
-export interface StatisticsData {
-    totalPopulation?: number;
-    male?: number;
-    female?: number;
-    minors?: number;
-    working_age?: number;
-    elderly?: number;
-    bachelors?: number;
-    birthRate?: number;
-    deathRate?: number;
-    birthCount?: number;
-    deathCount?: number;
-    totalBirthCount?: number;
-    totalDeathCount?: number;
-    totalFamilies?: number;
-    pregnantFamilies?: number;
-    familiesWithChildren?: number;
-    avgChildrenPerFamily?: number;
-}
-
-/** Vital rates data point */
-export interface VitalRatePoint {
+/** Calendar date */
+export interface CalendarDate {
     year: number;
-    birthRate: number;
-    deathRate: number;
+    month: number;
+    day: number;
 }
 
-/** Memory usage statistics from server */
-export interface MemoryStats {
-    /** Resident Set Size - total memory allocated for the process */
-    rss: number;
-    /** Total size of the allocated heap */
-    heapTotal: number;
-    /** Actual memory used during execution */
-    heapUsed: number;
-    /** V8 external memory (C++ objects bound to JS) */
-    external: number;
-    /** Memory used by ArrayBuffers and SharedArrayBuffers */
-    arrayBuffers: number;
-    /** Formatted human-readable values */
-    formatted: {
-        rss: string;
-        heapTotal: string;
-        heapUsed: string;
-        external: string;
-        arrayBuffers: string;
-    };
-    /** Heap usage percentage */
-    heapUsagePercent: number;
-    /** Timestamp of the measurement */
-    timestamp: number;
-    /** Uptime in seconds */
-    uptimeSeconds: number;
+/** Calendar state from Rust */
+export interface CalendarState {
+    date: CalendarDate;
+    is_paused: boolean;
+    current_speed: string;
 }
 
-/** Memory history response */
-export interface MemoryHistory {
-    current: MemoryStats;
-    peak: {
-        heapUsed: number;
-        heapUsedFormatted: string;
-        rss: number;
-        rssFormatted: string;
-        timestamp: number;
-    };
-    samples: MemoryStats[];
-    sampleCount: number;
-    averageHeapUsed: number;
-    averageHeapUsedFormatted: string;
+/** Speed mode configuration */
+export interface SpeedMode {
+    key: string;
+    name: string;
+    interval_ms: number;
+}
+
+/** Tile properties from Rust calculate_tile_properties */
+export interface TileProperties {
+    id: number;
+    terrain_type: string;
+    biome: string | null;
+    fertility: number;
+    is_habitable: boolean;
+}
+
+/** Tile center for calculate_tile_properties input */
+export interface TileCenter {
+    id: number;
+    x: number;
+    y: number;
+    z: number;
+}
+
+/** Person data from Rust */
+export interface PersonData {
+    id: number;
+    first_name: string;
+    last_name: string;
+    tile_id: number;
+    sex: boolean;
+    birth_year: number;
+    birth_month: number;
+    birth_day: number;
+    age_years: number;
+    is_partnered: boolean;
+    is_pregnant: boolean;
+    partner_id: number | null;
+}
+
+/** Demographics from Rust */
+export interface Demographics {
+    population: number;
+    males: number;
+    females: number;
+    partnered: number;
+    single: number;
+    pregnant: number;
+    average_age: number;
+    age_brackets: [number, number, number, number, number, number, number];
+}
+
+/** Vital statistics from Rust */
+export interface VitalStatistics {
+    birth_rate: number;
+    death_rate: number;
+    marriage_rate: number;
+    natural_increase_rate: number;
+    total_births: number;
+    total_deaths: number;
+    total_marriages: number;
+    population: number;
+    years_covered: number;
+}
+
+/** Event data from Rust */
+export interface EventData {
+    event_type: string;
+    year: number;
+    month: number;
+    day: number;
+    person_id: number | null;
+}
+
+/** Tile population data */
+export interface TilePopulationData {
+    tile_id: number;
+    count: number;
+}
+
+/** Save result from Rust */
+export interface SaveResult {
+    population: number;
+    file_bytes: number;
+}
+
+/** Load result from Rust */
+export interface LoadResult {
+    population: number;
+    partners: number;
+    calendar_year: number;
+    seed: number;
+}
+
+/** Restart result from Rust */
+export interface RestartResult {
+    seed: number;
+    population: number;
+    tiles: number;
+    calendar: CalendarDate;
+}
+
+/** Tick event from Rust (also used as calendar-tick event payload) */
+export interface TickEvent {
+    births: number;
+    deaths: number;
+    marriages: number;
+    pregnancies: number;
+    dissolutions: number;
+    population: number;
+    year: number;
+    month: number;
+    day: number;
 }
 
 /**
- * ApiClient - Singleton HTTP client
+ * ApiClient - Singleton Tauri IPC client
  */
 class ApiClient {
     private static instance: ApiClient | null = null;
-    private baseUrl: string;
 
-    private constructor(baseUrl: string = '') {
-        this.baseUrl = baseUrl;
-    }
+    private constructor() {}
 
-    /**
-     * Get singleton instance
-     */
     static getInstance(): ApiClient {
         if (!ApiClient.instance) {
             ApiClient.instance = new ApiClient();
@@ -196,229 +174,110 @@ class ApiClient {
         return ApiClient.instance;
     }
 
-    /**
-     * Set base URL (useful for testing or different environments)
-     */
-    setBaseUrl(url: string): void {
-        this.baseUrl = url;
-    }
-
-    /**
-     * Generic fetch wrapper with error handling
-     */
-    private async request<T>(
-        endpoint: string,
-        options: RequestInit = {}
-    ): Promise<T> {
-        const url = `${this.baseUrl}${endpoint}`;
-
-        try {
-            const response = await fetch(url, {
-                ...options,
-                headers: {
-                    'Content-Type': 'application/json',
-                    ...options.headers
-                }
-            });
-
-            if (!response.ok) {
-                const errorText = await response.text();
-                throw new Error(`HTTP ${response.status}: ${errorText || response.statusText}`);
-            }
-
-            return await response.json();
-        } catch (error) {
-            console.error(`API request failed: ${endpoint}`, error);
-            throw error;
-        }
-    }
-
     // ==================== CONFIG ====================
 
-    /**
-     * Get server configuration
-     */
-    async getConfig(): Promise<ServerConfig> {
-        return this.request<ServerConfig>('/api/config');
+    async getConfig(): Promise<AppConfig> {
+        return invoke<AppConfig>('get_config');
     }
 
     // ==================== TILES ====================
 
-    /**
-     * Get tile state only (no geometry) - for client-side hexasphere generation
-     * Returns compact state keyed by tile ID: { t: terrainType, b: biome }
-     */
-    async getTileState(): Promise<TileStateResponse> {
-        return this.request<TileStateResponse>('/api/tiles/state');
-    }
-
-    /**
-     * Get detailed tile data by ID
-     */
-    async getTileById(tileId: number | string): Promise<TileData> {
-        return this.request<TileData>(`/api/tiles/${tileId}`);
+    async calculateTileProperties(tiles: TileCenter[]): Promise<TileProperties[]> {
+        return invoke<TileProperties[]>('calculate_tile_properties', { tiles });
     }
 
     // ==================== CALENDAR ====================
 
-    /**
-     * Get current calendar state
-     */
-    async getCalendarState(): Promise<ApiResponse<CalendarState>> {
-        return this.request<ApiResponse<CalendarState>>('/api/calendar/state');
+    async getCalendarState(): Promise<CalendarState> {
+        return invoke<CalendarState>('get_calendar_state');
     }
 
-    /**
-     * Start the calendar
-     */
-    async startCalendar(): Promise<ApiResponse<CalendarState>> {
-        return this.request<ApiResponse<CalendarState>>('/api/calendar/start', { method: 'POST' });
+    async startCalendar(speed?: string): Promise<CalendarState> {
+        return invoke<CalendarState>('start_calendar', { speed });
     }
 
-    /**
-     * Stop the calendar
-     */
-    async stopCalendar(): Promise<ApiResponse<CalendarState>> {
-        return this.request<ApiResponse<CalendarState>>('/api/calendar/stop', { method: 'POST' });
+    async stopCalendar(): Promise<CalendarState> {
+        return invoke<CalendarState>('stop_calendar');
     }
 
-    /**
-     * Reset the calendar
-     */
-    async resetCalendar(): Promise<ApiResponse<CalendarState>> {
-        return this.request<ApiResponse<CalendarState>>('/api/calendar/reset', { method: 'POST' });
-    }
-
-    /**
-     * Set calendar date
-     */
-    async setCalendarDate(year: number, month: number, day: number): Promise<ApiResponse<CalendarState>> {
-        return this.request<ApiResponse<CalendarState>>('/api/calendar/date', {
-            method: 'POST',
-            body: JSON.stringify({ year, month, day })
-        });
-    }
-
-    /**
-     * Set calendar tick interval
-     */
-    async setCalendarInterval(intervalMs: number): Promise<ApiResponse<CalendarState>> {
-        return this.request<ApiResponse<CalendarState>>('/api/calendar/interval', {
-            method: 'POST',
-            body: JSON.stringify({ interval: intervalMs })
-        });
-    }
-
-    /**
-     * Get available speed modes
-     */
     async getCalendarSpeeds(): Promise<SpeedMode[]> {
-        return this.request<SpeedMode[]>('/api/calendar/speeds');
+        return invoke<SpeedMode[]>('get_calendar_speeds');
     }
 
-    /**
-     * Set calendar speed by name
-     */
-    async setCalendarSpeed(speedName: string): Promise<ApiResponse<CalendarState>> {
-        return this.request<ApiResponse<CalendarState>>('/api/calendar/speed', {
-            method: 'POST',
-            body: JSON.stringify({ speed: speedName })
-        });
-    }
-
-    /**
-     * Get calendar statistics
-     */
-    async getCalendarStats(): Promise<CalendarStats> {
-        return this.request<CalendarStats>('/api/calendar/stats');
+    async setCalendarSpeed(speed: string): Promise<CalendarState> {
+        return invoke<CalendarState>('set_calendar_speed', { speed });
     }
 
     // ==================== POPULATION ====================
 
-    /**
-     * Get population data
-     */
-    async getPopulation(): Promise<PopulationData> {
-        return this.request<PopulationData>('/api/population');
+    async getPopulation(): Promise<number> {
+        return invoke<number>('get_population');
     }
 
-    /**
-     * Initialize population
-     */
-    async initializePopulation(): Promise<ApiResponse> {
-        return this.request<ApiResponse>('/api/population/initialize', { method: 'POST' });
+    async getDemographics(): Promise<Demographics> {
+        return invoke<Demographics>('get_demographics');
+    }
+
+    async getPopulationByTile(): Promise<TilePopulationData[]> {
+        return invoke<TilePopulationData[]>('get_population_by_tile');
+    }
+
+    async getTilePopulation(tileId: number): Promise<number> {
+        return invoke<number>('get_tile_population', { tileId });
+    }
+
+    // ==================== PEOPLE ====================
+
+    async getAllPeople(): Promise<PersonData[]> {
+        return invoke<PersonData[]>('get_all_people');
+    }
+
+    async getPerson(personId: number): Promise<PersonData | null> {
+        return invoke<PersonData | null>('get_person', { personId });
+    }
+
+    async getPeopleByTile(tileId: number): Promise<PersonData[]> {
+        return invoke<PersonData[]>('get_people_by_tile', { tileId });
     }
 
     // ==================== STATISTICS ====================
 
-    /**
-     * Get current statistics
-     */
-    async getCurrentStatistics(): Promise<StatisticsData> {
-        return this.request<StatisticsData>('/api/statistics/current');
+    async getVitalStatistics(startYear: number, endYear: number): Promise<VitalStatistics> {
+        return invoke<VitalStatistics>('get_vital_statistics', { startYear, endYear });
     }
 
-    /**
-     * Get dashboard statistics
-     */
-    async getDashboardStatistics(years: number = 100): Promise<unknown> {
-        return this.request<unknown>(`/api/statistics/dashboard?years=${years}`);
+    async getCurrentYearStatistics(): Promise<VitalStatistics> {
+        return invoke<VitalStatistics>('get_current_year_statistics');
     }
 
-    /**
-     * Get vital rates history
-     */
-    async getVitalRates(years: number = 100): Promise<VitalRatePoint[]> {
-        return this.request<VitalRatePoint[]>(`/api/statistics/vital-rates/${years}`);
+    async getRecentStatistics(years?: number): Promise<VitalStatistics> {
+        return invoke<VitalStatistics>('get_recent_statistics', { years });
+    }
+
+    async getRecentEvents(count?: number): Promise<EventData[]> {
+        return invoke<EventData[]>('get_recent_events', { count });
+    }
+
+    async getEventCount(): Promise<number> {
+        return invoke<number>('get_event_count');
     }
 
     // ==================== WORLD ====================
 
-    /**
-     * Restart the world (regenerate everything)
-     */
-    async worldRestart(): Promise<ApiResponse> {
-        return this.request<ApiResponse>('/api/worldrestart', { 
-            method: 'POST',
-            body: JSON.stringify({ confirm: 'DELETE_ALL_DATA' })
-        });
+    async tick(count?: number): Promise<TickEvent> {
+        return invoke<TickEvent>('tick', { count });
     }
 
-    /**
-     * Save game state
-     */
-    async saveGame(): Promise<ApiResponse> {
-        return this.request<ApiResponse>('/api/save', { method: 'POST' });
+    async saveWorld(filePath: string): Promise<SaveResult> {
+        return invoke<SaveResult>('save_world', { filePath });
     }
 
-    /**
-     * Sync game state
-     */
-    async syncGame(): Promise<ApiResponse> {
-        return this.request<ApiResponse>('/api/sync', { method: 'POST' });
+    async loadWorld(filePath: string): Promise<LoadResult> {
+        return invoke<LoadResult>('load_world', { filePath });
     }
 
-    // ==================== SYSTEM ====================
-
-    /**
-     * Get current memory usage statistics
-     */
-    async getMemoryStats(): Promise<ApiResponse<MemoryStats>> {
-        return this.request<ApiResponse<MemoryStats>>('/api/system/memory');
-    }
-
-    /**
-     * Get memory usage history
-     */
-    async getMemoryHistory(): Promise<ApiResponse<MemoryHistory>> {
-        return this.request<ApiResponse<MemoryHistory>>('/api/system/memory/history');
-    }
-
-    /**
-     * Get system health status
-     */
-    async getSystemHealth(): Promise<ApiResponse> {
-        return this.request<ApiResponse>('/api/system/health');
+    async restartWorld(habitableTileIds: number[], newSeed?: number): Promise<RestartResult> {
+        return invoke<RestartResult>('restart_world', { habitableTileIds, newSeed });
     }
 }
 

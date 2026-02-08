@@ -3,6 +3,7 @@
 // Optimized with request deduplication, debouncing, and proper cleanup
 import * as THREE from 'three';
 import { getAppContext } from '../../../core/AppContext';
+import { getApiClient } from '../../../services/api/ApiClient';
 import { HexTile, SceneManagerLike } from './types';
 import { createTileBorder, removeTileBorder } from './tileBorder';
 import { updateInfoPanel } from './infoPanel';
@@ -181,51 +182,43 @@ class TileSelector {
     }
 
     /**
-     * Fetch Rust ECS population for a tile
+     * Fetch Rust ECS population for a tile via Tauri invoke
      */
     private async fetchRustTilePopulation(tileId: number | string): Promise<number | null> {
         try {
-            const response = await fetch(`/api/rust/tiles/${tileId}`, {
-                signal: this.abortController?.signal
-            });
-            if (response.ok) {
-                const data = await response.json();
-                return data.population ?? null;
-            }
-            return null;
+            const id = typeof tileId === 'string' ? parseInt(tileId, 10) : tileId;
+            return await getApiClient().getTilePopulation(id);
         } catch {
             return null;
         }
     }
 
     /**
-     * Fetch tile data with timeout and abort support
+     * Fetch tile properties (fertility, biome) via Tauri invoke
      */
     private async fetchTileData(tileId: number | string): Promise<{ lands?: any; fertility?: number } | null> {
         if (this.isFetching) return null;
-        
+
         this.isFetching = true;
-        this.abortController = new AbortController();
 
         try {
-            // Set timeout for the request
-            const timeoutId = setTimeout(() => {
-                this.abortController?.abort();
-            }, 10000); // 10 second timeout
+            // Get tile center from hexasphere to calculate properties
+            const tiles = getAppContext().getHexasphereTiles() as HexTile[];
+            const tile = tiles?.find(t => t.id === tileId);
+            if (!tile) return null;
 
-            const response = await fetch(`/api/tiles/${tileId}`, {
-                signal: this.abortController.signal
-            });
-            
-            clearTimeout(timeoutId);
+            const cp = Array.isArray(tile.centerPoint)
+                ? { x: tile.centerPoint[0], y: tile.centerPoint[1], z: tile.centerPoint[2] }
+                : tile.centerPoint;
 
-            if (response.ok) {
-                return await response.json();
+            const id = typeof tileId === 'string' ? parseInt(tileId, 10) : tileId;
+            const props = await getApiClient().calculateTileProperties([{ id, x: cp.x, y: cp.y, z: cp.z }]);
+            if (props.length > 0) {
+                return { fertility: props[0].fertility };
             }
             return null;
         } finally {
             this.isFetching = false;
-            this.abortController = null;
         }
     }
 

@@ -7,7 +7,6 @@
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::path::Path;
-use hecs::World;
 
 use crate::components::*;
 

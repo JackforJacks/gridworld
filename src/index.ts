@@ -22,7 +22,7 @@ import CalendarDisplay from './components/dashboard/CalendarDisplay';
 import HeapMeter from './components/dashboard/HeapMeter';
 import BackgroundStars from './core/renderer/BackgroundStars';
 import { initializeAndStartGame } from './core/scene/init';
-import SocketService, { getSocketService } from './services/socket/SocketService';
+import populationManager from './managers/population/PopulationManager';
 
 // Extend Window interface for global properties used in this module
 // Note: Some properties are already declared in SceneManager.ts and global.d.ts
@@ -67,9 +67,6 @@ class GridWorldApp {
     private calendarDisplay: CalendarDisplay | null;
     private heapMeter: HeapMeter | null;
 
-    // Socket connection (via SocketService singleton)
-    private socketService: SocketService | null;
-
     // Three.js objects
     private scene: THREE.Scene | null;
     private camera: THREE.PerspectiveCamera | null;
@@ -98,9 +95,6 @@ class GridWorldApp {
         this.calendarDisplay = null;
         this.heapMeter = null;
 
-        // Socket connection (via SocketService singleton)
-        this.socketService = null;
-
         // Three.js objects
         this.scene = null;
         this.camera = null;
@@ -114,8 +108,8 @@ class GridWorldApp {
         }
 
         try {
-            // Initialize socket connection first
-            await this.initializeSocket();
+            // Initialize population manager (Tauri IPC)
+            await populationManager.connect();
 
             // Initialize scene manager first, as UIManager might depend on it
             const width = window.innerWidth;
@@ -251,52 +245,12 @@ class GridWorldApp {
     }
 
     /**
-     * Initialize socket connection using centralized SocketService
-     */
-    async initializeSocket(): Promise<void> {
-        try {
-            // Use centralized SocketService singleton
-            this.socketService = getSocketService();
-            await this.socketService.connect();
-
-            // Set up socket event handlers
-            this.setupSocketEventHandlers();
-        } catch (error: unknown) {
-            console.error('Failed to initialize socket:', error);
-            // Continue without socket connection
-        }
-    }
-
-    /**
-     * Set up socket event handlers for real-time updates
-     */
-    private setupSocketEventHandlers(): void {
-        if (!this.socketService) return;
-
-        // Listen for auto-save completion and log timing
-        this.socketService.on('autoSaveComplete', (data: unknown) => {
-            const saveData = data as { success: boolean; elapsed: number; error?: string };
-            if (saveData.success) {
-                // [log removed]
-            } else {
-                console.warn(`💾 Auto-save failed in ${saveData.elapsed}ms: ${saveData.error}`);
-            }
-        });
-    }
-
-    /**
      * Initialize calendar system
      */
     async initializeCalendar(): Promise<void> {
         try {
-            const socket = this.socketService?.getSocket();
-            if (!socket) {
-                console.warn('No socket connection available for calendar');
-                return;
-            }
-
-            // Initialize calendar manager with socket from SocketService
-            this.calendarManager = new CalendarManager(socket);
+            // Initialize calendar manager (uses Tauri IPC directly)
+            this.calendarManager = new CalendarManager();
 
             // Initialize calendar display
             this.calendarDisplay = new CalendarDisplay(this.calendarManager);
@@ -562,15 +516,8 @@ class GridWorldApp {
             this.renderer.dispose();
         }
 
-        // Disconnect PopulationManager to stop ping interval
-        import('./managers/population/PopulationManager').then(({ default: pm }) => {
-            pm.disconnect();
-        });
-
-        // SocketService is a singleton - disconnect it
-        if (this.socketService) {
-            this.socketService.disconnect();
-        }
+        // Disconnect PopulationManager (stops Tauri event listener)
+        populationManager.disconnect();
 
         // Clear references
         this.inputHandler = null;
@@ -580,7 +527,6 @@ class GridWorldApp {
         this.calendarManager = null;
         this.calendarDisplay = null;
         this.heapMeter = null;
-        this.socketService = null;
         this.scene = null;
         this.camera = null;
         this.renderer = null;

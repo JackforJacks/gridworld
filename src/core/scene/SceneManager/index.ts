@@ -123,15 +123,15 @@ class SceneManager {
     async createHexasphere(radius: number | null = null, subdivisions: number | null = null, tileWidthRatio: number | null = null, forceRegenerate: boolean = false): Promise<void> {
         this.clearTiles();
 
-        // If no parameters provided, fetch defaults from server config using ApiClient
+        // If no parameters provided, fetch defaults from Tauri config
         if (radius === null || subdivisions === null || tileWidthRatio === null) {
             try {
                 const config = await getApiClient().getConfig();
                 radius = radius ?? config.hexasphere.radius;
                 subdivisions = subdivisions ?? config.hexasphere.subdivisions;
-                tileWidthRatio = tileWidthRatio ?? config.hexasphere.tileWidthRatio;
+                tileWidthRatio = tileWidthRatio ?? config.hexasphere.tile_width_ratio;
             } catch (error: unknown) {
-                console.warn('Failed to fetch config from server, using fallback defaults:', error);
+                console.warn('Failed to fetch config, using fallback defaults:', error);
                 radius = radius ?? 30;
                 subdivisions = subdivisions ?? 3;
                 tileWidthRatio = tileWidthRatio ?? 1;
@@ -145,35 +145,43 @@ class SceneManager {
         try {
             this.sphereRadius = radius;
 
-            // OPTIMIZED: Generate geometry locally, fetch only state from server
-            // This is much faster than fetching full geometry over network
-
-            // Step 1: Generate hexasphere locally (deterministic, same params = same result)
+            // Step 1: Generate hexasphere geometry locally
             const genStart = performance.now();
             const localHexasphere = new Hexasphere(radius, subdivisions, tileWidthRatio);
             const genTime = (performance.now() - genStart).toFixed(2);
-            console.log(`  🌐 Hexasphere generated locally in ${genTime}ms (${localHexasphere.tiles.length} tiles)`);
+            console.log(`  Hexasphere generated locally in ${genTime}ms (${localHexasphere.tiles.length} tiles)`);
 
-            // Step 2: Fetch only tile state from server (terrain, biome, etc.)
+            // Step 2: Calculate tile properties via Rust (terrain, biome, fertility)
             const fetchStart = performance.now();
             let tileState: Record<string, CompactTileState> = {};
             try {
-                const stateResponse = await getApiClient().getTileState();
-                tileState = stateResponse.state;
+                const tileCenters = localHexasphere.tiles.map((tile: any) => ({
+                    id: tile.id as number,
+                    x: tile.centerPoint.x as number,
+                    y: tile.centerPoint.y as number,
+                    z: tile.centerPoint.z as number,
+                }));
+                const tileProps = await getApiClient().calculateTileProperties(tileCenters);
+                // Convert to CompactTileState format expected by buildTilesFromLocalHexasphere
+                for (const prop of tileProps) {
+                    tileState[String(prop.id)] = {
+                        t: prop.terrain_type,
+                        b: prop.biome,
+                    };
+                }
                 const fetchTime = (performance.now() - fetchStart).toFixed(2);
-                console.log(`  ⬇️ Tile state fetched in ${fetchTime}ms (${stateResponse.count} tiles)`);
+                console.log(`  Tile properties calculated in ${fetchTime}ms (${tileProps.length} tiles)`);
             } catch (error: unknown) {
-                console.warn('⚠️ Failed to fetch tile state, using local terrain generation:', error);
-                // Continue with locally-generated terrain types
+                console.warn('Failed to calculate tile properties, using local terrain generation:', error);
             }
 
-            // Step 3: Build Three.js geometry from local hexasphere + server state
+            // Step 3: Build Three.js geometry from local hexasphere + tile state
             const buildStart = performance.now();
             this.buildTilesFromLocalHexasphere(localHexasphere as LocalHexasphere, tileState);
             const buildTime = (performance.now() - buildStart).toFixed(2);
-            console.log(`  🔨 Tiles built in ${buildTime}ms`);
+            console.log(`  Tiles built in ${buildTime}ms`);
         } catch (error: unknown) {
-            console.error('❌ Error building hexasphere:', error);
+            console.error('Error building hexasphere:', error);
         }
     }
 
@@ -284,7 +292,7 @@ class SceneManager {
 
     async regenerateTiles(): Promise<void> {
         const confirmed = window.confirm(
-            '⚠️ WARNING: This will DELETE ALL POPULATION DATA permanently!\n\n' +
+            'WARNING: This will DELETE ALL POPULATION DATA permanently!\n\n' +
             'All people and families will be wiped and regenerated.\n\n' +
             'Are you absolutely sure you want to regenerate tiles?'
         );
@@ -292,46 +300,37 @@ class SceneManager {
         if (!confirmed) return;
 
         try {
-            // Use ApiClient for world restart (generates new tiles with new seed on server)
-            await getApiClient().worldRestart();
+            // Restart world via Tauri with current habitable tile IDs
+            const numericIds = this.habitableTileIds.map(id => typeof id === 'string' ? parseInt(id, 10) : id);
+            await getApiClient().restartWorld(numericIds);
 
-            // Apply calendar state (fetch fresh)
-            await this.applyCalendarState({});
+            // Refresh calendar state
+            await this.applyCalendarState();
 
-            // Re-use the same optimized path as initial load:
-            // createHexasphere() calls clearTiles() internally (disposes mesh + overlays)
-            // then generates geometry locally + fetches fresh tile state from server
+            // Rebuild hexasphere with fresh tile state
             this.clearTileOverlays();
             await this.createHexasphere();
         } catch (error: unknown) {
-            console.error('❌ Failed to regenerate tiles:', error);
+            console.error('Failed to regenerate tiles:', error);
             throw error;
         }
     }
 
-    private async applyCalendarState(_restartData: { calendarState?: unknown }): Promise<void> {
+    private async applyCalendarState(): Promise<void> {
         try {
-            // Fetch calendar state using ApiClient
-            const result = await getApiClient().getCalendarState();
-            const calendarState = result?.success ? result.data : null;
-
-            if (calendarState && typeof calendarState === 'object') {
-                const state = calendarState as { currentDate?: { year: number }; year?: number };
-                const yearEl = document.getElementById('calendar-year-inline');
-                if (yearEl && (state.currentDate || state.year)) {
-                    yearEl.textContent = `Year: ${state.currentDate?.year ?? state.year}`;
-                }
-                const ctx = getAppContext();
-                if (ctx.calendarManager?.updateState) {
-                    try {
-                        ctx.calendarManager.updateState(calendarState);
-                        if (ctx.calendarDisplay?.updateDateDisplay) {
-                            ctx.calendarDisplay.updateDateDisplay(calendarState);
-                        }
-                    } catch (e: unknown) {
-                        console.warn('Failed to apply calendarState on client:', e);
-                    }
-                }
+            const calendarState = await getApiClient().getCalendarState();
+            const yearEl = document.getElementById('calendar-year-inline');
+            if (yearEl) {
+                yearEl.textContent = `Year: ${calendarState.date.year}`;
+            }
+            const ctx = getAppContext();
+            if (ctx.calendarManager?.updateState) {
+                ctx.calendarManager.updateState({
+                    year: calendarState.date.year,
+                    month: calendarState.date.month,
+                    day: calendarState.date.day,
+                    isRunning: !calendarState.is_paused,
+                });
             }
         } catch (_e: unknown) {
             // Ignore errors
