@@ -1,5 +1,6 @@
 /**
  * State Manager - Save Operations
+ * Phase 8: All persistence consolidated in Rust (bincode save files)
  * Saves world state to a local bincode file via Rust
  */
 
@@ -34,8 +35,9 @@ const SAVE_FILE = path.join(SAVE_DIR, 'world.bin');
 
 /**
  * Save all state to a local bincode file.
- * The Rust side serializes the ECS (people, calendar, relationships).
- * Node-side state (families) is bundled as JSON bytes inside the same file.
+ * Phase 8: Rust serializes ECS (people, partnerships, calendar, event log) to bincode
+ * Node-side state is empty (no duplication) - all data lives in Rust
+ * No PostgreSQL, no Redis - 100% Rust persistence
  */
 async function saveToDatabase(context: SaveContext): Promise<SaveResult> {
     const wasRunning = context.calendarService?.state?.isRunning;

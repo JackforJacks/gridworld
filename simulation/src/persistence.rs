@@ -22,6 +22,7 @@ pub struct ExportData {
     pub calendar: CalendarData,
     pub next_person_id: u64,
     pub people: Vec<ExportedPerson>,
+    pub event_log: Vec<ExportedEvent>,
 }
 
 /// Calendar state (matches our Calendar component)
@@ -88,6 +89,49 @@ pub struct ExportedFertility {
 pub struct ExportedPregnancy {
     pub due_year: u16,
     pub due_month: u8,
+}
+
+/// Exported event from event log
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ExportedEvent {
+    pub event_type: ExportedEventType,
+    pub year: u16,
+    pub month: u8,
+    pub day: u8,
+    pub person_id: Option<u64>,
+}
+
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
+pub enum ExportedEventType {
+    Birth,
+    Death,
+    Marriage,
+    PregnancyStarted,
+    Dissolution,
+}
+
+impl From<EventType> for ExportedEventType {
+    fn from(et: EventType) -> Self {
+        match et {
+            EventType::Birth => ExportedEventType::Birth,
+            EventType::Death => ExportedEventType::Death,
+            EventType::Marriage => ExportedEventType::Marriage,
+            EventType::PregnancyStarted => ExportedEventType::PregnancyStarted,
+            EventType::Dissolution => ExportedEventType::Dissolution,
+        }
+    }
+}
+
+impl From<ExportedEventType> for EventType {
+    fn from(et: ExportedEventType) -> Self {
+        match et {
+            ExportedEventType::Birth => EventType::Birth,
+            ExportedEventType::Death => EventType::Death,
+            ExportedEventType::Marriage => EventType::Marriage,
+            ExportedEventType::PregnancyStarted => EventType::PregnancyStarted,
+            ExportedEventType::Dissolution => EventType::Dissolution,
+        }
+    }
 }
 
 // ============================================================================
@@ -204,6 +248,18 @@ impl crate::world::SimulationWorld {
             });
         }
 
+        // Export event log
+        let event_log = self.event_log.get_all()
+            .into_iter()
+            .map(|event| ExportedEvent {
+                event_type: event.event_type.into(),
+                year: event.year,
+                month: event.month,
+                day: event.day,
+                person_id: event.person_id,
+            })
+            .collect();
+
         ExportData {
             version: 1,
             calendar: CalendarData {
@@ -213,6 +269,7 @@ impl crate::world::SimulationWorld {
             },
             next_person_id: self.next_person_id,
             people,
+            event_log,
         }
     }
 
@@ -277,6 +334,18 @@ impl crate::world::SimulationWorld {
                     mothers_added += 1;
                 }
             }
+        }
+
+        // Restore event log
+        self.event_log.clear();
+        for event in data.event_log {
+            self.event_log.push(Event {
+                event_type: event.event_type.into(),
+                year: event.year,
+                month: event.month,
+                day: event.day,
+                person_id: event.person_id,
+            });
         }
 
         Ok(ImportResult {

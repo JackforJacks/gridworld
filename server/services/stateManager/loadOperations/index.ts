@@ -1,22 +1,21 @@
 // Load Operations - Main Orchestrator Module
+// Phase 8: All persistence consolidated in Rust (bincode save files)
 // Loads saved state from a local bincode file into Rust ECS
 
 import fs from 'fs';
 // Storage removed - all data in Rust ECS
 import { LoadContext, LoadResult, PersonRow } from './types';
-import { clearExistingStorageState } from './storageClear';
 // populateEligibleSets and populateFertileFamilies removed - matchmaking/fertility now handled by Rust ECS
 import { SAVE_FILE } from '../saveOperations';
 
-/** Chunk size for Redis pipeline writes */
-const PIPELINE_CHUNK_SIZE = 2000;
-
 /**
  * Load state from a bincode save file into Rust ECS.
+ * Phase 8: All data (people, families, calendar, event log) restored from Rust bincode
  * Flow:
  *   1. Pause calendar
- *   2. Rust loadFromFile → restores ECS, returns nodeStateJson + seed
+ *   2. Rust loadFromFile → restores ECS (people, partnerships, calendar, event log)
  *   3. Resume calendar
+ * No PostgreSQL, no Redis - 100% Rust persistence
  */
 export async function loadFromDatabase(context: LoadContext): Promise<LoadResult> {
     // Storage removed - all data in Rust ECS
@@ -32,8 +31,8 @@ export async function loadFromDatabase(context: LoadContext): Promise<LoadResult
     const calendarWasRunning = pauseCalendar(context);
 
     try {
-        // Flush Redis
-        await clearExistingStorageState();
+        // No Redis clearing needed - all data in Rust ECS
+        // Tiles are deterministic from seed, regenerated on-demand
 
         // Load via Rust (restores ECS, returns node-side state + seed)
         const rustSimulation = require('../../rustSimulation').default;
