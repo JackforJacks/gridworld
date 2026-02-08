@@ -9,8 +9,8 @@ import {
     BASE_ANNUAL_DEATH_CHANCE,
     DEATH_CHANCE_INCREASE_PER_YEAR
 } from '../../config/gameBalance';
-import { CalendarDate, PersonData, FamilyData } from '../../../types/global';
-// Note: FamilyData only imported for legacy interface definitions
+import { CalendarDate, PersonData } from '../../../types/global';
+// All family data now managed by Rust ECS - use rustSimulation.getDemographics()
 
 // ===== Type Definitions =====
 
@@ -46,21 +46,16 @@ interface ResidencyUpdate {
     newResidency: number;
 }
 
-/** PopulationState module interface */
+/** PopulationState module interface (legacy - most methods deprecated) */
 interface PopulationStateModule {
     isRestarting: boolean;
     getAllPeople(): Promise<PersonData[]>;
-    getAllFamilies(): Promise<FamilyData[]>;
-    getFamily(familyId: number): Promise<FamilyData | null>;
     getPerson(personId: number): Promise<PersonData | null>;
     updatePerson(personId: number, updates: Partial<PersonData>): Promise<void>;
-    updateFamily(familyId: number, updates: Partial<FamilyData>): Promise<void>;
-    batchClearFamilyIds(personIds: number[]): Promise<void>;
-    batchDeleteFamilies(familyIds: number[], markForDeletion: boolean): Promise<void>;
     batchRemovePersons(personIds: number[], markForDeletion: boolean): Promise<void>;
     batchUpdateResidency(updates: ResidencyUpdate[]): Promise<void>;
-    removeFertileFamily(familyId: number): Promise<void>;
-    // addEligiblePerson removed - matchmaking now handled by Rust ECS
+    // Family methods removed - use rustSimulation.getDemographics() instead
+    // Matchmaking removed - handled by Rust ECS
 }
 
 /** Calculator module interface */

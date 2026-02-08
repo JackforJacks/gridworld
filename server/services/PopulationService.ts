@@ -14,7 +14,6 @@ import CalendarService from './calendarService';
  * @typedef {import('../../types/global').PopulationStats} PopulationStats
  * @typedef {import('../../types/global').TileData} TileData
  * @typedef {import('../../types/global').PersonData} PersonData
- * @typedef {import('../../types/global').FamilyData} FamilyData
  */
 
 // Core modules
