@@ -1,4 +1,6 @@
 // Population Operations - Tile Initializer Module
+// DEPRECATED: This module is legacy - population generation now handled by Rust ECS
+// via rustSimulation.seedPopulationOnTileRange() in worldRestart/index.ts
 import serverConfig from '../../../config/server';
 import storage from '../../storage';
 import * as deps from '../dependencyContainer';
@@ -16,8 +18,7 @@ import {
 } from './types';
 import { formatPopData } from './helpers';
 import { clearStoragePopulation } from './storageReset';
-import { generatePeopleForTiles } from './peopleGenerator';
-import { seedFamiliesForTiles } from './familySeeder';
+// Removed: generatePeopleForTiles, seedFamiliesForTiles (deleted - now Rust ECS handles this)
 
 /**
  * Initializes population for multiple tiles
@@ -35,6 +36,15 @@ export async function initializeTilePopulations(
     tileIds?: number[],
     options: PopulationOptions = {}
 ): Promise<FormattedPopulationData> {
+    // DEPRECATED: This function is no longer supported
+    // Population generation is now handled by Rust ECS via POST /api/worldrestart
+    throw new Error(
+        'initializeTilePopulations is deprecated. ' +
+        'Population generation is now handled by Rust ECS. ' +
+        'Use POST /api/worldrestart instead of this legacy endpoint.'
+    );
+
+    /* Dead code below - left for reference
     const flag = options ? options.preserveDatabase : false;
     const preserveDatabase = flag === true || flag === 'true';
     const forceAll = options && options.forceAll === true;
@@ -170,6 +180,7 @@ export async function initializeTilePopulations(
         console.error('[PopulationOperations] tileIds at time of error:', tileIds);
         throw error;
     }
+    */ // End dead code (unreachable after early throw)
 }
 
 // ===== Helper Functions =====

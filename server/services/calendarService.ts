@@ -1,7 +1,6 @@
 import EventEmitter from 'events';
 import calendarConfig from '../config/calendar';
 import serverConfig from '../config/server';
-import { getCalendarState, setCalendarState } from '../models/calendarState';
 import rustSimulation from './rustSimulation';
 
 interface SpeedMode {
@@ -42,6 +41,18 @@ interface InternalConfig {
     [key: string]: any;
 }
 
+/**
+ * Calendar Service - Timer and event broadcaster for Rust ECS calendar
+ *
+ * This service is a thin wrapper around the Rust ECS calendar system.
+ * It provides:
+ * - Tick timer management (start/stop/speed control)
+ * - Event broadcasting to Node.js listeners
+ * - Socket.io integration for client updates
+ *
+ * Calendar state (year/month/day) is stored exclusively in Rust ECS.
+ * Calendar advances happen in `rustSimulation.tick()` (called by PopulationService).
+ */
 class CalendarService extends EventEmitter {
     io: any;
     config: typeof calendarConfig;
@@ -52,7 +63,6 @@ class CalendarService extends EventEmitter {
     subscribers: Set<(event: string, data: any) => void>;
     internalConfig: InternalConfig;
     _initialized: boolean;
-    currentDate: CurrentDate;
 
     constructor(io: any = null) {
         super();
@@ -81,7 +91,7 @@ class CalendarService extends EventEmitter {
 
         this.currentSpeed = this.speedModes[this.config.defaultSpeed] ? this.config.defaultSpeed : '1_day';
 
-        // Calendar state
+        // Calendar state (tick tracking only - calendar date comes from Rust)
         this.state = {
             isRunning: false,
             totalDays: 0,
@@ -94,21 +104,12 @@ class CalendarService extends EventEmitter {
         this.tickTimer = null;
         this.subscribers = new Set();
 
-        // Add realTimeTickMs to the internal config object if it's not coming from calendarConfig
-        // This makes it explicit that CalendarService uses it.
+        // Internal config
         this.internalConfig = {
-            ...this.config, // Spread the loaded config
-            realTimeTickMs: parseInt(process.env.CALENDAR_TICK_INTERVAL_MS || '1000') || 1000 // Load directly or use default
+            ...this.config,
+            realTimeTickMs: parseInt(process.env.CALENDAR_TICK_INTERVAL_MS || '1000') || 1000
         };
 
-        // Initialize currentDate with default values (will be loaded from DB in initialize())
-        this.currentDate = {
-            day: this.config.startDay,
-            month: this.config.startMonth,
-            year: this.config.startYear
-        };
-
-        // Mark as not initialized yet - caller must await initialize()
         this._initialized = false;
     }
 
@@ -118,30 +119,31 @@ class CalendarService extends EventEmitter {
     async initialize() {
         if (this._initialized) return;
 
-        await this.loadStateFromDB();
-
-        // Sync date from Rust ECS (source of truth)
+        // Sync totalDays from Rust calendar
         try {
             const rustCal = rustSimulation.getCalendar();
             if (rustCal) {
-                this.currentDate = { day: rustCal.day, month: rustCal.month, year: rustCal.year };
-                if (serverConfig.verboseLogs) console.log(`📅 Calendar synced from Rust: Y${rustCal.year} M${rustCal.month} D${rustCal.day}`);
+                this.state.totalDays = rustCal.year * 96 + rustCal.month * 8 + rustCal.day; // Approximate
+                if (serverConfig.verboseLogs) {
+                    console.log(`📅 Calendar synced from Rust: Y${rustCal.year} M${rustCal.month} D${rustCal.day}`);
+                }
             }
         } catch (e) {
-            // Rust simulation may not be initialized yet; keep DB/config date
-            if (serverConfig.verboseLogs) console.warn('📅 Could not sync from Rust, using DB date');
+            if (serverConfig.verboseLogs) console.warn('📅 Could not sync from Rust calendar');
         }
 
         this._initialized = true;
 
-        if (serverConfig.verboseLogs) console.log('📅 Calendar Service initialized:', {
-            daysPerMonth: this.internalConfig.daysPerMonth,
-            monthsPerYear: this.internalConfig.monthsPerYear,
-            currentSpeed: this.speedModes[this.currentSpeed].name,
-            startDate: this.getFormattedDate()
-        });
+        if (serverConfig.verboseLogs) {
+            console.log('📅 Calendar Service initialized:', {
+                daysPerMonth: this.internalConfig.daysPerMonth,
+                monthsPerYear: this.internalConfig.monthsPerYear,
+                currentSpeed: this.speedModes[this.currentSpeed].name,
+                startDate: this.getFormattedDate()
+            });
+        }
 
-        // Auto-start calendar in non-test environments only to avoid leaving timers running during tests
+        // Auto-start calendar in non-test environments
         if (this.internalConfig.autoStart && process.env.NODE_ENV !== 'test') {
             this.start();
         }
@@ -164,7 +166,9 @@ class CalendarService extends EventEmitter {
         this.tickTimer = setInterval(() => {
             this.tick();
         }, intervalMs);
-        if (serverConfig.verboseLogs) console.log(`🟢 Calendar started - ${this.speedModes[this.currentSpeed].name} (${intervalMs}ms intervals)`);
+        if (serverConfig.verboseLogs) {
+            console.log(`🟢 Calendar started - ${this.speedModes[this.currentSpeed].name} (${intervalMs}ms intervals)`);
+        }
 
         const stateData = this.getState();
         this.emit('started', stateData);
@@ -209,18 +213,12 @@ class CalendarService extends EventEmitter {
 
     /**
      * Reset the calendar to initial state
+     * Note: Does NOT reset Rust calendar - call rustSimulation.reset() separately
      */
     reset() {
         const wasRunning = this.state.isRunning;
 
         this.stop();
-
-        // Reset to configured start date
-        this.currentDate = {
-            day: this.config.startDay,
-            month: this.config.startMonth,
-            year: this.config.startYear
-        };
 
         this.state = {
             isRunning: false,
@@ -232,7 +230,7 @@ class CalendarService extends EventEmitter {
 
         this.currentSpeed = this.config.defaultSpeed;
 
-        if (serverConfig.verboseLogs) console.log('🔄 Calendar reset to start date');
+        if (serverConfig.verboseLogs) console.log('🔄 Calendar service reset');
         this.emit('reset', this.getState());
 
         if (wasRunning && this.config.autoStart) {
@@ -243,7 +241,8 @@ class CalendarService extends EventEmitter {
     }
 
     /**
-     * Advance time by exactly 1 day (called at speed-dependent intervals)
+     * Tick handler - fires at speed-dependent intervals
+     * Emits 'tick' event that triggers PopulationService.tick() → rustSimulation.tick()
      */
     async tick(): Promise<void> {
         if (!this.state.isRunning) {
@@ -252,26 +251,25 @@ class CalendarService extends EventEmitter {
 
         this.state.totalTicks++;
         this.state.lastTickTime = Date.now();
+        this.state.totalDays++; // Approximate tracking
 
-        const previousDate = { ...this.currentDate };
-        const eventsTriggered = this.advanceOneDay();
+        // Get current date from Rust (after PopulationService.tick() will advance it)
+        const previousDate = this.getCurrentDate();
 
-        this.state.totalDays++;
-
-        // Prepare event data
+        // Prepare event data (PopulationService will handle actual Rust tick)
         const eventData = {
             previousDate,
-            currentDate: { ...this.currentDate },
+            currentDate: this.getCurrentDate(), // Still previous, will be advanced by PopulationService
             daysAdvanced: 1,
             speedMode: this.speedModes[this.currentSpeed].name,
             totalTicks: this.state.totalTicks,
             totalDaysAdvanced: this.state.totalDays,
-            eventsTriggered,
+            eventsTriggered: [], // Events computed after Rust tick in PopulationService
             populationUpdates: 1,
             state: this.getState()
         };
 
-        // Emit tick event with comprehensive data
+        // Emit tick event - PopulationService listens and calls rustSimulation.tick()
         this.emit('tick', eventData);
 
         // Broadcast to all socket clients
@@ -282,49 +280,6 @@ class CalendarService extends EventEmitter {
     }
 
     /**
-     * Advance exactly one day and return any events triggered
-     */
-    advanceOneDay(): Array<{ type: string; date: CurrentDate; message: string }> {
-        const events: Array<{ type: string; date: CurrentDate; message: string }> = [];
-
-        // Store old values for event detection
-        const oldMonth = this.currentDate.month;
-        const oldYear = this.currentDate.year;
-
-        // Advance one day
-        this.currentDate.day++;
-
-        // Check for month rollover
-        if (this.currentDate.day > this.config.daysPerMonth) {
-            this.currentDate.day = 1;
-            this.currentDate.month++;
-
-            events.push({
-                type: 'newMonth',
-                date: { ...this.currentDate },
-                message: `New month started: Month ${this.currentDate.month}`
-            });
-
-            // Check for year rollover
-            if (this.currentDate.month > this.config.monthsPerYear) {
-                this.currentDate.month = 1;
-                this.currentDate.year++;
-
-                events.push({
-                    type: 'newYear',
-                    date: { ...this.currentDate },
-                    message: `New year started: Year ${this.currentDate.year}`
-                });
-
-                this.emit('yearChanged', this.currentDate.year, oldYear);
-            }
-
-            this.emit('monthChanged', this.currentDate.month, oldMonth);
-        }
-
-        this.emit('dayChanged', this.currentDate.day, this.currentDate.day - 1);
-        return events;
-    }    /**
      * Change the calendar speed
      */
     setSpeed(speedKey: string): boolean {
@@ -342,9 +297,13 @@ class CalendarService extends EventEmitter {
             this.tickTimer = setInterval(() => {
                 this.tick();
             }, intervalMs);
-            if (serverConfig.verboseLogs) console.log(`⚡ Speed changed: ${this.speedModes[oldSpeed].name} → ${this.speedModes[speedKey].name} (${intervalMs}ms intervals)`);
+            if (serverConfig.verboseLogs) {
+                console.log(`⚡ Speed changed: ${this.speedModes[oldSpeed].name} → ${this.speedModes[speedKey].name} (${intervalMs}ms intervals)`);
+            }
         } else {
-            if (serverConfig.verboseLogs) console.log(`⚡ Speed changed: ${this.speedModes[oldSpeed].name} → ${this.speedModes[speedKey].name}`);
+            if (serverConfig.verboseLogs) {
+                console.log(`⚡ Speed changed: ${this.speedModes[oldSpeed].name} → ${this.speedModes[speedKey].name}`);
+            }
         }
 
         this.emit('speedChanged', {
@@ -357,71 +316,24 @@ class CalendarService extends EventEmitter {
     }
 
     /**
-     * Set a specific date
+     * Set a specific date - NOT SUPPORTED (Rust calendar is advanced by tick only)
+     * Left as stub for API compatibility
      */
-    async setDate(day: number, month: number, year: number): Promise<boolean> {
-        // Validate inputs
-        if (day < 1 || day > this.config.daysPerMonth) {
-            throw new Error(`Day must be between 1 and ${this.config.daysPerMonth}`);
-        }
-        if (month < 1 || month > this.config.monthsPerYear) {
-            throw new Error(`Month must be between 1 and ${this.config.monthsPerYear}`);
-        }
-        if (year < 1) {
-            throw new Error('Year must be positive');
-        }
-
-        const previousDate = { ...this.currentDate };
-        this.currentDate = { day, month, year };
-
-        // Recalculate total days
-        this.state.totalDays = this.calculateTotalDays(year, month, day);
-
-        if (serverConfig.verboseLogs) console.log(`📅 Date manually set: ${this.getFormattedDate().short}`);
-        this.emit('dateSet', {
-            previousDate,
-            currentDate: { ...this.currentDate }
-        });
-
-        // Save to database with proper error handling
-        try {
-            await this.saveStateToDB();
-        } catch (error) {
-            console.error('Failed to save calendar state to database:', error);
-            // Continue with in-memory state even if DB save fails
-            // This prevents the application from crashing due to DB issues
-        }
-
-        return true;
-    }
-
-    /**
-     * Change the tick interval (deprecated in new system)
-     */
-    setTickInterval(intervalMs) {
-        if (serverConfig.verboseLogs) console.log('⚠️ setTickInterval is deprecated in the new calendar system. Tick interval is fixed at 1000ms.');
+    async setDate(_day: number, _month: number, _year: number): Promise<boolean> {
+        console.warn('⚠️ CalendarService.setDate() is deprecated - calendar is managed by Rust ECS');
         return false;
     }
 
     /**
-     * Calculate total days from start date
-     */
-    calculateTotalDays(year, month, day) {
-        const yearsFromStart = year - this.config.startYear;
-        const totalDaysInPreviousYears = yearsFromStart * this.config.monthsPerYear * this.config.daysPerMonth;
-        const totalDaysInPreviousMonths = (month - 1) * this.config.daysPerMonth;
-        const daysInCurrentMonth = day - 1;
-
-        return totalDaysInPreviousYears + totalDaysInPreviousMonths + daysInCurrentMonth;
-    }    /**
      * Get current calendar state
      */
     getState() {
+        const currentDate = this.getCurrentDate();
         return {
-            currentDate: this.currentDate,
-            isPaused: !this.state.isRunning, // Corrected: isPaused is true if not running
+            currentDate,
+            isPaused: !this.state.isRunning,
             simulationTime: this.state.totalDays,
-            config: this.internalConfig, // Expose internalConfig which includes realTimeTickMs
+            config: this.internalConfig,
             currentSpeed: this.currentSpeed,
             speedModeDetails: this.speedModes[this.currentSpeed],
             totalTicks: this.state.totalTicks
@@ -429,18 +341,26 @@ class CalendarService extends EventEmitter {
     }
 
     /**
-     * Gets the current calendar date with fallback handling
-     * This is the authoritative method for getting the current game date
+     * Gets the current calendar date from Rust ECS (source of truth)
      * @returns {Object} Calendar date object with year, month, day
      */
-    getCurrentDate() {
-        if (this.currentDate) {
-            return { ...this.currentDate }; // Return a copy to prevent external modification
+    getCurrentDate(): CurrentDate {
+        try {
+            const rustCal = rustSimulation.getCalendar();
+            if (rustCal) {
+                return {
+                    year: rustCal.year,
+                    month: rustCal.month,
+                    day: rustCal.day
+                };
+            }
+        } catch (e) {
+            // Rust not initialized, return default
         }
 
-        if (serverConfig.verboseLogs) console.warn('[CalendarService] currentDate not initialized. Using default start date.');
+        // Fallback to config defaults
         return {
-            year: this.config.startYear || 1,
+            year: this.config.startYear || 4000,
             month: this.config.startMonth || 1,
             day: this.config.startDay || 1
         };
@@ -471,17 +391,20 @@ class CalendarService extends EventEmitter {
      * Get formatted date string
      */
     getFormattedDate() {
+        const currentDate = this.getCurrentDate();
         return {
-            short: `${this.currentDate.year}-${String(this.currentDate.month).padStart(2, '0')}-${String(this.currentDate.day).padStart(2, '0')}`,
-            long: `Year ${this.currentDate.year}, Month ${this.currentDate.month}, Day ${this.currentDate.day}`,
-            dayOfYear: ((this.currentDate.month - 1) * this.config.daysPerMonth) + this.currentDate.day,
+            short: `${currentDate.year}-${String(currentDate.month).padStart(2, '0')}-${String(currentDate.day).padStart(2, '0')}`,
+            long: `Year ${currentDate.year}, Month ${currentDate.month}, Day ${currentDate.day}`,
+            dayOfYear: ((currentDate.month - 1) * this.config.daysPerMonth) + currentDate.day,
             progress: {
-                dayInMonth: this.currentDate.day / this.config.daysPerMonth,
-                monthInYear: this.currentDate.month / this.config.monthsPerYear,
-                dayInYear: (((this.currentDate.month - 1) * this.config.daysPerMonth) + this.currentDate.day) / (this.config.monthsPerYear * this.config.daysPerMonth)
+                dayInMonth: currentDate.day / this.config.daysPerMonth,
+                monthInYear: currentDate.month / this.config.monthsPerYear,
+                dayInYear: (((currentDate.month - 1) * this.config.daysPerMonth) + currentDate.day) / (this.config.monthsPerYear * this.config.daysPerMonth)
             }
         };
-    }    /**
+    }
+
+    /**
      * Get available speed modes
      */
     getSpeedModes() {
@@ -502,7 +425,7 @@ class CalendarService extends EventEmitter {
     /**
      * Subscribe to calendar events
      */
-    subscribe(callback) {
+    subscribe(callback: (event: string, data: any) => void) {
         this.subscribers.add(callback);
 
         // Send current state to new subscriber
@@ -522,42 +445,13 @@ class CalendarService extends EventEmitter {
         this.subscribers.clear();
     }
 
+    // Legacy methods removed - calendar state is in Rust ECS, persisted in bincode file
     async loadStateFromDB() {
-        let dbState = await getCalendarState();
-        if (dbState) {
-            this.currentDate = {
-                year: dbState.year,
-                month: dbState.month,
-                day: dbState.day
-            };
-        } else {
-            // If DB is empty, initialize with config and persist to DB
-            this.currentDate = {
-                year: this.config.startYear,
-                month: this.config.startMonth,
-                day: this.config.startDay
-            };
-            await setCalendarState({
-                year: this.currentDate.year,
-                month: this.currentDate.month,
-                day: this.currentDate.day
-            });
-        }
-
-        // Emit state update to clients
-        this.emit('dateSet', this.getState());
-        if (this.io) {
-            this.io.emit('calendarDateSet', this.getState());
-            this.io.emit('calendarState', this.getState());
-        }
+        // No-op: Calendar loaded from Rust ECS via bincode file
     }
 
     async saveStateToDB() {
-        await setCalendarState({
-            year: this.currentDate.year,
-            month: this.currentDate.month,
-            day: this.currentDate.day
-        });
+        // No-op: Calendar saved to Rust ECS via bincode file
     }
 }
 
