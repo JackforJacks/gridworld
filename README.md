@@ -129,7 +129,7 @@ GridWorld is a **Tauri v2 desktop app** with all simulation logic running in Rus
 
 ## License
 
-MIT License - Copyright (c) 2014-2017 Robert Scanlon
+MIT License
 
 ## Credits
 
