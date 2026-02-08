@@ -97,6 +97,9 @@ interface IntegrityDetail {
     error?: string;
 }
 
+// Event log moved to Rust (Phase 2)
+// Node.js now queries Rust event log via rustSimulation.getRecentEvents()
+// Keeping type definition for backward compatibility
 interface EventLogEntry {
     type: 'birth' | 'death' | 'marriage' | 'pregnancy_started' | 'dissolution';
     date: { year: number; month: number; day: number };
@@ -157,8 +160,9 @@ class PopulationService {
         this.totalDeathCount = 0;
         this.lastRateReset = Date.now();
 
-        // In-memory event log for births and deaths
-        this.eventLog = [];
+        // Event log moved to Rust (Phase 2) - events automatically logged by Rust tick()
+        // Query via rustSimulation.getRecentEvents() when needed
+        this.eventLog = []; // Deprecated - kept for backward compatibility
 
         // Statistics service for vital rates - use provided instance or create new one
         this.statisticsService = statisticsService || new StatisticsService();
@@ -225,28 +229,19 @@ class PopulationService {
         }
 
         // Listen to calendar tick events for statistics tracking
-        // Rust now handles the actual tick - we just track births/deaths for statistics
+        // Rust now handles the actual tick AND event logging (Phase 2)
         if (calendarService) {
             calendarService.on('tick', async (eventData: any) => {
                 // Event data now includes tickResults from Rust calendar thread
                 if (eventData.tickResults) {
-                    const { births, deaths, marriages, pregnancies, dissolutions } = eventData.tickResults;
+                    const { births, deaths } = eventData.tickResults;
 
-                    // Track births and deaths for statistics
+                    // Track births and deaths for statistics (Node.js side)
                     if (births > 0) this.trackBirths(births);
                     if (deaths > 0) this.trackDeaths(deaths);
 
-                    // Add family events to eventLog
-                    const currentDate = eventData.currentDate || this.calendarService?.getCurrentDate() || { year: 4000, month: 1, day: 1 };
-                    for (let i = 0; i < marriages; i++) {
-                        this.eventLog.push({ type: 'marriage', date: { ...currentDate } });
-                    }
-                    for (let i = 0; i < pregnancies; i++) {
-                        this.eventLog.push({ type: 'pregnancy_started', date: { ...currentDate } });
-                    }
-                    for (let i = 0; i < dissolutions; i++) {
-                        this.eventLog.push({ type: 'dissolution', date: { ...currentDate } });
-                    }
+                    // Events are automatically logged by Rust tick() - no need to push to eventLog
+                    // Query via rustSimulation.getRecentEvents() when needed
 
                     // Broadcast updated population data
                     await this.broadcastUpdate('populationUpdate');
@@ -354,6 +349,7 @@ class PopulationService {
     /**
      * Track births with in-game date
      * Uses event emitter for decoupled notification
+     * Note: Events are now logged by Rust automatically (Phase 2)
      * @param count - Number of births
      */
     trackBirths(count: number) {
@@ -365,9 +361,8 @@ class PopulationService {
         // Increment cumulative birth counter (never resets)
         this.totalBirthCount += count;
 
+        // Emit birth events for WebSocket broadcasting
         for (let i = 0; i < count; i++) {
-            this.eventLog.push({ type: 'birth', date: { ...date } });
-            // Emit birth event instead of direct socket call
             this.events.emitBirth({ date, count: 1 });
         }
 
@@ -390,6 +385,7 @@ class PopulationService {
     /**
      * Track deaths with in-game date
      * Uses event emitter for decoupled notification
+     * Note: Events are now logged by Rust automatically (Phase 2)
      * @param count - Number of deaths
      */
     trackDeaths(count: number) {
@@ -401,9 +397,8 @@ class PopulationService {
         // Increment cumulative death counter (never resets)
         this.totalDeathCount += count;
 
+        // Emit death events for WebSocket broadcasting
         for (let i = 0; i < count; i++) {
-            this.eventLog.push({ type: 'death', date: { ...date } });
-            // Emit death event instead of direct socket call
             this.events.emitDeath({ date, count: 1 });
         }
 
@@ -481,23 +476,8 @@ class PopulationService {
                 this.trackDeaths(result.deaths);
             }
 
-            // Add family events to eventLog (marriages, pregnancies, dissolutions)
-            const currentDate = this.calendarService?.getState()?.currentDate || { year: 4000, month: 1, day: 1 };
-            if (result.marriages > 0) {
-                for (let i = 0; i < result.marriages; i++) {
-                    this.eventLog.push({ type: 'marriage', date: { ...currentDate } });
-                }
-            }
-            if (result.pregnancies > 0) {
-                for (let i = 0; i < result.pregnancies; i++) {
-                    this.eventLog.push({ type: 'pregnancy_started', date: { ...currentDate } });
-                }
-            }
-            if (result.dissolutions > 0) {
-                for (let i = 0; i < result.dissolutions; i++) {
-                    this.eventLog.push({ type: 'dissolution', date: { ...currentDate } });
-                }
-            }
+            // Events are automatically logged by Rust tick() (Phase 2)
+            // No need to push to eventLog - query via rustSimulation.getRecentEvents() when needed
 
             // Log significant events
             if (config.verboseLogs && (result.births > 0 || result.deaths > 0 || result.marriages > 0)) {

@@ -24,7 +24,9 @@
       "Bash(npm prune:*)",
       "Bash(netstat:*)",
       "Bash(npm run build:server:*)",
-      "Bash(curl:*)"
+      "Bash(curl:*)",
+      "Bash(lsof:*)",
+      "Read(//c/Users/giaco/OneDrive/Documenti/github/GridWorld/**)"
     ]
   }
 }

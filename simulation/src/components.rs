@@ -204,3 +204,142 @@ impl Calendar {
         }
     }
 }
+
+// ============================================================================
+// Event Log (Phase 2 - moved from Node.js)
+// ============================================================================
+
+use std::collections::VecDeque;
+
+/// Event types for tracking simulation history
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub enum EventType {
+    Birth,
+    Death,
+    Marriage,
+    PregnancyStarted,
+    Dissolution,
+}
+
+/// A single event in the simulation history
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct Event {
+    pub event_type: EventType,
+    pub year: u16,
+    pub month: u8,
+    pub day: u8,
+    /// Optional person ID (for births, deaths)
+    pub person_id: Option<u64>,
+}
+
+impl Event {
+    pub fn new(event_type: EventType, calendar: &Calendar) -> Self {
+        Self {
+            event_type,
+            year: calendar.year,
+            month: calendar.month,
+            day: calendar.day,
+            person_id: None,
+        }
+    }
+
+    pub fn with_person(event_type: EventType, calendar: &Calendar, person_id: u64) -> Self {
+        Self {
+            event_type,
+            year: calendar.year,
+            month: calendar.month,
+            day: calendar.day,
+            person_id: Some(person_id),
+        }
+    }
+}
+
+/// Event log with circular buffer (configurable max size)
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct EventLog {
+    events: VecDeque<Event>,
+    max_size: usize,
+}
+
+impl EventLog {
+    pub fn new(max_size: usize) -> Self {
+        Self {
+            events: VecDeque::with_capacity(max_size),
+            max_size,
+        }
+    }
+
+    /// Add an event to the log
+    pub fn push(&mut self, event: Event) {
+        if self.events.len() >= self.max_size {
+            self.events.pop_front(); // Remove oldest
+        }
+        self.events.push_back(event);
+    }
+
+    /// Get all events (newest first)
+    pub fn get_all(&self) -> Vec<Event> {
+        self.events.iter().rev().cloned().collect()
+    }
+
+    /// Get events filtered by type
+    pub fn get_by_type(&self, event_type: EventType) -> Vec<Event> {
+        self.events
+            .iter()
+            .filter(|e| e.event_type == event_type)
+            .rev()
+            .cloned()
+            .collect()
+    }
+
+    /// Get events within a date range (inclusive)
+    pub fn get_by_date_range(&self, start_year: u16, end_year: u16) -> Vec<Event> {
+        self.events
+            .iter()
+            .filter(|e| e.year >= start_year && e.year <= end_year)
+            .rev()
+            .cloned()
+            .collect()
+    }
+
+    /// Get recent events (last N events)
+    pub fn get_recent(&self, count: usize) -> Vec<Event> {
+        self.events
+            .iter()
+            .rev()
+            .take(count)
+            .cloned()
+            .collect()
+    }
+
+    /// Count events by type within a date range
+    pub fn count_by_type(&self, event_type: EventType, start_year: u16, end_year: u16) -> usize {
+        self.events
+            .iter()
+            .filter(|e| {
+                e.event_type == event_type && e.year >= start_year && e.year <= end_year
+            })
+            .count()
+    }
+
+    /// Clear all events
+    pub fn clear(&mut self) {
+        self.events.clear();
+    }
+
+    /// Get total event count
+    pub fn len(&self) -> usize {
+        self.events.len()
+    }
+
+    /// Check if log is empty
+    pub fn is_empty(&self) -> bool {
+        self.events.is_empty()
+    }
+}
+
+impl Default for EventLog {
+    fn default() -> Self {
+        Self::new(10000) // Default to 10k events (~10k ticks of history)
+    }
+}

@@ -450,3 +450,132 @@ pub fn is_calendar_running() -> bool {
     let global_runner = CALENDAR_RUNNER.lock().unwrap();
     global_runner.as_ref().map(|r| r.is_running()).unwrap_or(false)
 }
+
+// ============================================================================
+// Event Log Queries (Phase 2 - event history)
+// ============================================================================
+
+/// Event returned to JavaScript
+#[napi(object)]
+pub struct JsEvent {
+    pub event_type: String,
+    pub year: i32,
+    pub month: u8,
+    pub day: u8,
+    pub person_id: Option<i64>,
+}
+
+impl From<crate::components::Event> for JsEvent {
+    fn from(event: crate::components::Event) -> Self {
+        use crate::components::EventType;
+        let event_type = match event.event_type {
+            EventType::Birth => "birth",
+            EventType::Death => "death",
+            EventType::Marriage => "marriage",
+            EventType::PregnancyStarted => "pregnancy_started",
+            EventType::Dissolution => "dissolution",
+        }
+        .to_string();
+
+        JsEvent {
+            event_type,
+            year: event.year as i32,
+            month: event.month,
+            day: event.day,
+            person_id: event.person_id.map(|id| id as i64),
+        }
+    }
+}
+
+/// Get all events from the event log (newest first)
+#[napi]
+pub fn get_all_events(world: External<WorldHandle>) -> Vec<JsEvent> {
+    let w = world.lock().unwrap();
+    w.event_log.get_all().into_iter().map(JsEvent::from).collect()
+}
+
+/// Get recent events (last N events, newest first)
+#[napi]
+pub fn get_recent_events(world: External<WorldHandle>, count: u32) -> Vec<JsEvent> {
+    let w = world.lock().unwrap();
+    w.event_log
+        .get_recent(count as usize)
+        .into_iter()
+        .map(JsEvent::from)
+        .collect()
+}
+
+/// Get events filtered by type
+#[napi]
+pub fn get_events_by_type(world: External<WorldHandle>, event_type: String) -> Vec<JsEvent> {
+    use crate::components::EventType;
+    let w = world.lock().unwrap();
+
+    let filter_type = match event_type.as_str() {
+        "birth" => EventType::Birth,
+        "death" => EventType::Death,
+        "marriage" => EventType::Marriage,
+        "pregnancy_started" => EventType::PregnancyStarted,
+        "dissolution" => EventType::Dissolution,
+        _ => return vec![],
+    };
+
+    w.event_log
+        .get_by_type(filter_type)
+        .into_iter()
+        .map(JsEvent::from)
+        .collect()
+}
+
+/// Get events within a date range (inclusive)
+#[napi]
+pub fn get_events_by_date_range(
+    world: External<WorldHandle>,
+    start_year: i32,
+    end_year: i32,
+) -> Vec<JsEvent> {
+    let w = world.lock().unwrap();
+    w.event_log
+        .get_by_date_range(start_year as u16, end_year as u16)
+        .into_iter()
+        .map(JsEvent::from)
+        .collect()
+}
+
+/// Count events by type within a date range
+#[napi]
+pub fn count_events_by_type(
+    world: External<WorldHandle>,
+    event_type: String,
+    start_year: i32,
+    end_year: i32,
+) -> u32 {
+    use crate::components::EventType;
+    let w = world.lock().unwrap();
+
+    let filter_type = match event_type.as_str() {
+        "birth" => EventType::Birth,
+        "death" => EventType::Death,
+        "marriage" => EventType::Marriage,
+        "pregnancy_started" => EventType::PregnancyStarted,
+        "dissolution" => EventType::Dissolution,
+        _ => return 0,
+    };
+
+    w.event_log
+        .count_by_type(filter_type, start_year as u16, end_year as u16) as u32
+}
+
+/// Get total event count in log
+#[napi]
+pub fn get_event_count(world: External<WorldHandle>) -> u32 {
+    let w = world.lock().unwrap();
+    w.event_log.len() as u32
+}
+
+/// Clear event log
+#[napi]
+pub fn clear_event_log(world: External<WorldHandle>) {
+    let mut w = world.lock().unwrap();
+    w.event_log.clear();
+}

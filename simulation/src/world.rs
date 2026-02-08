@@ -20,6 +20,7 @@ pub struct SimulationWorld {
     pub world: World,
     pub calendar: Calendar,
     pub next_person_id: u64,
+    pub event_log: EventLog,
 }
 
 impl SimulationWorld {
@@ -28,6 +29,7 @@ impl SimulationWorld {
             world: World::new(),
             calendar: Calendar::default(),  // Year 4000, month 1, day 1
             next_person_id: 1,
+            event_log: EventLog::default(), // 10k event capacity
         }
     }
 
@@ -74,13 +76,30 @@ impl SimulationWorld {
     /// Returns a TickResult with births, deaths, marriages, pregnancies, dissolutions, and population.
     pub fn tick(&mut self) -> TickResult {
         self.calendar.advance();
-        
+
         // Run all systems
         let deaths = systems::death_system(&mut self.world, &self.calendar);
         let marriages = systems::matchmaking_system(&mut self.world, &self.calendar);
         let family = systems::family_system(&mut self.world, &self.calendar, &mut self.next_person_id);
         let population = self.entity_count() as u32;
-        
+
+        // Log events to event log (Phase 2)
+        for _ in 0..family.deliveries {
+            self.event_log.push(Event::new(EventType::Birth, &self.calendar));
+        }
+        for _ in 0..deaths {
+            self.event_log.push(Event::new(EventType::Death, &self.calendar));
+        }
+        for _ in 0..marriages {
+            self.event_log.push(Event::new(EventType::Marriage, &self.calendar));
+        }
+        for _ in 0..family.new_pregnancies {
+            self.event_log.push(Event::new(EventType::PregnancyStarted, &self.calendar));
+        }
+        for _ in 0..family.dissolutions {
+            self.event_log.push(Event::new(EventType::Dissolution, &self.calendar));
+        }
+
         TickResult {
             births: family.deliveries,
             deaths,

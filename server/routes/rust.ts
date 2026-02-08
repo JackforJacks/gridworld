@@ -127,4 +127,92 @@ router.post('/reset', (req: Request, res: Response) => {
     }
 });
 
+// ============================================================================
+// Event Log Routes (Phase 2)
+// ============================================================================
+
+// GET /api/rust/events - Get all events
+router.get('/events', (req: Request, res: Response) => {
+    try {
+        const events = rustSimulation.getAllEvents();
+        res.json({ success: true, count: events.length, events });
+    } catch (error: unknown) {
+        console.error('Error getting all events:', error);
+        res.status(500).json({ success: false, error: (error as Error).message });
+    }
+});
+
+// GET /api/rust/events/recent - Get recent N events
+router.get('/events/recent', (req: Request, res: Response) => {
+    try {
+        const count = parseInt((req.query.count as string) || '100', 10);
+        const events = rustSimulation.getRecentEvents(count);
+        res.json({ success: true, count: events.length, events });
+    } catch (error: unknown) {
+        console.error('Error getting recent events:', error);
+        res.status(500).json({ success: false, error: (error as Error).message });
+    }
+});
+
+// GET /api/rust/events/type/:eventType - Get events by type
+router.get('/events/type/:eventType', (req: Request, res: Response) => {
+    try {
+        const { eventType } = req.params;
+        const events = rustSimulation.getEventsByType(eventType);
+        res.json({ success: true, eventType, count: events.length, events });
+    } catch (error: unknown) {
+        console.error('Error getting events by type:', error);
+        res.status(500).json({ success: false, error: (error as Error).message });
+    }
+});
+
+// GET /api/rust/events/range - Get events by date range
+router.get('/events/range', (req: Request, res: Response) => {
+    try {
+        const startYear = parseInt((req.query.startYear as string) || '4000', 10);
+        const endYear = parseInt((req.query.endYear as string) || '5000', 10);
+        const events = rustSimulation.getEventsByDateRange(startYear, endYear);
+        res.json({ success: true, startYear, endYear, count: events.length, events });
+    } catch (error: unknown) {
+        console.error('Error getting events by range:', error);
+        res.status(500).json({ success: false, error: (error as Error).message });
+    }
+});
+
+// GET /api/rust/events/count - Get total event count
+router.get('/events/count', (req: Request, res: Response) => {
+    try {
+        const count = rustSimulation.getEventCount();
+        res.json({ success: true, count });
+    } catch (error: unknown) {
+        console.error('Error getting event count:', error);
+        res.status(500).json({ success: false, error: (error as Error).message });
+    }
+});
+
+// GET /api/rust/events/count/:eventType - Count events by type in range
+router.get('/events/count/:eventType', (req: Request, res: Response) => {
+    try {
+        const { eventType } = req.params;
+        const startYear = parseInt((req.query.startYear as string) || '4000', 10);
+        const endYear = parseInt((req.query.endYear as string) || '5000', 10);
+        const count = rustSimulation.countEventsByType(eventType, startYear, endYear);
+        res.json({ success: true, eventType, startYear, endYear, count });
+    } catch (error: unknown) {
+        console.error('Error counting events by type:', error);
+        res.status(500).json({ success: false, error: (error as Error).message });
+    }
+});
+
+// DELETE /api/rust/events - Clear event log
+router.delete('/events', (req: Request, res: Response) => {
+    try {
+        rustSimulation.clearEventLog();
+        res.json({ success: true, message: 'Event log cleared' });
+    } catch (error: unknown) {
+        console.error('Error clearing event log:', error);
+        res.status(500).json({ success: false, error: (error as Error).message });
+    }
+});
+
 export default router;

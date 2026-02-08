@@ -30,6 +30,14 @@ export interface TickEvent {
     day: number;
 }
 
+export interface Event {
+    eventType: string; // 'birth' | 'death' | 'marriage' | 'pregnancy_started' | 'dissolution'
+    year: number;
+    month: number;
+    day: number;
+    personId?: number;
+}
+
 export interface TilePopulation {
     tileId: number;
     count: number;
@@ -246,6 +254,60 @@ class RustSimulationService {
      */
     isCalendarRunning(): boolean {
         return simulation.isCalendarRunning() as boolean;
+    }
+
+    // ========================================================================
+    // Event Log Queries (Phase 2 - event history)
+    // ========================================================================
+
+    /**
+     * Get all events from event log (newest first)
+     */
+    getAllEvents(): Event[] {
+        return simulation.getAllEvents(this.world) as Event[];
+    }
+
+    /**
+     * Get recent events (last N events, newest first)
+     */
+    getRecentEvents(count: number): Event[] {
+        return simulation.getRecentEvents(this.world, count) as Event[];
+    }
+
+    /**
+     * Get events filtered by type
+     * @param eventType - 'birth' | 'death' | 'marriage' | 'pregnancy_started' | 'dissolution'
+     */
+    getEventsByType(eventType: string): Event[] {
+        return simulation.getEventsByType(this.world, eventType) as Event[];
+    }
+
+    /**
+     * Get events within a date range (inclusive)
+     */
+    getEventsByDateRange(startYear: number, endYear: number): Event[] {
+        return simulation.getEventsByDateRange(this.world, startYear, endYear) as Event[];
+    }
+
+    /**
+     * Count events by type within a date range
+     */
+    countEventsByType(eventType: string, startYear: number, endYear: number): number {
+        return simulation.countEventsByType(this.world, eventType, startYear, endYear) as number;
+    }
+
+    /**
+     * Get total event count in log
+     */
+    getEventCount(): number {
+        return simulation.getEventCount(this.world) as number;
+    }
+
+    /**
+     * Clear event log
+     */
+    clearEventLog(): void {
+        simulation.clearEventLog(this.world);
     }
 }
 
