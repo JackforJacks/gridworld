@@ -69,14 +69,9 @@ export function getFertilityClass(fertility: number): string {
     return 'excellent';
 }
 
-// Extend Window interface for global properties
+// Window.THREE is set by index.ts for global access
 declare global {
     interface Window {
         THREE: typeof THREE;
-        currentTiles?: THREE.Mesh[];
-        sceneManager?: SceneManagerLike;
-        __tileSelectorJustClosed?: number;
-        __tileSelectorDebug?: boolean;
-        __tileSelectorCloseHandlerAttached?: boolean;
     }
 }

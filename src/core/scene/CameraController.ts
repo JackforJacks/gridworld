@@ -178,11 +178,6 @@ class CameraController {
                 this.zoom(zoomStep);
                 break;
 
-            // 'r' key removed - was conflicting with user preferences
-            // case 'r':
-            //     this.reset();
-            //     break;
-
             case 'c':
                 this.distance = 160;
                 this.targetRotation.x = 0;

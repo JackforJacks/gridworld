@@ -148,13 +148,12 @@ export function getPopulationStats(
  * Initialize tile populations from server
  */
 export async function initializeTilePopulations(
-    habitableTileIds: (number | string)[],
+    _habitableTileIds: (number | string)[],
     hexasphere: HexasphereData | null,
     tileColorIndices: Map<string, TileColorInfo>,
     overlayManager: TileOverlayManager
 ): Promise<void> {
     try {
-        const tileIdStrings = habitableTileIds.map(id => String(id));
         await populationManager.refreshTilePopulations();
         updateTilePopulations(hexasphere);
         checkPopulationThresholds(hexasphere, tileColorIndices, overlayManager);
@@ -188,7 +187,6 @@ export async function reinitializePopulation(
     }
 
     try {
-        const tileIdStrings = ids.map(id => String(id));
         await populationManager.refreshTilePopulations();
         updateTilePopulations(hexasphere);
         checkPopulationThresholds(hexasphere, tileColorIndices, overlayManager);

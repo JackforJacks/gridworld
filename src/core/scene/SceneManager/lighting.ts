@@ -39,7 +39,7 @@ export function addLighting(
     scene: THREE.Scene,
     camera: THREE.Camera,
     state: LightingState,
-    sphereRadius: number = 30
+    _sphereRadius: number = 30
 ): LightingState {
     // Remove existing camera light
     if (state.cameraLight) {

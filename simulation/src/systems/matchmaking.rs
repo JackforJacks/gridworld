@@ -69,12 +69,12 @@ pub fn matchmaking_system(world: &mut World, cal: &Calendar) -> u32 {
     
     // Process marriages - just add Partner component to both
     for (husband_entity, wife_entity) in marriages {
-        let _ = world.insert_one(husband_entity, Partner(wife_entity));
-        let _ = world.insert_one(wife_entity, Partner(husband_entity));
-        
+        let _ = world.insert_one(husband_entity, Partner(wife_entity)); // Entity from query, safe to ignore
+        let _ = world.insert_one(wife_entity, Partner(husband_entity)); // Entity from query, safe to ignore
+
         // Ensure wife has fertility component
         if world.get::<&Fertility>(wife_entity).is_err() {
-            let _ = world.insert_one(wife_entity, Fertility::default());
+            let _ = world.insert_one(wife_entity, Fertility::default()); // Entity from query, safe to ignore
         }
     }
     

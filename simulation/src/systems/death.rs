@@ -52,7 +52,7 @@ pub fn death_system(world: &mut World, cal: &Calendar) -> u32 {
     
     // Despawn dead entities
     for entity in deaths {
-        let _ = world.despawn(entity);
+        let _ = world.despawn(entity); // Entity guaranteed to exist from query above
     }
     
     count

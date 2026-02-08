@@ -8,33 +8,35 @@
 import * as THREE from 'three';
 
 // Forward declarations to avoid circular dependencies
-// Using 'any' for manager types to allow flexible assignment from actual class instances
-// while still providing basic type hints for common operations
-interface SceneManagerLike {
+// These interfaces define the subset of methods actually accessed through AppContext
+export interface SceneManagerLike {
     hexasphere?: { tiles: unknown[]; mesh?: THREE.Mesh } | null;
     getPopulationStats?: () => unknown;
+    requestRender?: () => void;
 }
 
-interface UIManagerLike {
+export interface UIManagerLike {
     showMessage?: (message: string, type: string) => void;
     hideLoadingIndicator?: () => void;
 }
 
-interface TileSelectorLike {
+export interface TileSelectorLike {
     selectedTile?: unknown;
     infoRefreshTileId?: number | string | null;
     hideInfoPanel?: () => void;
-    deselectAll?: () => void;
+    deselectAll(): void;
     removeBorder?: () => void;
     updateInfoPanel?: (tile: unknown) => void;
 }
 
-interface CalendarManagerLike {
+export interface CalendarManagerLike {
+    initialize?: () => Promise<void>;
     updateState?: (state: unknown) => void;
 }
 
-interface CalendarDisplayLike {
-    updateDateDisplay?: (state: unknown) => void;
+export interface CalendarDisplayLike {
+    pauseCalendar(): Promise<void>;
+    resumeCalendar(): Promise<void>;
 }
 
 // Hexasphere data structure
@@ -67,17 +69,12 @@ interface IAppContext {
     renderer: THREE.WebGLRenderer | null;
     camera: THREE.PerspectiveCamera | null;
 
-    // Managers - using any to allow actual class instances
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    sceneManager: any;
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    uiManager: any;
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    tileSelector: any;
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    calendarManager: any;
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    calendarDisplay: any;
+    // Managers - typed via Like interfaces to avoid circular dependencies
+    sceneManager: SceneManagerLike | null;
+    uiManager: UIManagerLike | null;
+    tileSelector: TileSelectorLike | null;
+    calendarManager: CalendarManagerLike | null;
+    calendarDisplay: CalendarDisplayLike | null;
 
     // Scene data
     hexasphere: HexasphereData | null;
@@ -115,18 +112,12 @@ class AppContext implements IAppContext {
     public renderer: THREE.WebGLRenderer | null = null;
     public camera: THREE.PerspectiveCamera | null = null;
 
-    // Managers - using 'any' internally to allow actual class instances to be assigned
-    // External access via getters provides type hints
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    public sceneManager: any = null;
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    public uiManager: any = null;
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    public tileSelector: any = null;
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    public calendarManager: any = null;
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    public calendarDisplay: any = null;
+    // Managers - typed via Like interfaces to avoid circular dependencies
+    public sceneManager: SceneManagerLike | null = null;
+    public uiManager: UIManagerLike | null = null;
+    public tileSelector: TileSelectorLike | null = null;
+    public calendarManager: CalendarManagerLike | null = null;
+    public calendarDisplay: CalendarDisplayLike | null = null;
 
     // Scene data
     public hexasphere: HexasphereData | null = null;

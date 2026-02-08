@@ -72,8 +72,8 @@ impl BirthDate {
     pub fn can_have_children(&self, sex: Sex, cal: &Calendar) -> bool {
         let years = self.age_years(cal);
         match sex {
-            Sex::Female => years >= 16 && years <= 33,
-            Sex::Male => years >= 16 && years <= 65,
+            Sex::Female => (16..=33).contains(&years),
+            Sex::Male => (16..=65).contains(&years),
         }
     }
 }
@@ -124,17 +124,11 @@ impl Pregnant {
 
 /// Fertility tracking for women
 /// Uses year/month for birth interval tracking (0 = never gave birth)
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone, Copy, Default)]
 pub struct Fertility {
     pub last_birth_year: u16,   // 0 = never
     pub last_birth_month: u8,   // 1-12
     pub children_born: u8,      // Total children (max 255)
-}
-
-impl Default for Fertility {
-    fn default() -> Self {
-        Self { last_birth_year: 0, last_birth_month: 0, children_born: 0 }
-    }
 }
 
 impl Fertility {
@@ -277,29 +271,34 @@ impl EventLog {
         self.events.push_back(event);
     }
 
+    /// Iterate all events (newest first), zero allocation
+    pub fn iter_all(&self) -> impl Iterator<Item = &Event> + '_ {
+        self.events.iter().rev()
+    }
+
     /// Get all events (newest first)
     pub fn get_all(&self) -> Vec<Event> {
-        self.events.iter().rev().cloned().collect()
+        self.iter_all().cloned().collect()
+    }
+
+    /// Iterate events by type (newest first), zero allocation
+    pub fn iter_by_type(&self, event_type: EventType) -> impl Iterator<Item = &Event> + '_ {
+        self.events.iter().filter(move |e| e.event_type == event_type).rev()
     }
 
     /// Get events filtered by type
     pub fn get_by_type(&self, event_type: EventType) -> Vec<Event> {
-        self.events
-            .iter()
-            .filter(|e| e.event_type == event_type)
-            .rev()
-            .cloned()
-            .collect()
+        self.iter_by_type(event_type).cloned().collect()
+    }
+
+    /// Iterate events within a date range (newest first), zero allocation
+    pub fn iter_by_date_range(&self, start_year: u16, end_year: u16) -> impl Iterator<Item = &Event> + '_ {
+        self.events.iter().filter(move |e| e.year >= start_year && e.year <= end_year).rev()
     }
 
     /// Get events within a date range (inclusive)
     pub fn get_by_date_range(&self, start_year: u16, end_year: u16) -> Vec<Event> {
-        self.events
-            .iter()
-            .filter(|e| e.year >= start_year && e.year <= end_year)
-            .rev()
-            .cloned()
-            .collect()
+        self.iter_by_date_range(start_year, end_year).cloned().collect()
     }
 
     /// Get recent events (last N events)

@@ -73,7 +73,6 @@ function statRow(label: string, value: string, id?: string): string {
 }
 
 class UIManager {
-    private isInitialized: boolean;
     private populationUnsubscribe: (() => void) | null;
     private sceneManager: SceneManagerLike | null;
     private cameraController: CameraControllerLike | null;
@@ -82,7 +81,6 @@ class UIManager {
     private messageTimeout: ReturnType<typeof setTimeout> | null;
 
     constructor(sceneManager: SceneManagerLike | null) {
-        this.isInitialized = false;
         this.populationUnsubscribe = null;
         this.sceneManager = sceneManager;
         this.cameraController = null;
@@ -101,7 +99,6 @@ class UIManager {
         this.setupPopulationDisplay();
         this.setupResetButtons();
         this.connectToPopulationManager();
-        this.isInitialized = true;
     }
 
     getContainer(): HTMLElement {
@@ -157,36 +154,44 @@ class UIManager {
         this.setupHelpModal();
     }
 
-    private setupHelpModal(): void {
-        const helpBtn = document.getElementById('toggle-help');
-        const overlay = document.getElementById('help-modal-overlay');
-        const closeBtn = overlay?.querySelector('.help-modal-close');
+    /**
+     * Setup a modal with toggle button, close button, and backdrop click.
+     * Pauses/resumes calendar when opening/closing.
+     */
+    private setupModal(buttonId: string, overlayId: string, closeSelector: string): void {
+        const btn = document.getElementById(buttonId);
+        const overlay = document.getElementById(overlayId);
+        const closeBtn = overlay?.querySelector(closeSelector);
 
-        if (!helpBtn || !overlay) return;
+        if (!btn || !overlay) return;
 
-        const openHelp = () => {
+        const open = () => {
             overlay.classList.remove('hidden');
             getAppContext().calendarDisplay?.pauseCalendar();
         };
 
-        const closeHelp = () => {
+        const close = () => {
             overlay.classList.add('hidden');
             getAppContext().calendarDisplay?.resumeCalendar();
         };
 
-        helpBtn.addEventListener('click', () => {
+        btn.addEventListener('click', () => {
             if (overlay.classList.contains('hidden')) {
-                openHelp();
+                open();
             } else {
-                closeHelp();
+                close();
             }
         });
 
-        closeBtn?.addEventListener('click', closeHelp);
+        closeBtn?.addEventListener('click', close);
 
         overlay.addEventListener('click', (e) => {
-            if (e.target === overlay) closeHelp();
+            if (e.target === overlay) close();
         });
+    }
+
+    private setupHelpModal(): void {
+        this.setupModal('toggle-help', 'help-modal-overlay', '.help-modal-close');
     }
 
     setupPopulationDisplay(): void {
@@ -258,37 +263,7 @@ class UIManager {
     }
 
     private setupMenuModal(): void {
-        const menuBtn = document.getElementById('menu-btn');
-        const overlay = document.getElementById('menu-modal-overlay');
-        const closeBtn = overlay?.querySelector('.menu-modal-close');
-
-        if (!menuBtn || !overlay) return;
-
-        const openMenu = () => {
-            overlay.classList.remove('hidden');
-            getAppContext().calendarDisplay?.pauseCalendar();
-        };
-
-        const closeMenu = () => {
-            overlay.classList.add('hidden');
-            getAppContext().calendarDisplay?.resumeCalendar();
-        };
-
-        menuBtn.addEventListener('click', () => {
-            if (overlay.classList.contains('hidden')) {
-                openMenu();
-            } else {
-                closeMenu();
-            }
-        });
-
-        closeBtn?.addEventListener('click', closeMenu);
-
-        overlay.addEventListener('click', (e) => {
-            if (e.target === overlay) {
-                closeMenu();
-            }
-        });
+        this.setupModal('menu-btn', 'menu-modal-overlay', '.menu-modal-close');
     }
 
     async handleSaveGame(): Promise<void> {
@@ -681,7 +656,6 @@ class UIManager {
             this.populationUnsubscribe();
             this.populationUnsubscribe = null;
         }
-        this.isInitialized = false;
     }
 }
 

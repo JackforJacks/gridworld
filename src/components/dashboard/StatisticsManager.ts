@@ -1,6 +1,5 @@
 // Population Statistics UI Component
 import { getApiClient } from '../../services/api/ApiClient';
-import type { VitalStatistics } from '../../services/api/ApiClient';
 import populationManager from '../../managers/population/PopulationManager';
 
 // Declare Chart.js global type
@@ -49,14 +48,12 @@ interface ChartOptions {
 
 class StatisticsManager {
     private container: HTMLDivElement | null;
-    private chartContainer: HTMLDivElement | null;
     private chart: ChartInstance | null;
     private isVisible: boolean;
     private refreshInterval: ReturnType<typeof setInterval> | null;
 
     constructor() {
         this.container = null;
-        this.chartContainer = null;
         this.chart = null;
         this.isVisible = false;
         this.refreshInterval = null;

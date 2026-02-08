@@ -57,7 +57,6 @@ class Tile {
     public latitude: number | null;
     public longitude: number | null;
     public terrainType: string;
-    public terrain?: string;
     public boundary: Point[];
     public neighborIds: string[];
     public neighbors: Tile[];
@@ -149,7 +148,6 @@ class Tile {
         this.latitude = latitude;
         this.longitude = longitude;
         this.terrainType = terrainType;
-        this.terrain = terrainType;
     }
 
     getProperties(): {

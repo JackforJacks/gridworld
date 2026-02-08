@@ -35,7 +35,9 @@
       "Bash(python:*)",
       "Bash(npx tauri icon:*)",
       "Bash(findstr:*)",
-      "Bash(cargo clean:*)"
+      "Bash(cargo clean:*)",
+      "Bash(cargo clippy:*)",
+      "Bash(cargo test:*)"
     ]
   }
 }

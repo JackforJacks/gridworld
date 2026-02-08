@@ -7,6 +7,7 @@ use rand::Rng;
 use crate::components::{
     BirthDate, Calendar, Fertility, Mother, Partner, Person, PersonId, Pregnant, Sex, TileId
 };
+use crate::names;
 
 /// Base conception rate per day for eligible partnered women
 /// Annual ~0.40 / 96 days ≈ 0.004 per day (slightly lower than instant birth)
@@ -78,7 +79,7 @@ fn pregnancy_system(world: &mut World, cal: &Calendar) -> u32 {
     
     // Add Pregnant component to each
     for entity in to_conceive {
-        let _ = world.insert_one(entity, Pregnant::new(cal));
+        let _ = world.insert_one(entity, Pregnant::new(cal)); // Entity validated by query above
     }
     
     count
@@ -105,7 +106,7 @@ fn delivery_system(world: &mut World, cal: &Calendar, next_person_id: &mut u64) 
     // Process each delivery
     for (mother_entity, tile_id) in deliveries {
         // Remove Pregnant component
-        let _ = world.remove_one::<Pregnant>(mother_entity);
+        let _ = world.remove_one::<Pregnant>(mother_entity); // Entity from query, safe to ignore
         
         // Update mother's fertility tracking
         if let Ok(mut fertility) = world.get::<&mut Fertility>(mother_entity) {
@@ -115,14 +116,20 @@ fn delivery_system(world: &mut World, cal: &Calendar, next_person_id: &mut u64) 
         // Create child
         let child_id = PersonId(*next_person_id);
         *next_person_id += 1;
-        
+
         let sex = if rng.gen::<bool>() { Sex::Male } else { Sex::Female };
-        
+        let is_male = matches!(sex, Sex::Male);
+        let first_name = names::random_first_name(is_male).to_string();
+        // Inherit mother's last name
+        let last_name = world.get::<&Person>(mother_entity)
+            .map(|p| p.last_name.clone())
+            .unwrap_or_default();
+
         let child = world.spawn((
             Person {
                 id: child_id,
-                first_name: format!("Child_{}", child_id.0),
-                last_name: String::new(),
+                first_name,
+                last_name,
             },
             sex,
             BirthDate::new(cal.year, cal.month, cal.day),
@@ -132,7 +139,7 @@ fn delivery_system(world: &mut World, cal: &Calendar, next_person_id: &mut u64) 
         
         // Add fertility component if female child
         if sex == Sex::Female {
-            let _ = world.insert_one(child, Fertility::default());
+            let _ = world.insert_one(child, Fertility::default()); // Just spawned, always valid
         }
     }
     
@@ -157,7 +164,7 @@ fn dissolution_system(world: &mut World) -> u32 {
     
     // Remove Partner component from widowed people
     for entity in to_remove_partner {
-        let _ = world.remove_one::<Partner>(entity);
+        let _ = world.remove_one::<Partner>(entity); // Entity from query, safe to ignore
     }
     
     count

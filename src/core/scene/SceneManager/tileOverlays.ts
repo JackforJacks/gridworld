@@ -244,7 +244,6 @@ export class TileOverlayManager {
     private borderLines: THREE.LineSegments | null = null;
     private borderMaterial: THREE.LineBasicMaterial | null = null;
     private flashOverlays: Map<string, THREE.Line> = new Map();
-    private flashMaterial: THREE.LineBasicMaterial | null = null;
     private flashTimers: Map<string, { timeout: ReturnType<typeof setTimeout>; interval: ReturnType<typeof setInterval> }> = new Map();
 
     constructor(scene: THREE.Scene) {

@@ -32,7 +32,6 @@ class TileSelector {
     private static readonly _tileCenter = new THREE.Vector3();
 
     // Store bound methods to avoid creating new functions each time
-    private boundHandleClick: (event: MouseEvent) => void;
     private boundDocumentClick: ((e: Event) => void) | null = null;
     private boundDocumentKeydown: ((e: KeyboardEvent) => void) | null = null;
 
@@ -50,13 +49,9 @@ class TileSelector {
         this.infoRefreshInterval = null;
         this.infoRefreshTileId = null;
 
-        // Pre-bind methods to avoid creating new closures
-        this.boundHandleClick = this.handleClick.bind(this);
-
         // Expose instance via AppContext
         const ctx = getAppContext();
         ctx.tileSelector = this;
-        (window as unknown as { tileSelector: TileSelector }).tileSelector = this;
 
         // Single event delegation for close button (store references for cleanup)
         this.boundDocumentClick = (e: Event) => {
@@ -167,7 +162,6 @@ class TileSelector {
             ]);
             
             if (data) {
-                tile.lands = data.lands;
                 tile.fertility = data.fertility;
             }
             if (rustData !== null) {
@@ -196,7 +190,7 @@ class TileSelector {
     /**
      * Fetch tile properties (fertility, biome) via Tauri invoke
      */
-    private async fetchTileData(tileId: number | string): Promise<{ lands?: any; fertility?: number } | null> {
+    private async fetchTileData(tileId: number | string): Promise<{ fertility?: number } | null> {
         if (this.isFetching) return null;
 
         this.isFetching = true;
@@ -288,7 +282,6 @@ class TileSelector {
             this.fetchTileData(currentTileId).then(data => {
                 // Only update if still looking at the same tile
                 if (data && this.selectedTile?.id === currentTileId) {
-                    this.selectedTile.lands = data.lands;
                     this.selectedTile.fertility = data.fertility;
                     this.updatePanel(this.selectedTile);
                 }
@@ -356,18 +349,17 @@ class TileSelector {
         // Clear all references to help GC
         this.selectedTile = null;
         this.tileInfoPanel = null;
-        this.scene = null as any;
-        this.camera = null as any;
-        this.raycaster = null as any;
+        this.scene = undefined!;
+        this.camera = undefined!;
+        this.raycaster = undefined!;
         this.borderLines = null;
         this.onChange = null;
 
-        // Remove from global references
+        // Remove from AppContext
         const ctx = getAppContext();
         if (ctx.tileSelector === this) {
             ctx.tileSelector = null;
         }
-        (window as unknown as { tileSelector?: TileSelector | null }).tileSelector = null;
     }
 }
 

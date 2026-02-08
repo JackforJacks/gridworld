@@ -8,10 +8,10 @@ import Hexasphere from '../../hexasphere/HexaSphere';
 import { isHabitable } from '../../../utils/tileUtils';
 
 // Import types
-import type { HexTile, HexasphereData, TileColorInfo, TileDataResponse, PopulationEventType } from './types';
+import type { HexTile, HexasphereData, TileColorInfo, PopulationEventType } from './types';
 
 // Import modules
-import { initializeColorCaches, getBiomeColor, getBiomeColorCached, getTerrainColor } from './colorUtils';
+import { initializeColorCaches, getBiomeColor, getTerrainColor } from './colorUtils';
 import { buildTilesFromLocalHexasphere, createHexasphereMesh, calculateTileProperties, normalizePoint } from './geometryBuilder';
 import type { LocalHexasphere, CompactTileState } from './geometryBuilder';
 import { TileOverlayManager } from './tileOverlays';
@@ -34,7 +34,6 @@ class SceneManager {
     // Hexasphere data (public for external access)
     public hexasphere: HexasphereData | null;
     private habitableTileIds: (number | string)[];
-    private sphereRadius: number;
 
     // State tracking
     private tileColorIndices: Map<string, TileColorInfo>;
@@ -55,7 +54,6 @@ class SceneManager {
         this.tileColorIndices = new Map();
         this.hexasphereMesh = null;
         this.habitableTileIds = [];
-        this.sphereRadius = 30;
         this.overlayManager = null;
         this.populationUpdatePending = false;
         this.populationUpdateRafId = null;
@@ -143,8 +141,6 @@ class SceneManager {
 
     async fetchAndBuildTiles(radius: number, subdivisions: number, tileWidthRatio: number, _forceRegenerate: boolean = false): Promise<void> {
         try {
-            this.sphereRadius = radius;
-
             // Step 1: Generate hexasphere geometry locally
             const genStart = performance.now();
             const localHexasphere = new Hexasphere(radius, subdivisions, tileWidthRatio);
@@ -155,11 +151,11 @@ class SceneManager {
             const fetchStart = performance.now();
             let tileState: Record<string, CompactTileState> = {};
             try {
-                const tileCenters = localHexasphere.tiles.map((tile: any) => ({
+                const tileCenters = localHexasphere.tiles.map((tile) => ({
                     id: tile.id as number,
-                    x: tile.centerPoint.x as number,
-                    y: tile.centerPoint.y as number,
-                    z: tile.centerPoint.z as number,
+                    x: tile.centerPoint.x,
+                    y: tile.centerPoint.y,
+                    z: tile.centerPoint.z,
                 }));
                 const tileProps = await getApiClient().calculateTileProperties(tileCenters);
                 // Convert to CompactTileState format expected by buildTilesFromLocalHexasphere

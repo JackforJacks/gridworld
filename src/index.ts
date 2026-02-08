@@ -9,7 +9,7 @@ import * as THREE from 'three';
 (window as Window & { THREE: typeof THREE }).THREE = THREE;
 
 // Import centralized application context
-import AppContext, { getAppContext } from './core/AppContext';
+import { getAppContext } from './core/AppContext';
 
 // Import modules using modern ES6 imports
 import CameraController from './core/scene/CameraController';
@@ -20,41 +20,19 @@ import UIManager from './managers/ui/UIManager';
 import CalendarManager from './managers/calendar/CalendarManager';
 import CalendarDisplay from './components/dashboard/CalendarDisplay';
 import HeapMeter from './components/dashboard/HeapMeter';
-import BackgroundStars from './core/renderer/BackgroundStars';
-import { initializeAndStartGame } from './core/scene/init';
+import type { HexTile } from './components/controls/TileSelector/types';
+import { loseAllWebGLContexts } from './utils';
 import populationManager from './managers/population/PopulationManager';
 
-// Extend Window interface for global properties used in this module
-// Note: Some properties are already declared in SceneManager.ts and global.d.ts
-// Only declare properties not already defined there
+// Extend Window interface for GC hint used in forceCleanup
 declare global {
     interface Window {
-        scene?: THREE.Scene | null;
-        renderer?: THREE.WebGLRenderer | null;
-        camera?: THREE.PerspectiveCamera | null;
-        uiManager?: UIManager | null;
-        tilePopup?: HTMLElement | null;
-        borderLines?: THREE.Line | null;
-        mouseState?: {
-            isDragging: boolean;
-            previousPosition: { x: number; y: number };
-            initialPosition: { x: number; y: number };
-            clickStartTime: number;
-        };
-        rotationState?: {
-            current: { x: number; y: number };
-            target: { x: number; y: number };
-            autoRotate: boolean;
-        };
-        DEBUG?: boolean;
-        sceneInitialized?: boolean;
-        initializeAndStartGame?: () => Promise<void>;
+        gc?: () => void;
     }
 }
 
 class GridWorldApp {
     // State tracking
-    private isInitialized: boolean;
     private lastTime: number;
 
     // Core modules
@@ -82,7 +60,6 @@ class GridWorldApp {
     private needsRender = true;
 
     constructor() {
-        this.isInitialized = false;
         this.lastTime = Date.now();
 
         // Core modules
@@ -166,7 +143,6 @@ class GridWorldApp {
             await this.startCalendar();
 
             if (this.uiManager) this.uiManager.hideLoadingIndicator();
-            this.isInitialized = true;
             return true;
 
         } catch (error: unknown) {
@@ -205,24 +181,12 @@ class GridWorldApp {
             autoRotate: true
         };
 
-        // Maintain minimal window compatibility for legacy code during transition
-        // These can be removed once all consumers use AppContext
-        window.sceneManager = this.sceneManager ?? undefined;
-        // Note: window.tileSelector is set by TileSelector constructor
     }
 
     async initializeGameData(): Promise<void> {
         try {
-            // Lazy load background stars and init module
-            const [{ default: initStars }, { initializeAndStartGame }] = await Promise.all([
-                import('./core/renderer/BackgroundStars'),
-                import('./core/scene/init')
-            ]);
-
-            // Initialize background stars - DISABLED
-            // if (typeof initStars === 'function') {
-            //     initStars();
-            // }
+            // Lazy load init module
+            const { initializeAndStartGame } = await import('./core/scene/init');
 
             // Create the hexasphere using server environment variables (with timing)
             console.log('🌐 Starting sphere initialization...');
@@ -442,13 +406,10 @@ class GridWorldApp {
     // Public API methods
     selectTile(tileId: number | string): void {
         if (this.tileSelector && this.sceneManager && this.sceneManager.hexasphere) {
-            const hexasphere = this.sceneManager.hexasphere as unknown as { tiles?: any[] };
-            const tiles = hexasphere.tiles || [];
-            const tile = tiles.find((t: any) => t.id === tileId);
+            const tiles = (this.sceneManager.hexasphere.tiles || []) as HexTile[];
+            const tile = tiles.find((t) => t.id === tileId);
             if (tile) {
-                // Cast tile and call selectTile with one argument
-                const tileAny = tile as unknown as Parameters<typeof this.tileSelector.selectTile>[0];
-                this.tileSelector.selectTile(tileAny);
+                this.tileSelector.selectTile(tile);
             }
         }
     }
@@ -546,18 +507,7 @@ function forceCleanup(): void {
     }
 
     // Clean up any existing WebGL contexts
-    const canvases = document.querySelectorAll('canvas');
-    console.log(`[Init] Cleaning up ${canvases.length} canvas elements`);
-    canvases.forEach(canvas => {
-        const gl = canvas.getContext('webgl') || canvas.getContext('webgl2');
-        if (gl) {
-            const loseContext = gl.getExtension('WEBGL_lose_context');
-            if (loseContext) {
-                loseContext.loseContext();
-                console.log('[Init] WebGL context lost');
-            }
-        }
-    });
+    loseAllWebGLContexts();
 
     // Clear stars container to free DOM nodes
     const starsContainer = document.getElementById('stars');
@@ -619,13 +569,7 @@ if (hot) {
             app = null;
         }
         // Force WebGL context loss on all canvases
-        document.querySelectorAll('canvas').forEach(canvas => {
-            const gl = canvas.getContext('webgl') || canvas.getContext('webgl2');
-            if (gl) {
-                const ext = gl.getExtension('WEBGL_lose_context');
-                if (ext) ext.loseContext();
-            }
-        });
+        loseAllWebGLContexts();
     });
     hot.accept();
 }
@@ -635,22 +579,8 @@ window.addEventListener('beforeunload', () => {
     console.log('[Cleanup] beforeunload - forcing cleanup');
     if (app) app.destroy();
 
-    // Aggressive cleanup to prevent 2GB memory retention
-    const canvases = document.querySelectorAll('canvas');
-    canvases.forEach(canvas => {
-        const gl = canvas.getContext('webgl') || canvas.getContext('webgl2');
-        if (gl) {
-            const ext = gl.getExtension('WEBGL_lose_context');
-            if (ext) ext.loseContext();
-        }
-    });
-    
-    // Clear all intervals and timeouts
-    const highestId = window.setTimeout(() => {}, 0);
-    for (let i = 0; i < highestId; i++) {
-        window.clearTimeout(i);
-        window.clearInterval(i);
-    }
+    // Aggressive cleanup to prevent GPU memory retention
+    loseAllWebGLContexts();
 });
 
 // Also cleanup on page hide (mobile)

@@ -1,6 +1,6 @@
 // TileSelector - Info Panel Rendering
 // Handles tile information display in the info panel
-import { HexTile, LandData, BIOME_ICONS, getFertilityIcon, getFertilityClass } from './types';
+import { HexTile, LandData, BIOME_ICONS, getFertilityClass } from './types';
 
 /**
  * Calculate lat/lon from tile center point

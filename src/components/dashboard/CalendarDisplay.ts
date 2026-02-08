@@ -19,12 +19,6 @@ interface CalendarState {
     currentDate?: CalendarDateInfo;
     isRunning?: boolean;
     isPaused?: boolean;
-    totalDays?: number;
-    totalTicks?: number;
-    startTime?: string | null;
-    lastTickTime?: string | null;
-    config?: Record<string, unknown>;
-    formatted?: Record<string, string | undefined>;
     currentSpeed?: string;
 }
 
@@ -42,7 +36,6 @@ class CalendarDisplay {
     private dateElement: HTMLDivElement | null;
     private readonly moonPhases: readonly string[];
     private readonly calendarSize: number;
-    private readonly moonButtonSize: number;
     private readonly monthStepRadius: number;
     private readonly monthDotSize: number;
     private stateChangedHandler: StateChangeHandler | null;
@@ -62,7 +55,6 @@ class CalendarDisplay {
 
         // Default calendar dimensions
         this.calendarSize = 110; // px
-        this.moonButtonSize = 64; // px
         this.monthStepRadius = 44; // px
         this.monthDotSize = 8; // px
 

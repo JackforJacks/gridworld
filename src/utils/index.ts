@@ -44,4 +44,18 @@ function updateDashboard() {
     }
 }
 
-export { updateDashboard, terrainColors, biomeColors };
+/**
+ * Force all WebGL contexts on the page to lose their context.
+ * Used during cleanup to prevent GPU memory retention.
+ */
+function loseAllWebGLContexts(): void {
+    document.querySelectorAll('canvas').forEach(canvas => {
+        const gl = canvas.getContext('webgl') || canvas.getContext('webgl2');
+        if (gl) {
+            const ext = gl.getExtension('WEBGL_lose_context');
+            if (ext) ext.loseContext();
+        }
+    });
+}
+
+export { updateDashboard, terrainColors, biomeColors, loseAllWebGLContexts };

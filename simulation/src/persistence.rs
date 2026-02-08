@@ -141,7 +141,10 @@ impl crate::world::SimulationWorld {
     /// Export entire world state to JSON string
     pub fn export_world(&self) -> String {
         let export_data = self.build_export_data();
-        serde_json::to_string(&export_data).unwrap_or_else(|_| "{}".to_string())
+        serde_json::to_string(&export_data).unwrap_or_else(|e| {
+            eprintln!("[ERROR] Failed to serialize world export: {}", e);
+            "{}".to_string()
+        })
     }
 
     /// Import world state from JSON string, replacing current state
@@ -193,10 +196,11 @@ pub struct LoadFileResult {
 impl crate::world::SimulationWorld {
     /// Build ExportData from current world state (shared by export_world and save_to_file)
     fn build_export_data(&self) -> ExportData {
-        let mut people: Vec<ExportedPerson> = Vec::new();
+        let entity_count = self.world.len() as usize;
+        let mut people: Vec<ExportedPerson> = Vec::with_capacity(entity_count);
 
-        let mut person_id_to_entity: HashMap<u64, hecs::Entity> = HashMap::new();
-        let mut entity_to_person_id: HashMap<hecs::Entity, u64> = HashMap::new();
+        let mut person_id_to_entity: HashMap<u64, hecs::Entity> = HashMap::with_capacity(entity_count);
+        let mut entity_to_person_id: HashMap<hecs::Entity, u64> = HashMap::with_capacity(entity_count);
 
         for (entity, person) in self.world.query::<&Person>().iter() {
             person_id_to_entity.insert(person.id.0, entity);
@@ -247,9 +251,8 @@ impl crate::world::SimulationWorld {
             });
         }
 
-        // Export event log
-        let event_log = self.event_log.get_all()
-            .into_iter()
+        // Export event log (uses zero-allocation iterator)
+        let event_log = self.event_log.iter_all()
             .map(|event| ExportedEvent {
                 event_type: event.event_type.into(),
                 year: event.year,
@@ -282,7 +285,7 @@ impl crate::world::SimulationWorld {
         self.calendar = Calendar::new(data.calendar.year, data.calendar.month, data.calendar.day);
         self.next_person_id = data.next_person_id;
 
-        let mut person_id_to_entity: HashMap<u64, hecs::Entity> = HashMap::new();
+        let mut person_id_to_entity: HashMap<u64, hecs::Entity> = HashMap::with_capacity(data.people.len());
 
         for person in &data.people {
             let entity = self.world.spawn((
@@ -297,7 +300,7 @@ impl crate::world::SimulationWorld {
             ));
 
             if let Some(ref fert) = person.fertility {
-                let _ = self.world.insert_one(entity, Fertility {
+                let _ = self.world.insert_one(entity, Fertility { // Just spawned, always valid
                     last_birth_year: fert.last_birth_year,
                     last_birth_month: fert.last_birth_month,
                     children_born: fert.children_born,
@@ -305,7 +308,7 @@ impl crate::world::SimulationWorld {
             }
 
             if let Some(ref preg) = person.pregnancy {
-                let _ = self.world.insert_one(entity, Pregnant {
+                let _ = self.world.insert_one(entity, Pregnant { // Just spawned, always valid
                     due_year: preg.due_year,
                     due_month: preg.due_month,
                 });
@@ -322,14 +325,14 @@ impl crate::world::SimulationWorld {
 
             if let Some(partner_pid) = person.partner_id {
                 if let Some(&partner_entity) = person_id_to_entity.get(&partner_pid) {
-                    let _ = self.world.insert_one(entity, Partner(partner_entity));
+                    let _ = self.world.insert_one(entity, Partner(partner_entity)); // Entity just spawned above
                     partners_added += 1;
                 }
             }
 
             if let Some(mother_pid) = person.mother_id {
                 if let Some(&mother_entity) = person_id_to_entity.get(&mother_pid) {
-                    let _ = self.world.insert_one(entity, Mother(mother_entity));
+                    let _ = self.world.insert_one(entity, Mother(mother_entity)); // Entity just spawned above
                     mothers_added += 1;
                 }
             }

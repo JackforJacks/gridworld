@@ -35,11 +35,11 @@ impl CalendarRunner {
     {
         // Don't start if already running
         if self.is_running.load(Ordering::Relaxed) {
-            eprintln!("⚠️ Calendar runner already running");
+            eprintln!("[WARN] Calendar runner already running");
             return;
         }
 
-        println!("🟢 Starting Rust calendar runner ({}ms intervals)", interval_ms);
+        println!("[INFO] Starting Rust calendar runner ({}ms intervals)", interval_ms);
         self.is_running.store(true, Ordering::Relaxed);
         let running = Arc::clone(&self.is_running);
 
@@ -57,7 +57,7 @@ impl CalendarRunner {
                 // Sleep until next tick
                 thread::sleep(Duration::from_millis(interval_ms));
             }
-            println!("🔴 Calendar runner thread stopped");
+            println!("[INFO] Calendar runner thread stopped");
         });
 
         self.thread_handle = Some(handle);
@@ -69,12 +69,12 @@ impl CalendarRunner {
             return;
         }
 
-        println!("🛑 Stopping Rust calendar runner...");
+        println!("[INFO] Stopping Rust calendar runner...");
         self.is_running.store(false, Ordering::Relaxed);
 
         // Wait for thread to finish
         if let Some(handle) = self.thread_handle.take() {
-            let _ = handle.join();
+            let _ = handle.join(); // Thread panic result intentionally ignored during shutdown
         }
     }
 

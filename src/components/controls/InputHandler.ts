@@ -115,8 +115,8 @@ class InputHandler {
 
         // Clear references to help GC
         this.tileSelector = null;
-        this.cameraController = null as any;
-        this.renderer = null as any;
+        this.cameraController = undefined!;
+        this.renderer = undefined!;
     }
 
     private onMouseDown(event: MouseEvent): void {
