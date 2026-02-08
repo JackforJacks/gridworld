@@ -193,34 +193,18 @@ class RustSimulationService {
         return result;
     }
 
-    /** Sync Rust ECS from Redis person data (used on server restart) */
-    async syncFromRedis(): Promise<number> {
-        const storage = require('./storage').default;
-        
-        // Get all people from Redis
-        const allPeople = await storage.hgetall('person');
-        if (!allPeople || Object.keys(allPeople).length === 0) {
-            console.log('🦀 No people in Redis, Rust world stays empty');
-            return 0;
-        }
+    // ========================================================================
+    // ID Allocation (replaces Redis idAllocator)
+    // ========================================================================
 
-        // Group by tile_id
-        const peoplByTile = new Map<number, number>();
-        for (const personJson of Object.values(allPeople)) {
-            const person = JSON.parse(personJson as string);
-            const tileId = person.tile_id ?? 0;
-            peoplByTile.set(tileId, (peoplByTile.get(tileId) || 0) + 1);
-        }
+    /** Get next person ID (increments Rust counter atomically) */
+    getNextPersonId(): number {
+        return simulation.getNextPersonId(this.world) as number;
+    }
 
-        // Reset and re-seed
-        this.reset();
-        for (const [tileId, count] of peoplByTile) {
-            this.seedPopulationOnTile(count, tileId);
-        }
-
-        const total = this.getPopulation();
-        console.log(`🦀 Rust ECS synced from Redis: ${total} people across ${peoplByTile.size} tiles`);
-        return total;
+    /** Get a batch of person IDs (more efficient than repeated calls) */
+    getPersonIdBatch(count: number): number[] {
+        return simulation.getPersonIdBatch(this.world, count) as number[];
     }
 }
 

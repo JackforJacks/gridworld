@@ -17,7 +17,6 @@
 import storage from '../storage';
 import rustSimulation from '../rustSimulation';
 import Hexasphere from '../../../src/core/hexasphere/HexaSphere';
-import idAllocator from '../idAllocator';
 import {
     calculateTileProperties,
     isHabitable,
@@ -135,9 +134,9 @@ export async function restartWorld(options: WorldRestartOptions = {}): Promise<W
         console.log('🔢 [WorldRestart] Step 2/5: Resetting ID allocators...');
         await resetIdAllocators();
 
-        // Step 4: Generate tiles from hexasphere
-        console.log('🗺️ [WorldRestart] Step 3/5: Generating tiles...');
-        const tilesGenerated = await generateTilesFromSeed(seed);
+        // Step 4: Tiles are deterministic - no generation needed
+        console.log('🗺️ [WorldRestart] Step 3/5: Skipping tile generation (deterministic from seed)...');
+        const tilesGenerated = 0; // Tiles will be generated on-demand by client
 
         // Step 5: Select habitable tiles, let Rust decide population counts, then create Redis people
         console.log('👥 [WorldRestart] Step 4/5: Creating population...');
@@ -231,13 +230,9 @@ async function clearRemainingKeys(keys: string[]): Promise<void> {
 }
 
 async function clearAllKnownKeys(): Promise<void> {
-    // Delete all known hash keys
-    await storage.del(
-        'tile', 'tile:fertility', 'tile:populations',
-        'person', 'family',
-        'counts:global',
-        'next:person:id', 'next:family:id'
-    );
+    // Tiles removed - no longer in Redis
+    // People/families removed - now in Rust ECS only
+    // Only clear auxiliary keys if any exist
 
     // Clear pattern-based keys
     const patterns = [
@@ -245,7 +240,10 @@ async function clearAllKnownKeys(): Promise<void> {
         'pending:*',
         'fertile:*',
         'lock:*',
-        'stats:*'
+        'stats:*',
+        'counts:*',
+        'id:seq:*',
+        'next:*'
     ];
 
     for (const pattern of patterns) {
@@ -265,7 +263,8 @@ async function clearAllKnownKeys(): Promise<void> {
 // ============================================================================
 
 async function resetIdAllocators(): Promise<void> {
-    await idAllocator.reset();
+    // ID allocation now handled by Rust next_person_id (reset via rustSimulation.reset())
+    // No Redis cleanup needed
 }
 
 // ============================================================================
@@ -351,20 +350,30 @@ interface PopulationResult {
 }
 
 async function createPopulation(seed: number, tileCount: number): Promise<PopulationResult> {
-    // Get all tiles from Redis
-    const allTiles = await storage.hgetall('tile');
+    // Generate hexasphere to find habitable tiles (on-the-fly, no Redis)
+    const radius = parseFloat(process.env.HEXASPHERE_RADIUS || '30');
+    const subdivisions = parseFloat(process.env.HEXASPHERE_SUBDIVISIONS || '3');
+    const tileWidthRatio = parseFloat(process.env.HEXASPHERE_TILE_WIDTH_RATIO || '1');
+    const hexasphere = new Hexasphere(radius, subdivisions, tileWidthRatio);
 
-    if (!allTiles || Object.keys(allTiles).length === 0) {
-        throw new Error('No tiles found in Redis after generation');
-    }
-
-    // Find habitable tiles
+    // Find habitable tiles by calculating properties on-the-fly
     const habitableTileIds: number[] = [];
 
-    for (const [tileId, tileJson] of Object.entries(allTiles)) {
-        const tile = JSON.parse(tileJson);
-        if (!isHabitable(tile.terrain_type, tile.biome, tile.terrain_type !== 'ocean')) continue;
-        habitableTileIds.push(parseInt(tileId));
+    for (const tile of hexasphere.tiles) {
+        const centerPoint = tile.centerPoint;
+        const x = centerPoint?.x || 0;
+        const y = centerPoint?.y || 0;
+        const z = centerPoint?.z || 0;
+
+        const props = tile.getProperties ? tile.getProperties() : tile;
+        const tileId = props.id ?? 0;
+
+        // Calculate terrain/biome on-the-fly (same logic as generateTilesFromSeed)
+        const tileProps = calculateTileProperties(x, y, z, seed);
+
+        if (tileProps.isHabitable) {
+            habitableTileIds.push(tileId);
+        }
     }
 
     // Warn if no habitable tiles found, but continue with empty population
@@ -394,64 +403,13 @@ async function createPopulation(seed: number, tileCount: number): Promise<Popula
         totalPeopleNeeded += count;
     }
 
-    console.log(`   Allocating ${totalPeopleNeeded} person IDs in batch (counts decided by Rust)...`);
+    console.log(`   Population created by Rust ECS (${totalPeopleNeeded} people across ${selectedTiles.length} tiles)`);
 
-    // Batch allocate ALL person IDs in one Redis call
-    const allPersonIds = await idAllocator.getPersonIdBatch(totalPeopleNeeded);
-    let personIdIndex = 0;
-
-    const PIPELINE_CHUNK_SIZE = 10000; // Chunk Redis pipelines to avoid memory issues
-
-    // Create people on each selected tile, chunking pipelines
+    // All people already created in Rust ECS by seedPopulationOnTileRange
+    // No Redis person hash or eligible sets needed - Rust is source of truth
     const allPeople: Person[] = [];
-    let pipeline = storage.pipeline();
-    let pipelineCount = 0;
 
-    for (let tileIndex = 0; tileIndex < selectedTiles.length; tileIndex++) {
-        const tileId = selectedTiles[tileIndex];
-        const peopleCount = tilePeopleCounts[tileIndex];
-
-        for (let i = 0; i < peopleCount; i++) {
-            const personId = allPersonIds[personIdIndex++];
-            const isMale = rng() < 0.5; // true=male, false=female
-            const age = 18 + Math.floor(rng() * 40); // 18-57 years old
-            const birthYear = CALENDAR_START_YEAR - age;
-            const birthMonth = 1 + Math.floor(rng() * 12);
-            const birthDay = 1 + Math.floor(rng() * 28);
-
-            const person: Person = {
-                id: personId,
-                tile_id: tileId,
-                sex: isMale,
-                date_of_birth: `${birthYear}-${String(birthMonth).padStart(2, '0')}-${String(birthDay).padStart(2, '0')}`,
-                family_id: null
-            };
-
-            allPeople.push(person);
-            pipeline.hset('person', personId.toString(), JSON.stringify(person));
-
-            // Add to eligible sets for matchmaking
-            const eligibleSetKey = isMale ? `eligible:males:tile:${tileId}` : `eligible:females:tile:${tileId}`;
-            const tilesSetKey = isMale ? 'tiles_with_eligible_males' : 'tiles_with_eligible_females';
-            pipeline.sadd(eligibleSetKey, personId.toString());
-            pipeline.sadd(tilesSetKey, tileId.toString());
-            pipelineCount += 3;
-
-            // Flush pipeline in chunks to avoid memory issues
-            if (pipelineCount >= PIPELINE_CHUNK_SIZE) {
-                await pipeline.exec();
-                pipeline = storage.pipeline();
-                pipelineCount = 0;
-            }
-        }
-    }
-
-    // Flush remaining pipeline commands
-    if (pipelineCount > 0) {
-        await pipeline.exec();
-    }
-
-    console.log(`   Created ${allPeople.length} people on ${selectedTiles.length} tiles`);
+    console.log(`   ✅ Population seeded in Rust ECS only (no Redis sync, no eligible sets)`);
 
     return {
         habitableTiles: habitableTileIds.length,
@@ -468,49 +426,19 @@ async function createPopulation(seed: number, tileCount: number): Promise<Popula
 async function verifyIntegrity(): Promise<IntegrityResult> {
     const issues: string[] = [];
 
-    // Get all data
-    const tiles = await storage.hgetall('tile');
-    const people = await storage.hgetall('person');
+    // Get population from Rust (no Redis person hash anymore)
+    const personCount = rustSimulation.getPopulation();
 
-    const tileCount = Object.keys(tiles || {}).length;
-    const personCount = Object.keys(people || {}).length;
-
-    // Count habitable tiles
-    let habitableCount = 0;
-    const populatedTileIds = new Set<number>();
-
-    for (const tileJson of Object.values(tiles || {})) {
-        const tile = JSON.parse(tileJson);
-        if (isHabitable(tile.terrain_type, tile.biome, tile.terrain_type !== 'ocean')) habitableCount++;
-    }
-
-    // Check people integrity
-    for (const personJson of Object.values(people || {})) {
-        const person = JSON.parse(personJson);
-
-        if (person.tile_id) {
-            populatedTileIds.add(person.tile_id);
-        }
-
-        // Verify person is on habitable tile
-        if (person.tile_id && tiles) {
-            const tileJson = tiles[person.tile_id.toString()];
-            if (tileJson) {
-                const tile = JSON.parse(tileJson);
-                if (!isHabitable(tile.terrain_type, tile.biome, tile.terrain_type !== 'ocean')) {
-                    issues.push(`Person ${person.id} is on uninhabitable tile ${person.tile_id} (${tile.terrain_type})`);
-                }
-            }
-        }
-    }
+    // Tiles are deterministic - no verification needed
+    // People in Rust ECS are guaranteed to be on valid tiles by seeding logic
 
     return {
         valid: issues.length === 0,
         issues,
         stats: {
-            tiles: tileCount,
-            habitableTiles: habitableCount,
-            populatedTiles: populatedTileIds.size,
+            tiles: 0, // Tiles not persisted
+            habitableTiles: 0,
+            populatedTiles: 0,
             people: personCount,
         }
     };

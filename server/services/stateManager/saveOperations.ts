@@ -49,23 +49,11 @@ async function saveToDatabase(context: SaveContext): Promise<SaveResult> {
         const startTime = Date.now();
         const rustSimulation = require('../rustSimulation').default;
 
-        // Read all state from Redis
-        const [allPersonData, allFamilyData, allTileData, allTileFertility] = await Promise.all([
-            storage.hgetall('person'),
-            storage.hgetall('family'),
-            storage.hgetall('tile'),
-            storage.hgetall('tile:fertility')
-        ]);
-        const personCount = Object.keys(allPersonData || {}).length;
-        const familyCount = Object.keys(allFamilyData || {}).length;
+        // No Redis state needed - all data in Rust ECS
+        // Tiles are deterministic from seed, no need to save
+        const nodeState = JSON.stringify({});
 
-        // Bundle all state as JSON
-        const nodeState = JSON.stringify({
-            people: allPersonData || {},
-            families: allFamilyData || {},
-            tiles: allTileData || {},
-            tileFertility: allTileFertility || {}
-        });
+        const personCount = rustSimulation.getPopulation();
 
         // Get world seed
         const seed = parseInt(process.env.WORLD_SEED || '0', 10);
@@ -77,20 +65,19 @@ async function saveToDatabase(context: SaveContext): Promise<SaveResult> {
         const stats = rustSimulation.saveToFile(nodeState, seed, SAVE_FILE);
 
         const elapsed = Date.now() - startTime;
-        console.log(`💾 Saved in ${elapsed}ms — ${stats.population} people, ${familyCount} families, ${stats.fileBytes} bytes`);
+        console.log(`💾 Saved in ${elapsed}ms — ${stats.population} people, ${stats.fileBytes} bytes`);
 
         // Emit save event
         if (context.io) {
             context.io.emit('gameSaved', {
                 timestamp: new Date().toISOString(),
-                people: stats.population,
-                families: familyCount
+                people: stats.population
             });
         }
 
         return {
             people: stats.population,
-            families: familyCount,
+            families: 0, // Families tracked via Rust Partner component
             elapsed,
             fileBytes: stats.fileBytes
         };

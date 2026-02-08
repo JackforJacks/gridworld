@@ -117,17 +117,20 @@ router.get('/', async (req: Request, res: Response): Promise<void> => {
         // Use cached hexasphere for geometry (boundary points, neighbor IDs)
         const hexasphere = getCachedHexasphere(radius, subdivisions, tileWidthRatio);
 
-        // Fetch tile data (terrain/biome) for initial load
-        const allTileData = await storage.hgetall('tile');
+        // Get world seed (required for deterministic tile generation)
+        // Always reload from environment to catch seed changes from world restart
+        loadWorldSeed();
 
-        if (!allTileData || Object.keys(allTileData).length === 0) {
-            // No tiles in Redis - world needs to be initialized
+        if (!worldSeed) {
             res.status(503).json({
                 error: 'World not initialized',
-                message: 'No tiles found in Redis. Call POST /api/worldrestart to initialize the world.'
+                message: 'No world seed found. Call POST /api/worldrestart to initialize the world.'
             });
             return;
         }
+
+        // Import terrain calculation module
+        const { calculateTileProperties } = require('../services/terrain');
 
         // Build MINIMAL tile response - only what's needed for rendering
         // OPTIMIZED: Use arrays instead of objects, round to 4 decimal places
@@ -135,34 +138,26 @@ router.get('/', async (req: Request, res: Response): Promise<void> => {
 
         const tiles = hexasphere.tiles.map(tile => {
             const props = tile.getProperties ? tile.getProperties() : tile;
-            const tileId = props.id;
+            const tileId = props.id ?? 0;
+
+            const centerPoint = tile.centerPoint;
+            const x = centerPoint?.x || 0;
+            const y = centerPoint?.y || 0;
+            const z = centerPoint?.z || 0;
 
             // Get geometry from hexasphere (required for rendering)
             // Use compact array format: [x,y,z] instead of {x,y,z}
             const result: Record<string, unknown> = {
                 id: tileId,
                 boundary: tile.boundary ? tile.boundary.map(p => [round4(p.x), round4(p.y), round4(p.z)]) : [],
-                centerPoint: tile.centerPoint ? [
-                    round4(tile.centerPoint.x),
-                    round4(tile.centerPoint.y),
-                    round4(tile.centerPoint.z)
-                ] : undefined
+                centerPoint: [round4(x), round4(y), round4(z)]
             };
 
-            // Get terrain/biome data from Redis (required for coloring)
-            const tileDataJson = allTileData[tileId.toString()];
-            if (tileDataJson) {
-                try {
-                    const tileData = JSON.parse(tileDataJson);
-                    result.terrainType = tileData.terrain_type;
-                    result.biome = tileData.biome;
-                    // Note: fertility NOT included - fetch via /api/tiles/:id
-                } catch (e: unknown) {
-                    // Use defaults if parse fails
-                    result.terrainType = 'unknown';
-                    result.biome = null;
-                }
-            }
+            // Calculate terrain/biome on-the-fly from seed (deterministic)
+            const tileProps = calculateTileProperties(x, y, z, worldSeed);
+            result.terrainType = tileProps.terrainType;
+            result.biome = tileProps.biome;
+            // Note: fertility NOT included - fetch via /api/tiles/:id
 
             return result;
         });
@@ -192,34 +187,48 @@ router.get('/seed', (_req: Request, res: Response): void => {
 // Client generates geometry locally, this provides: terrainType, biome
 // Keyed by tile ID for efficient merging with client-generated hexasphere
 // NOTE: Must be defined BEFORE /:id to avoid being caught by that route
-router.get('/state', async (_req: Request, res: Response): Promise<void> => {
+router.get('/state', async (req: Request, res: Response): Promise<void> => {
     const startTime = Date.now();
 
     try {
-        // Fetch all tile data from Redis
-        const allTileData = await storage.hgetall('tile');
+        // Get world seed
+        // Always reload from environment to catch seed changes from world restart
+        loadWorldSeed();
 
-        if (!allTileData || Object.keys(allTileData).length === 0) {
+        if (!worldSeed) {
             res.status(503).json({
                 error: 'World not initialized',
-                message: 'No tiles found in Redis. Call POST /api/worldrestart to initialize the world.'
+                message: 'No world seed found. Call POST /api/worldrestart to initialize the world.'
             });
             return;
         }
 
-        // Build compact tile state map: { tileId: { terrainType, biome } }
+        // Get hexasphere params
+        const radius = parseParam(req.query.radius, parseFloat(process.env.HEXASPHERE_RADIUS || '30'));
+        const subdivisions = parseParam(req.query.subdivisions, parseFloat(process.env.HEXASPHERE_SUBDIVISIONS || '3'));
+        const tileWidthRatio = parseParam(req.query.tileWidthRatio, parseFloat(process.env.HEXASPHERE_TILE_WIDTH_RATIO || '1'));
+
+        const hexasphere = getCachedHexasphere(radius, subdivisions, tileWidthRatio);
+        const { calculateTileProperties } = require('../services/terrain');
+
+        // Build compact tile state map: { tileId: { t: terrainType, b: biome } }
         const tileState: Record<string, { t: string; b: string | null }> = {};
 
-        for (const [tileId, tileDataJson] of Object.entries(allTileData)) {
-            try {
-                const tileData = JSON.parse(tileDataJson as string);
-                tileState[tileId] = {
-                    t: tileData.terrain_type || 'unknown',  // terrainType
-                    b: tileData.biome || null               // biome
-                };
-            } catch (_e: unknown) {
-                // Skip malformed entries
-            }
+        for (const tile of hexasphere.tiles) {
+            const props = tile.getProperties ? tile.getProperties() : tile;
+            const tileId = props.id ?? 0;
+
+            const centerPoint = tile.centerPoint;
+            const x = centerPoint?.x || 0;
+            const y = centerPoint?.y || 0;
+            const z = centerPoint?.z || 0;
+
+            // Calculate terrain/biome on-the-fly from seed
+            const tileProps = calculateTileProperties(x, y, z, worldSeed);
+            tileState[tileId.toString()] = {
+                t: tileProps.terrainType,
+                b: tileProps.biome
+            };
         }
 
         const elapsed = Date.now() - startTime;
@@ -248,17 +257,42 @@ router.post('/restart', async (_req: Request, res: Response): Promise<void> => {
 // NOTE: This MUST be the last GET route as it matches any path segment
 router.get('/:id', async (req: Request, res: Response): Promise<void> => {
     const startTime = Date.now();
-    const tileId = req.params.id;
+    const tileId = parseInt(req.params.id);
 
     try {
-        const tileDataJson = await storage.hget('tile', tileId);
+        // Get world seed
+        // Always reload from environment to catch seed changes from world restart
+        loadWorldSeed();
 
-        if (!tileDataJson) {
+        if (!worldSeed) {
+            res.status(503).json({ error: 'World not initialized', message: 'No world seed' });
+            return;
+        }
+
+        // Get hexasphere to find tile center
+        const radius = parseFloat(process.env.HEXASPHERE_RADIUS || '30');
+        const subdivisions = parseFloat(process.env.HEXASPHERE_SUBDIVISIONS || '3');
+        const tileWidthRatio = parseFloat(process.env.HEXASPHERE_TILE_WIDTH_RATIO || '1');
+
+        const hexasphere = getCachedHexasphere(radius, subdivisions, tileWidthRatio);
+        const tile = hexasphere.tiles.find(t => {
+            const props = t.getProperties ? t.getProperties() : t;
+            return (props.id ?? 0) === tileId;
+        });
+
+        if (!tile) {
             res.status(404).json({ error: 'Tile not found', tileId });
             return;
         }
 
-        const tileData = JSON.parse(tileDataJson);
+        const centerPoint = tile.centerPoint;
+        const x = centerPoint?.x || 0;
+        const y = centerPoint?.y || 0;
+        const z = centerPoint?.z || 0;
+
+        // Calculate terrain/biome/fertility on-the-fly from seed
+        const { calculateTileProperties } = require('../services/terrain');
+        const tileProps = calculateTileProperties(x, y, z, worldSeed);
 
         const elapsed = Date.now() - startTime;
         if (serverConfig.verboseLogs) {
@@ -266,10 +300,10 @@ router.get('/:id', async (req: Request, res: Response): Promise<void> => {
         }
 
         res.json({
-            id: parseInt(tileId),
-            terrainType: tileData.terrain_type,
-            biome: tileData.biome,
-            fertility: tileData.fertility
+            id: tileId,
+            terrainType: tileProps.terrainType,
+            biome: tileProps.biome,
+            fertility: tileProps.fertility
         });
     } catch (err: unknown) {
         const error = err as Error;

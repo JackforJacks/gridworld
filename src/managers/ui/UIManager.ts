@@ -9,6 +9,7 @@ import { getApiClient } from '../../services/api/ApiClient';
 interface SceneManagerLike {
     getPopulationStats(): Record<string, unknown>;
     regenerateTiles(): Promise<void>;
+    createHexasphere(): Promise<void>;
     searchTile(tileId: number | string): { x: number; y: number; z: number } | null;
 }
 
@@ -464,15 +465,28 @@ class UIManager {
 
             // Check for explicit failure or skipped load
             if (result.success && !result.skipped) {
+                // Regenerate the world with loaded seed (no page reload)
+                if (this.sceneManager) {
+                    // Regenerate hexasphere with new seed
+                    await this.sceneManager.createHexasphere();
+
+                    // Refresh calendar from loaded state
+                    const ctx = getAppContext();
+                    if (ctx.calendarManager?.initialize) {
+                        await ctx.calendarManager.initialize();
+                    }
+                }
+
                 loadButton.classList.remove('loading');
                 loadButton.classList.add('loaded');
                 loadButton.innerHTML = '✅ Loaded!';
 
-                // Reload the page to refresh all client state with the loaded data
+                // Reset button after a delay
                 setTimeout(() => {
-                    // [log removed]
-                    window.location.reload();
-                }, 500);
+                    loadButton.innerHTML = originalText;
+                    loadButton.classList.remove('loaded');
+                    loadButton.disabled = false;
+                }, 2000);
             } else {
                 // Either success:false or skipped:true means load didn't complete properly
                 throw new Error(result.error || (result.skipped ? 'Load skipped - storage unavailable' : 'Load failed'));

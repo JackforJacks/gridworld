@@ -49,24 +49,9 @@ export async function loadFromDatabase(context: LoadContext): Promise<LoadResult
         // Store seed in env for future saves
         process.env.WORLD_SEED = loadResult.seed.toString();
 
-        // Parse node-side state
-        const nodeState = JSON.parse(loadResult.nodeStateJson);
-        const peopleData: Record<string, string> = nodeState.people || {};
-        const familiesData: Record<string, string> = nodeState.families || {};
-        const tilesData: Record<string, string> = nodeState.tiles || {};
-        const tileFertilityData: Record<string, string> = nodeState.tileFertility || {};
-
-        // Restore all data to Redis (tiles, people, families)
-        const { maleCount, femaleCount } = await restoreToRedis(peopleData, familiesData, tilesData, tileFertilityData);
-        const tilesGenerated = Object.keys(tilesData).length;
-        const personCount = Object.keys(peopleData).length;
-        const familyCount = Object.keys(familiesData).length;
-
-        // Rebuild eligible matchmaking sets
-        const people = buildPersonRows(peopleData);
-        const families = buildFamilyRows(familiesData);
-        await populateEligibleSets(people, context.calendarService, families);
-        await populateFertileFamilies(families, people, context.calendarService);
+        // No node-side state to restore - everything in Rust ECS
+        // Tiles are deterministic from seed, regenerated on-demand by /api/tiles
+        const personCount = loadResult.population;
 
         // Update calendar service if available
         if (context.calendarService?.loadStateFromDB) {
@@ -76,14 +61,14 @@ export async function loadFromDatabase(context: LoadContext): Promise<LoadResult
         resumeCalendar(context, calendarWasRunning);
 
         const elapsed = Date.now() - startTime;
-        console.log(`✅ [LoadOperations] Loaded in ${elapsed}ms — ${tilesGenerated} tiles, ${personCount} people, ${familyCount} families`);
+        console.log(`✅ [LoadOperations] Loaded in ${elapsed}ms — ${personCount} people`);
 
         return {
             people: personCount,
-            families: familyCount,
-            male: maleCount,
-            female: femaleCount,
-            tiles: tilesGenerated
+            families: 0, // Families tracked via Rust Partner component
+            male: loadResult.partners, // Using partners count as proxy
+            female: personCount - loadResult.partners,
+            tiles: 0 // Tiles regenerated on-demand from seed
         };
     } catch (error) {
         console.error('❌ [LoadOperations] Failed to load:', error);
@@ -92,110 +77,7 @@ export async function loadFromDatabase(context: LoadContext): Promise<LoadResult
     }
 }
 
-// ===== Redis Restore =====
-
-async function restoreToRedis(
-    peopleData: Record<string, string>,
-    familiesData: Record<string, string>,
-    tilesData: Record<string, string>,
-    tileFertilityData: Record<string, string>
-): Promise<{ maleCount: number; femaleCount: number }> {
-    type PipelineOp =
-        | { type: 'hset'; key: string; field: string; value: string };
-
-    const operations: PipelineOp[] = [];
-    let maleCount = 0;
-    let femaleCount = 0;
-
-    // Tiles
-    for (const [id, json] of Object.entries(tilesData)) {
-        operations.push({ type: 'hset', key: 'tile', field: id, value: json });
-    }
-
-    // Tile fertility
-    for (const [id, value] of Object.entries(tileFertilityData)) {
-        operations.push({ type: 'hset', key: 'tile:fertility', field: id, value });
-    }
-
-    // People
-    for (const [id, json] of Object.entries(peopleData)) {
-        operations.push({ type: 'hset', key: 'person', field: id, value: json });
-        try {
-            const p = JSON.parse(json);
-            if (p.sex === true || p.sex === 'true' || p.sex === 1 || p.sex === 't' || p.sex === 'M') {
-                maleCount++;
-            } else {
-                femaleCount++;
-            }
-        } catch { /* ignore */ }
-    }
-
-    // Families
-    for (const [id, json] of Object.entries(familiesData)) {
-        operations.push({ type: 'hset', key: 'family', field: id, value: json });
-    }
-
-    // Global counts
-    const totalPeople = Object.keys(peopleData).length;
-    operations.push({ type: 'hset', key: 'counts:global', field: 'total', value: totalPeople.toString() });
-    operations.push({ type: 'hset', key: 'counts:global', field: 'male', value: maleCount.toString() });
-    operations.push({ type: 'hset', key: 'counts:global', field: 'female', value: femaleCount.toString() });
-    operations.push({ type: 'hset', key: 'counts:global', field: 'nextTempId', value: '-1' });
-    operations.push({ type: 'hset', key: 'counts:global', field: 'nextFamilyTempId', value: '-1' });
-
-    // Execute in chunks
-    for (let i = 0; i < operations.length; i += PIPELINE_CHUNK_SIZE) {
-        const chunk = operations.slice(i, i + PIPELINE_CHUNK_SIZE);
-        const pipeline = storage.pipeline();
-
-        for (const op of chunk) {
-            pipeline.hset(op.key, op.field, op.value);
-        }
-
-        await pipeline.exec();
-    }
-
-    return { maleCount, femaleCount };
-}
-
-// ===== Convert Redis JSON to row types for populationSets =====
-
-function buildPersonRows(peopleData: Record<string, string>): PersonRow[] {
-    const rows: PersonRow[] = [];
-    for (const [, json] of Object.entries(peopleData)) {
-        try {
-            const p = JSON.parse(json);
-            rows.push({
-                id: p.id,
-                tile_id: p.tile_id ?? null,
-                sex: p.sex,
-                health: p.health ?? 100,
-                family_id: p.family_id ?? null,
-                date_of_birth: p.date_of_birth
-            });
-        } catch { /* ignore */ }
-    }
-    return rows;
-}
-
-function buildFamilyRows(familiesData: Record<string, string>): FamilyRow[] {
-    const rows: FamilyRow[] = [];
-    for (const [, json] of Object.entries(familiesData)) {
-        try {
-            const f = JSON.parse(json);
-            rows.push({
-                id: f.id,
-                husband_id: f.husband_id ?? null,
-                wife_id: f.wife_id ?? null,
-                tile_id: f.tile_id,
-                pregnancy: f.pregnancy ?? null,
-                delivery_date: f.delivery_date ?? null,
-                children_ids: f.children_ids ?? null
-            });
-        } catch { /* ignore */ }
-    }
-    return rows;
-}
+// No Redis restoration needed - tiles are deterministic, people/families in Rust ECS
 
 // ===== Calendar Helpers =====
 

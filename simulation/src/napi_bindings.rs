@@ -313,3 +313,25 @@ pub fn load_from_file(
         node_state_json: result.node_state_json,
     })
 }
+
+// ============================================================================
+// ID Allocation
+// ============================================================================
+
+/// Get next person ID (increments internal counter)
+#[napi]
+pub fn get_next_person_id(world: External<WorldHandle>) -> i64 {
+    let mut w = world.lock().unwrap();
+    let id = w.next_person_id;
+    w.next_person_id += 1;
+    id as i64
+}
+
+/// Get a batch of person IDs (more efficient than calling get_next_person_id repeatedly)
+#[napi]
+pub fn get_person_id_batch(world: External<WorldHandle>, count: u32) -> Vec<i64> {
+    let mut w = world.lock().unwrap();
+    let start = w.next_person_id;
+    w.next_person_id += count as u64;
+    (start..start + count as u64).map(|id| id as i64).collect()
+}
