@@ -37,7 +37,7 @@ module.exports = (env, argv) => {
           use: {
             loader: 'ts-loader',
             options: {
-              configFile: 'tsconfig.client.json',
+              configFile: 'tsconfig.json',
               transpileOnly: !isProduction // Faster builds in dev
             }
           }
