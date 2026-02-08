@@ -323,40 +323,17 @@ class SceneManager {
         if (!confirmed) return;
 
         try {
-            // Use ApiClient for world restart
+            // Use ApiClient for world restart (generates new tiles with new seed on server)
             await getApiClient().worldRestart();
-
-            // Get config using ApiClient
-            let radius = this.sphereRadius || 30;
-            let subdivisions = 3;
-            let tileWidthRatio = 1;
-
-            try {
-                const config = await getApiClient().getConfig();
-                radius = config.hexasphere.radius;
-                subdivisions = config.hexasphere.subdivisions;
-                tileWidthRatio = config.hexasphere.tileWidthRatio;
-            } catch (error: unknown) {
-                console.warn('Failed to fetch config, using fallback values:', error);
-            }
-
-            // Clear existing mesh
-            if (this.hexasphereMesh) {
-                this.scene!.remove(this.hexasphereMesh);
-                this.hexasphereMesh.geometry.dispose();
-                (this.hexasphereMesh.material as THREE.Material).dispose();
-                this.hexasphereMesh = null;
-            }
-
-            this.clearTileOverlays();
 
             // Apply calendar state (fetch fresh)
             await this.applyCalendarState({});
 
-            // Fetch tiles using ApiClient (worldrestart already generated them)
-            const tileData = await getApiClient().getTiles(radius, subdivisions, tileWidthRatio, false);
-
-            this.buildTilesFromData(tileData as TileDataResponse);
+            // Re-use the same optimized path as initial load:
+            // createHexasphere() calls clearTiles() internally (disposes mesh + overlays)
+            // then generates geometry locally + fetches fresh tile state from server
+            this.clearTileOverlays();
+            await this.createHexasphere();
         } catch (error: unknown) {
             console.error('❌ Failed to regenerate tiles:', error);
             throw error;

@@ -195,18 +195,9 @@ export async function restartWorld(options: WorldRestartOptions = {}): Promise<W
         console.log('🗺️ [WorldRestart] Step 3/6: Generating tiles...');
         const tilesGenerated = await generateTiles(seed);
 
-        // Step 5: Select habitable tiles and create population
+        // Step 5: Select habitable tiles, let Rust decide population counts, then create Redis people
         console.log('👥 [WorldRestart] Step 4/6: Creating population...');
         const { habitableTiles, selectedTiles, people, tilePeopleCounts } = await createPopulation(seed, tileCount);
-
-        // Step 5b: Seed Rust ECS simulation with same tile/population data
-        console.log('🦀 [WorldRestart] Seeding Rust simulation...');
-        rustSimulation.reset();
-        for (let i = 0; i < selectedTiles.length; i++) {
-            if (tilePeopleCounts[i] > 0) {
-                rustSimulation.seedPopulationOnTile(tilePeopleCounts[i], selectedTiles[i]);
-            }
-        }
         console.log(`   🦀 Rust ECS seeded: ${rustSimulation.getPopulation()} people across ${selectedTiles.length} tiles`);
 
         // Step 6: Create villages for populated tiles
@@ -477,17 +468,18 @@ async function createPopulation(seed: number, tileCount: number): Promise<Popula
 
     console.log(`   Selected ${selectedTiles.length} tiles from ${habitableTileIds.length} habitable`);
 
-    // Pre-calculate total people needed for batch ID allocation
+    // Let Rust ECS decide population counts per tile within the configured range
+    rustSimulation.reset();
     const tilePeopleCounts: number[] = [];
     let totalPeopleNeeded = 0;
 
-    for (const _tileId of selectedTiles) {
-        const peopleCount = PEOPLE_PER_TILE_MIN + Math.floor(rng() * (PEOPLE_PER_TILE_MAX - PEOPLE_PER_TILE_MIN));
-        tilePeopleCounts.push(peopleCount);
-        totalPeopleNeeded += peopleCount;
+    for (const tileId of selectedTiles) {
+        const count = rustSimulation.seedPopulationOnTileRange(PEOPLE_PER_TILE_MIN, PEOPLE_PER_TILE_MAX, tileId);
+        tilePeopleCounts.push(count);
+        totalPeopleNeeded += count;
     }
 
-    console.log(`   Allocating ${totalPeopleNeeded} person IDs in batch...`);
+    console.log(`   Allocating ${totalPeopleNeeded} person IDs in batch (counts decided by Rust)...`);
 
     // Batch allocate ALL person IDs in one Redis call
     const allPersonIds = await idAllocator.getPersonIdBatch(totalPeopleNeeded);

@@ -321,6 +321,12 @@ class UIManager {
 
         if (resetDataButton) {
             resetDataButton.addEventListener('click', () => {
+                // Close menu modal before starting restart
+                const menuOverlay = document.getElementById('menu-modal-overlay');
+                if (menuOverlay && !menuOverlay.classList.contains('hidden')) {
+                    menuOverlay.classList.add('hidden');
+                    getAppContext().calendarDisplay?.resumeCalendar();
+                }
                 this.handleResetData();
             });
         }

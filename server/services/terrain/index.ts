@@ -73,42 +73,66 @@ export function createPositionRandom(x: number, y: number, z: number, seed: numb
 // ============================================================================
 
 /**
- * Calculate terrain type from position coordinates.
- * This is FULLY DETERMINISTIC - same position = same terrain.
- * 
+ * Calculate terrain type from position coordinates and world seed.
+ * FULLY DETERMINISTIC - same position + same seed = same terrain.
+ * Different seeds produce completely different continent/ocean layouts.
+ *
+ * Generates multiple distinct continents separated by ocean, with
+ * mountains concentrated along ridgelines rather than spread everywhere.
+ *
  * @param x - X coordinate of tile center
  * @param y - Y coordinate of tile center
  * @param z - Z coordinate of tile center
+ * @param seed - World seed for terrain variation
  * @returns Terrain type: 'ocean' | 'mountains' | 'hills' | 'flats'
  */
-export function calculateTerrain(x: number, y: number, z: number): string {
-    // Multi-octave noise for natural-looking terrain
-    const noise1 = Math.sin(x * 0.01 + z * 0.01) * Math.cos(y * 0.01);
-    const noise2 = Math.sin(x * 0.02 - z * 0.02) * Math.cos(y * 0.015);
-    const noise3 = Math.sin(x * 0.005 + y * 0.005 + z * 0.005);
+export function calculateTerrain(x: number, y: number, z: number, seed: number): string {
+    // Sphere radius ~30, so coords range -30..+30.
+    // Frequencies must be high enough for sine to complete full cycles:
+    //   freq * 30 > π  →  freq > 0.1  for at least one full cycle.
+    // We use 0.1-0.2 for continent-scale blobs (2-4 per axis).
 
-    // Position-based deterministic noise (replaces Math.random())
-    const posNoise = positionHash(x, y, z, 0) * 0.3 - 0.15;
+    // Seed-derived phase offsets: each seed rotates all noise patterns
+    const p1 = positionHash(seed, seed * 0.7, seed * 0.3, 0) * Math.PI * 2;
+    const p2 = positionHash(seed * 0.5, seed, seed * 0.9, 0) * Math.PI * 2;
+    const p3 = positionHash(seed * 0.3, seed * 0.6, seed, 0) * Math.PI * 2;
+    const p4 = positionHash(seed * 0.8, seed * 0.2, seed * 0.5, 0) * Math.PI * 2;
 
-    const elevation = (noise1 * 0.5 + noise2 * 0.3 + noise3 * 0.2) + posNoise;
+    // === CONTINENT MASK ===
+    // Overlapping waves at continent-scale frequencies.
+    // Each layer uses different axis pairs + frequencies to break symmetry.
+    const c1 = Math.sin(x * 0.10 + p1) * Math.cos(z * 0.12 + p2);           // ~2-3 blobs per axis
+    const c2 = Math.sin(z * 0.14 + p3) * Math.cos(y * 0.10 + p1) * 0.6;     // cross-axis
+    const c3 = Math.sin(y * 0.12 + p2) * Math.cos(x * 0.08 + p4) * 0.4;     // third axis
+    const c4 = Math.sin(x * 0.22 + z * 0.18 + p4) * 0.25;                    // medium-scale breakup
 
-    // Continent noise for land/water distribution
-    const continentNoise = Math.sin(x * 0.003) * Math.cos(z * 0.003) + Math.sin(y * 0.004) * 0.5;
-    const waterThreshold = 0.0 + continentNoise * 0.2;
+    const continentMask = c1 + c2 + c3 + c4;
 
-    if (elevation < waterThreshold) {
+    // Land where continentMask > threshold (~60% land, 40% ocean)
+    const LAND_THRESHOLD = -0.05;
+    if (continentMask < LAND_THRESHOLD) {
         return 'ocean';
     }
 
-    const landElevation = elevation - waterThreshold;
+    // === LAND ELEVATION ===
+    // How far above the land threshold drives terrain type.
+    const landHeight = continentMask - LAND_THRESHOLD;
 
-    if (landElevation > 0.3) {
+    // Detail noise for local variation (higher freq for coastline roughness)
+    const detail1 = Math.sin(x * 0.35 + z * 0.30 + p1) * Math.cos(y * 0.32 + p2) * 0.12;
+    const detail2 = positionHash(x, y, z, seed) * 0.08 - 0.04;
+    const elevation = landHeight + detail1 + detail2;
+
+    // Mountains only at tall peaks (top ~8% of land)
+    if (elevation > 0.7) {
         return 'mountains';
-    } else if (landElevation > 0.15) {
-        return 'hills';
-    } else {
-        return 'flats';
     }
+    // Hills at moderate elevation (next ~15%)
+    if (elevation > 0.4) {
+        return 'hills';
+    }
+    // Everything else is flat lowlands
+    return 'flats';
 }
 
 /**
@@ -325,7 +349,7 @@ export function calculateTileProperties(
     z: number,
     seed: number
 ): TileProperties {
-    const terrainType = calculateTerrain(x, y, z);
+    const terrainType = calculateTerrain(x, y, z, seed);
     const biome = calculateBiome(x, y, z, terrainType, seed);
     const fertility = calculateFertility(x, y, z, biome, terrainType, seed);
     const habitable = isHabitable(terrainType, biome, isLandTerrain(terrainType));

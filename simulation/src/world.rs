@@ -39,15 +39,15 @@ impl SimulationWorld {
     /// Seed population on a specific tile
     pub fn seed_population_on_tile(&mut self, count: usize, tile_id: u16) {
         let mut rng = rand::thread_rng();
-        
+
         for _ in 0..count {
             let id = PersonId(self.next_person_id);
             self.next_person_id += 1;
-            
+
             let sex = if rng.gen::<bool>() { Sex::Male } else { Sex::Female };
             let age_years: u16 = rng.gen_range(0..60);
             let birth_date = BirthDate::from_age(age_years, &self.calendar);
-            
+
             self.world.spawn((
                 Person {
                     id,
@@ -59,6 +59,15 @@ impl SimulationWorld {
                 TileId(tile_id),
             ));
         }
+    }
+
+    /// Seed population on a tile with a random count within [min, max].
+    /// Returns the actual count seeded.
+    pub fn seed_population_on_tile_range(&mut self, min: usize, max: usize, tile_id: u16) -> usize {
+        let mut rng = rand::thread_rng();
+        let count = rng.gen_range(min..=max);
+        self.seed_population_on_tile(count, tile_id);
+        count
     }
 
     /// Run one simulation tick (advances 1 day).

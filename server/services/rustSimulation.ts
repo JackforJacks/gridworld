@@ -60,6 +60,11 @@ class RustSimulationService {
         simulation.seedPopulationOnTile(this.world, count, tileId);
     }
 
+    /** Seed population on a tile with a random count within [min, max]. Returns actual count seeded. */
+    seedPopulationOnTileRange(min: number, max: number, tileId: number): number {
+        return simulation.seedPopulationOnTileRange(this.world, min, max, tileId) as number;
+    }
+
     /** Seed population (tile 0) */
     seedPopulation(count: number): void {
         simulation.seedPopulation(this.world, count);

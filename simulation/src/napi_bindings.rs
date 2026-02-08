@@ -33,6 +33,11 @@ pub fn seed_population_on_tile(world: External<WorldHandle>, count: u32, tile_id
 }
 
 #[napi]
+pub fn seed_population_on_tile_range(world: External<WorldHandle>, min: u32, max: u32, tile_id: u32) -> u32 {
+    world.lock().unwrap().seed_population_on_tile_range(min as usize, max as usize, tile_id as u16) as u32
+}
+
+#[napi]
 pub fn tick(world: External<WorldHandle>) -> JsTickResult {
     let result = world.lock().unwrap().tick();
     JsTickResult {

@@ -9,7 +9,10 @@
       "Bash(del \"\\\\?\\\\c:\\\\Users\\\\giaco\\\\OneDrive\\\\Documenti\\\\github\\\\GridWorld\\\\nul\")",
       "Bash(cmd /c \"del \\\\?\\\\c:\\\\Users\\\\giaco\\\\OneDrive\\\\Documenti\\\\github\\\\GridWorld\\\\nul\")",
       "Bash(cmd /c \"cd /d c:\\\\Users\\\\giaco\\\\OneDrive\\\\Documenti\\\\github\\\\GridWorld && del /f /q \\\\?\\\\c:\\\\Users\\\\giaco\\\\OneDrive\\\\Documenti\\\\github\\\\GridWorld\\\\nul\")",
-      "Bash(powershell:*)"
+      "Bash(powershell:*)",
+      "Bash(npm run build:*)",
+      "Bash(ls:*)",
+      "Bash(taskkill:*)"
     ]
   }
 }
