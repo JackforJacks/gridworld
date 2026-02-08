@@ -124,14 +124,12 @@ class PopulationState {
     static async repairIfNeeded(): Promise<ReturnType<typeof PeopleState.repairIfNeeded>> { return PeopleState.repairIfNeeded(); }
 
     // =========== BATCH OPERATIONS (delegates to PeopleState) ===========
-    static async batchClearFamilyIds(personIds: (number | string)[]): Promise<number> { return PeopleState.batchClearFamilyIds(personIds.map(Number)); }
     static async batchRemovePersons(personIds: (number | string)[], markDeleted?: boolean): Promise<number> { return PeopleState.batchRemovePersons(personIds.map(Number), markDeleted); }
-    static async batchDeleteFamilies(familyIds: (number | string)[], markDeleted?: boolean): Promise<number> { return PeopleState.batchDeleteFamilies(familyIds.map(Number), markDeleted); }
     static async batchAddPersons(persons: PersonInput[], isNew?: boolean): Promise<number> { return PeopleState.batchAddPersons(persons, isNew); }
     static async getIdBatch(count: number): Promise<number[]> { return PeopleState.getIdBatch(count); }
 
     // Family operations removed - families now managed by Rust ECS (Partner component)
-    // Legacy methods can be added as no-ops if needed for backwards compatibility
+    // batchClearFamilyIds and batchDeleteFamilies removed - use Rust ECS Partner component instead
 }
 
 export default PopulationState;

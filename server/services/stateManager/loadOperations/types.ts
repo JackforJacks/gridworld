@@ -82,16 +82,7 @@ export interface PersonRow {
     date_of_birth: string;
 }
 
-/** Family row from database */
-export interface FamilyRow {
-    id: number;
-    husband_id: number | null;
-    wife_id: number | null;
-    tile_id: number;
-    pregnancy: boolean | null;
-    delivery_date: string | null;
-    children_ids: number[] | null;
-}
+// FamilyRow interface removed - families now managed by Rust ECS (Partner component)
 
 /** People load result */
 export interface LoadPeopleResult {

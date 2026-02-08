@@ -10,6 +10,7 @@ import {
     DEATH_CHANCE_INCREASE_PER_YEAR
 } from '../../config/gameBalance';
 import { CalendarDate, PersonData, FamilyData } from '../../../types/global';
+// Note: FamilyData only imported for legacy interface definitions
 
 // ===== Type Definitions =====
 
@@ -199,7 +200,6 @@ async function applySenescence(
         }
 
         const deaths: number[] = [];
-        const deathFamilyIds: number[] = []; // Family IDs of deceased persons
 
         // Use HSCAN streaming to avoid loading all people into memory
         const personStream = storage.hscanStream('person', { count: 500 });
@@ -224,95 +224,19 @@ async function applySenescence(
                     const multiDayDeathChance = 1 - Math.pow(1 - dailyDeathChance, daysAdvanced);
                     if (Math.random() < multiDayDeathChance) {
                         deaths.push(person.id);
-                        // Track family_id for efficient lookup later
-                        if (person.family_id) {
-                            deathFamilyIds.push(person.family_id);
-                        }
                     }
                 }
             }
         }
 
         if (deaths.length > 0) {
-            // Handle family cleanup - only fetch families of deceased persons
-            const deathIds = new Set<number>(deaths);
-            const uniqueFamilyIds = [...new Set(deathFamilyIds)];
-
-            // Collect all person IDs that need family_id cleared and families to delete
-            const personIdsToClear: number[] = [];
-            const familyIdsToDelete: number[] = [];
-            // Track surviving spouses to re-add to eligible pool
-            const survivingSpouses: { personId: number; isMale: boolean; tileId: number }[] = [];
-
-            // Batch fetch only the families we need (not ALL families)
-            if (uniqueFamilyIds.length > 0) {
-                const pipeline = storage.pipeline();
-                for (const fid of uniqueFamilyIds) {
-                    pipeline.hget('family', fid.toString());
-                }
-                const familyResults = await pipeline.exec() as [Error | null, string | null][];
-
-                for (let i = 0; i < familyResults.length; i++) {
-                    const [err, familyJson] = familyResults[i];
-                    if (err || !familyJson) continue;
-
-                    let family: FamilyData | null = null;
-                    try { family = JSON.parse(familyJson) as FamilyData; } catch { continue; }
-                    if (!family) continue;
-
-                    // Check if husband or wife died
-                    const husbandDied = family.husband_id !== null && deathIds.has(family.husband_id);
-                    const wifeDied = family.wife_id !== null && deathIds.has(family.wife_id);
-
-                    if (husbandDied || wifeDied) {
-                        // Track surviving spouse for re-adding to eligible pool
-                        if (husbandDied && !wifeDied && family.wife_id !== null) {
-                            survivingSpouses.push({ personId: family.wife_id, isMale: false, tileId: family.tile_id });
-                        }
-                        if (wifeDied && !husbandDied && family.husband_id !== null) {
-                            survivingSpouses.push({ personId: family.husband_id, isMale: true, tileId: family.tile_id });
-                        }
-
-                        // Collect all family members for batch update
-                        if (family.husband_id !== null) personIdsToClear.push(family.husband_id);
-                        if (family.wife_id !== null) personIdsToClear.push(family.wife_id);
-                        for (const childId of (family.children_ids || [])) {
-                            personIdsToClear.push(childId);
-                        }
-                        familyIdsToDelete.push(family.id);
-                    }
-                }
-            }
-
-            // Batch clear family_id for all affected persons
-            if (personIdsToClear.length > 0) {
-                await PopulationState.batchClearFamilyIds(personIdsToClear);
-            }
-
-            // Batch delete families (tracks positive IDs for Postgres deletion)
-            if (familyIdsToDelete.length > 0) {
-                await PopulationState.batchDeleteFamilies(familyIdsToDelete, true);
-            }
-
             // Batch remove deceased persons from Redis
             await PopulationState.batchRemovePersons(deaths, true);
 
-            // Re-add surviving spouses to eligible pool if they meet age criteria
-            for (const spouse of survivingSpouses) {
-                try {
-                    const person = await PopulationState.getPerson(spouse.personId);
-                    if (!person || !person.date_of_birth) continue;
-
-                    const age = calculator.calculateAge(person.date_of_birth, currentYear, currentMonth, currentDay);
-                    // Check age eligibility: males 16-45, females 16-33
-                    const maxAge = spouse.isMale ? 45 : 33;
-                    if (age >= 16 && age <= maxAge) {
-                        await PopulationState.addEligiblePerson(spouse.personId, spouse.isMale, spouse.tileId);
-                    }
-                } catch (e) {
-                    console.warn('[lifecycle] Failed to re-add widower to eligible pool:', spouse.personId);
-                }
-            }
+            // TODO: Surviving spouse re-eligibility logic
+            // Rust ECS automatically dissolves partnerships on death via Partner component
+            // Need to implement: Query Rust for surviving partners and re-add to eligible pool if age-appropriate
+            // For now, Rust handles partnership dissolution automatically
 
             if (populationServiceInstance && typeof populationServiceInstance.trackDeaths === 'function') {
                 populationServiceInstance.trackDeaths(deaths.length);

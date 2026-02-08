@@ -3,9 +3,10 @@
 
 import fs from 'fs';
 import storage from '../../storage';
-import { LoadContext, LoadResult, FamilyRow, PersonRow } from './types';
+import { LoadContext, LoadResult, PersonRow } from './types';
 import { clearExistingStorageState } from './storageClear';
-import { populateFertileFamilies, populateEligibleSets } from './populationSets';
+import { populateEligibleSets } from './populationSets';
+// FamilyRow and populateFertileFamilies removed - families now managed by Rust ECS
 import { SAVE_FILE } from '../saveOperations';
 
 /** Chunk size for Redis pipeline writes */
@@ -102,7 +103,8 @@ function resumeCalendar(context: LoadContext, wasRunning: boolean): void {
 
 // Re-export modules that other parts of the codebase may use
 export { clearExistingStorageState } from './storageClear';
-export { populateFertileFamilies, populateEligibleSets } from './populationSets';
+export { populateEligibleSets } from './populationSets';
+// populateFertileFamilies removed - use Rust ECS for fertility/pregnancy management
 
 // Re-export types
 export type {
@@ -112,6 +114,6 @@ export type {
     CalendarDate,
     Pipeline,
     TileRow,
-    PersonRow,
-    FamilyRow
+    PersonRow
+    // FamilyRow removed - families now managed by Rust ECS (Partner component)
 } from './types';

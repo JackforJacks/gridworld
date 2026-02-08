@@ -7,7 +7,7 @@
 export {
     loadFromDatabase,
     clearExistingStorageState,
-    populateFertileFamilies,
+    // populateFertileFamilies removed - families now managed by Rust ECS (Partner component)
     populateEligibleSets
 } from './loadOperations/index';
 
@@ -20,6 +20,6 @@ export type {
     Pipeline,
     TileRow,
     PersonRow,
-    FamilyRow,
+    // FamilyRow removed - families now managed by Rust ECS (Partner component)
     PeopleMap
 } from './loadOperations/types';

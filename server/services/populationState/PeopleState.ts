@@ -42,9 +42,8 @@ class PeopleState {
     // =========== BATCH OPERATIONS ===========
     static batchAddPersons = BatchOperations.batchAddPersons;
     static batchRemovePersons = BatchOperations.batchRemovePersons;
-    static batchClearFamilyIds = BatchOperations.batchClearFamilyIds;
-    static batchDeleteFamilies = BatchOperations.batchDeleteFamilies;
     static reassignIds = BatchOperations.reassignIds;
+    // Note: Family batch operations removed - families now managed by Rust ECS (Partner component)
 
     // =========== PENDING OPERATIONS ===========
     static getPendingInserts = PendingOperations.getPendingInserts;

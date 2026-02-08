@@ -1,7 +1,8 @@
 // Load Operations - Population Sets Module
 // Optimized with batched updates using Redis pipeline
 import storage from '../../storage';
-import { CalendarService, CalendarDate, FamilyRow, PersonRow, PeopleMap } from './types';
+import { CalendarService, CalendarDate, PersonRow, PeopleMap } from './types';
+// FamilyRow removed - families now managed by Rust ECS (Partner component)
 
 /** Batch size for population set updates */
 const BATCH_SIZE = 500;
@@ -24,91 +25,35 @@ function getCurrentDate(calendarService?: CalendarService): CalendarDate {
     return { year: 1, month: 1, day: 1 };
 }
 
-/**
- * Populate fertile family candidates from loaded families
- * Optimized with batched processing
- */
-export async function populateFertileFamilies(
-    families: FamilyRow[],
-    people: PersonRow[],
-    calendarService?: CalendarService
-): Promise<void> {
-    try {
-        // Build people lookup map
-        const peopleMap: PeopleMap = {};
-        for (const p of people) {
-            peopleMap[p.id] = p;
-        }
-
-        const PopulationState = require('../../populationState').default;
-
-        // Filter eligible families first
-        const eligibleFamilies = families.filter(f => {
-            if (f.pregnancy) return false;
-            if (f.wife_id === null) return false;
-            const wife = peopleMap[f.wife_id];
-            return wife && wife.date_of_birth;
-        });
-
-        // Process in batches
-        for (let i = 0; i < eligibleFamilies.length; i += BATCH_SIZE) {
-            const batch = eligibleFamilies.slice(i, i + BATCH_SIZE);
-            await Promise.all(batch.map(async f => {
-                try {
-                    await PopulationState.addFertileFamily(
-                        f.id,
-                        f.tile_id
-                    );
-                } catch (e: unknown) {
-                    // Ignore individual failures
-                }
-            }));
-        }
-
-        if (eligibleFamilies.length > 0) {
-            console.log(`🌱 Populated ${eligibleFamilies.length} fertile families`);
-        }
-    } catch (e: unknown) {
-        const errMsg = e instanceof Error ? e.message : String(e);
-        console.warn('⚠️ Failed to populate fertile family sets on load:', errMsg);
-    }
-}
+// populateFertileFamilies removed - fertility/pregnancy now managed by Rust ECS (Pregnancy component)
+// Use rustSimulation.getDemographics() for aggregate pregnancy statistics
 
 /**
  * Populate eligible matchmaking sets based on loaded people
  * Optimized with batched processing
- * 
+ *
  * Only adds people who are:
- * - NOT married (not husband/wife in any family)
+ * - NOT married (checked via family_id field - TODO: migrate to Rust partnership query)
  * - In eligible age range (males 16-45, females 16-33)
  * - Have a valid tile_id
  */
 export async function populateEligibleSets(
     people: PersonRow[],
-    calendarService?: CalendarService,
-    families?: FamilyRow[]
+    calendarService?: CalendarService
 ): Promise<void> {
     try {
         const PopulationState = require('../../populationState').default;
         const { calculateAge } = require('../../../utils/ageCalculation');
         const currentDate = getCurrentDate(calendarService);
 
-        // Build set of married person IDs (husband_id and wife_id from all families)
-        const marriedPersonIds = new Set<number>();
-        if (families) {
-            for (const f of families) {
-                if (f.husband_id !== null) marriedPersonIds.add(f.husband_id);
-                if (f.wife_id !== null) marriedPersonIds.add(f.wife_id);
-            }
-        }
-
         // Filter eligible people first
         const eligiblePeople = people.filter(p => {
             // Must have valid tile_id
             if (p.tile_id === null) return false;
 
-            // Must not be married
-            if (marriedPersonIds.has(p.id)) return false;
+            // Must not be married (checked via family_id field)
+            // TODO: This relies on family_id being set; eventually migrate to query Rust partnership status
+            if (p.family_id !== null) return false;
 
             // Must have valid birth date
             if (!p.date_of_birth) return false;

@@ -1,11 +1,11 @@
 /**
  * BatchOperations - Batch CRUD operations for people
- * 
+ *
  * Handles:
  * - batchAddPersons, batchRemovePersons
- * - batchClearFamilyIds
- * - batchDeleteFamilies
  * - reassignIds
+ *
+ * Note: Family operations removed - families now managed by Rust ECS (Partner component)
  */
 
 import storage from '../storage';
@@ -20,48 +20,6 @@ import {
 /** Check if sex value represents male (handles various data formats) */
 function checkIsMale(sex: boolean | string | number | null | undefined): boolean {
     return sex === true || sex === 'true' || sex === 1 || sex === 't' || sex === 'M';
-}
-
-/**
- * Batch clear family_id for multiple persons
- */
-export async function batchClearFamilyIds(personIds: number[]): Promise<number> {
-    if (!storage.isAvailable() || !personIds || personIds.length === 0) return 0;
-    try {
-        const readPipeline = storage.pipeline();
-        for (const personId of personIds) {
-            readPipeline.hget('person', personId.toString());
-        }
-        const readResults = await readPipeline.exec() as PipelineResult;
-
-        const writePipeline = storage.pipeline();
-        let updateCount = 0;
-
-        for (let i = 0; i < personIds.length; i++) {
-            const personId = personIds[i];
-            const [err, json] = readResults[i];
-            if (err || !json) continue;
-
-            let person: StoredPerson;
-            try { person = JSON.parse(json as string) as StoredPerson; } catch { continue; }
-
-            person.family_id = null;
-            writePipeline.hset('person', personId.toString(), JSON.stringify(person));
-
-            if (personId > 0 && !person._isNew) {
-                writePipeline.sadd('pending:person:updates', personId.toString());
-            }
-            updateCount++;
-        }
-
-        if (updateCount > 0) {
-            await writePipeline.exec();
-        }
-        return updateCount;
-    } catch (err: unknown) {
-        console.warn('[BatchOperations] batchClearFamilyIds failed:', getErrorMessage(err));
-        return 0;
-    }
 }
 
 /**
@@ -119,30 +77,6 @@ export async function batchRemovePersons(personIds: number[], markDeleted: boole
         return personsData.length;
     } catch (err: unknown) {
         console.warn('[BatchOperations] batchRemovePersons failed:', getErrorMessage(err));
-        return 0;
-    }
-}
-
-/**
- * Batch delete families from Redis
- */
-export async function batchDeleteFamilies(familyIds: number[], markDeleted: boolean = false): Promise<number> {
-    if (!storage.isAvailable() || !familyIds || familyIds.length === 0) return 0;
-    try {
-        const pipeline = storage.pipeline();
-
-        for (const familyId of familyIds) {
-            const familyIdStr = familyId.toString();
-            pipeline.hdel('family', familyIdStr);
-            if (markDeleted && familyId > 0) {
-                pipeline.sadd('pending:family:deletes', familyIdStr);
-            }
-        }
-
-        await pipeline.exec();
-        return familyIds.length;
-    } catch (err: unknown) {
-        console.warn('[BatchOperations] batchDeleteFamilies failed:', getErrorMessage(err));
         return 0;
     }
 }

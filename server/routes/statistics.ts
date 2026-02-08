@@ -77,7 +77,7 @@ router.get('/current', async (req, res) => {
         const eventLog = populationService.eventLog || [];
         const todayBirths = eventLog.filter((e: { type: string }) => e.type === 'birth').length;
         const todayDeaths = eventLog.filter((e: { type: string }) => e.type === 'death').length;
-        const todayFamiliesFormed = eventLog.filter((e: { type: string }) => e.type === 'family_formed').length;
+        const todayFamiliesFormed = eventLog.filter((e: { type: string }) => e.type === 'marriage').length;
         const todayPregnanciesStarted = eventLog.filter((e: { type: string }) => e.type === 'pregnancy_started').length;
 
         res.json({
@@ -318,7 +318,7 @@ router.get('/dashboard', async (req, res) => {
         const eventLog = populationService.eventLog || [];
         const todayBirths = eventLog.filter((e: { type: string }) => e.type === 'birth').length;
         const todayDeaths = eventLog.filter((e: { type: string }) => e.type === 'death').length;
-        const todayFamiliesFormed = eventLog.filter((e: { type: string }) => e.type === 'family_formed').length;
+        const todayFamiliesFormed = eventLog.filter((e: { type: string }) => e.type === 'marriage').length;
         const todayPregnanciesStarted = eventLog.filter((e: { type: string }) => e.type === 'pregnancy_started').length;
 
         // Get chart data

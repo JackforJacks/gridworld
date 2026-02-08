@@ -98,7 +98,7 @@ interface IntegrityDetail {
 }
 
 interface EventLogEntry {
-    type: 'birth' | 'death';
+    type: 'birth' | 'death' | 'marriage' | 'pregnancy_started' | 'dissolution';
     date: { year: number; month: number; day: number };
 }
 
@@ -455,6 +455,24 @@ class PopulationService {
             }
             if (result.deaths > 0) {
                 this.trackDeaths(result.deaths);
+            }
+
+            // Add family events to eventLog (marriages, pregnancies, dissolutions)
+            const currentDate = this.calendarService?.getState()?.currentDate || { year: 4000, month: 1, day: 1 };
+            if (result.marriages > 0) {
+                for (let i = 0; i < result.marriages; i++) {
+                    this.eventLog.push({ type: 'marriage', date: { ...currentDate } });
+                }
+            }
+            if (result.pregnancies > 0) {
+                for (let i = 0; i < result.pregnancies; i++) {
+                    this.eventLog.push({ type: 'pregnancy_started', date: { ...currentDate } });
+                }
+            }
+            if (result.dissolutions > 0) {
+                for (let i = 0; i < result.dissolutions; i++) {
+                    this.eventLog.push({ type: 'dissolution', date: { ...currentDate } });
+                }
             }
 
             // Log significant events

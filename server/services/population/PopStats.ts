@@ -176,7 +176,7 @@ async function getAllPopulationData(pool, calendarService, populationServiceInst
     }
 
     const stats = await getPopulationStats(pool, calendarService, populationServiceInstance);
-    const familyStats = await getFamilyStatistics(pool);
+    // Family stats removed - use rustSimulation.getDemographics() for family data
 
     // Use stats.totalPopulation (from Redis) as the only source of truth
     const formatted = formatPopulationData(populations);
@@ -184,8 +184,7 @@ async function getAllPopulationData(pool, calendarService, populationServiceInst
 
     return {
         ...formatted,
-        ...stats,
-        ...familyStats
+        ...stats
     };
 }
 
@@ -249,53 +248,8 @@ async function getPopulationDistribution(_pool: unknown) {
     }
 }
 
-/**
- * Gets family statistics using HSCAN streaming (memory-efficient)
- * @param {Pool} pool - Database pool instance
- * @returns {Object} Family statistics
- */
-async function getFamilyStatistics(pool) {
-    // Redis-first implementation with HSCAN streaming
-    try {
-        let totalFamilies = 0;
-        let pregnantFamilies = 0;
-        let familiesWithChildren = 0;
-        let totalChildren = 0;
-
-        const familyStream = storage.hscanStream('family', { count: 500 });
-        for await (const result of familyStream) {
-            const entries = result as string[];
-            for (let i = 0; i < entries.length; i += 2) {
-                const json = entries[i + 1];
-                if (!json) continue;
-                try {
-                    const fam = JSON.parse(json);
-                    totalFamilies++;
-                    if (fam.pregnancy) pregnantFamilies++;
-                    const numChildren = Array.isArray(fam.children_ids) ? fam.children_ids.length : 0;
-                    if (numChildren > 0) familiesWithChildren++;
-                    totalChildren += numChildren;
-                } catch { /* skip invalid */ }
-            }
-        }
-
-        const avgChildrenPerFamily = totalFamilies > 0 ? totalChildren / totalFamilies : 0;
-        return {
-            totalFamilies,
-            pregnantFamilies,
-            avgChildrenPerFamily,
-            familiesWithChildren
-        };
-    } catch (error: unknown) {
-        console.error('Error getting family statistics:', error);
-        return {
-            totalFamilies: 0,
-            pregnantFamilies: 0,
-            avgChildrenPerFamily: 0,
-            familiesWithChildren: 0
-        };
-    }
-}
+// getFamilyStatistics removed - families now managed by Rust ECS (Partner component)
+// Use rustSimulation.getDemographics() for aggregate family statistics (partnered, pregnant counts)
 
 // ==================== UTILITY AND DEBUG FUNCTIONS ====================
 
@@ -472,7 +426,7 @@ export {
     getAllPopulationData,
     getDemographicStats,
     getPopulationDistribution,
-    getFamilyStatistics,
+    // getFamilyStatistics removed - use rustSimulation.getDemographics() for family data
 
     // Utility functions
     printPeopleSample,

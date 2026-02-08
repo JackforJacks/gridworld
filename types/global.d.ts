@@ -64,6 +64,9 @@ export interface PersonData {
 
 /**
  * Family data structure
+ * @deprecated Families are now managed exclusively by Rust ECS (Partner component)
+ * Use rustSimulation.getDemographics() for aggregate family statistics
+ * This interface is kept for backward compatibility only
  */
 export interface FamilyData {
     id: number;

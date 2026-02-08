@@ -34,15 +34,11 @@ export async function clearStoragePopulation(options: PopulationOptions = {}): P
 
         // Clear person hash
         await storage.del('person');
-        // Clear family hash
-        await storage.del('family');
         // Clear all pending operations (prevent stale pending entries from previous sessions)
         await storage.del('pending:person:inserts');
         await storage.del('pending:person:updates');
         await storage.del('pending:person:deletes');
-        await storage.del('pending:family:inserts');
-        await storage.del('pending:family:updates');
-        await storage.del('pending:family:deletes');
+        // Note: Family hash and pending family operations removed - families now managed by Rust ECS
         // Reset counts
         await storage.del('counts:global');
         if (serverConfig.verboseLogs) console.log('[clearStoragePopulation] Cleared storage population data');
