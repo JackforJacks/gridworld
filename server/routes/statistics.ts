@@ -1,6 +1,6 @@
 // Population Statistics API Routes
 import express, { Router, Request, Response } from 'express';
-import StateManager from '../services/stateManager';
+import rustSimulation from '../services/rustSimulation';
 
 const router: Router = express.Router();
 
@@ -30,7 +30,7 @@ router.get('/current', async (req, res) => {
         // Get current population count from StateManager (O(1) operation)
         let currentPopulation = 0;
         try {
-            currentPopulation = await StateManager.getPopulationCount();
+            currentPopulation = rustSimulation.getPopulation();
         } catch (e: unknown) {
             console.warn('Could not get population count:', e instanceof Error ? (e as Error).message : String(e));
         }
@@ -274,7 +274,7 @@ router.get('/dashboard', async (req, res) => {
         // Get current population count from StateManager (O(1) operation)
         let currentPopulation = 0;
         try {
-            currentPopulation = await StateManager.getPopulationCount();
+            currentPopulation = rustSimulation.getPopulation();
         } catch (e: unknown) {
             console.warn('Could not get population count:', e instanceof Error ? (e as Error).message : String(e));
         }

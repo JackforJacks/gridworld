@@ -100,8 +100,7 @@ class CalendarService extends EventEmitter {
             lastTickTime: null
         };
 
-        // Tick management (now handled by Rust)
-        this.tickTimer = null; // Deprecated - kept for type compatibility
+        this.tickTimer = null;
         this.subscribers = new Set();
 
         // Internal config
@@ -298,14 +297,6 @@ class CalendarService extends EventEmitter {
     }
 
     /**
-     * Tick handler - DEPRECATED, now using Rust calendar thread
-     * Kept for backward compatibility but no longer called by setInterval
-     */
-    async tick(): Promise<void> {
-        console.warn('⚠️ CalendarService.tick() called directly - this is deprecated. Use Rust calendar instead.');
-    }
-
-    /**
      * Change the calendar speed
      * Now restarts Rust calendar thread with new interval
      */
@@ -342,15 +333,6 @@ class CalendarService extends EventEmitter {
         });
 
         return true;
-    }
-
-    /**
-     * Set a specific date - NOT SUPPORTED (Rust calendar is advanced by tick only)
-     * Left as stub for API compatibility
-     */
-    async setDate(_day: number, _month: number, _year: number): Promise<boolean> {
-        console.warn('⚠️ CalendarService.setDate() is deprecated - calendar is managed by Rust ECS');
-        return false;
     }
 
     /**
@@ -474,14 +456,6 @@ class CalendarService extends EventEmitter {
         this.subscribers.clear();
     }
 
-    // Legacy methods removed - calendar state is in Rust ECS, persisted in bincode file
-    async loadStateFromDB() {
-        // No-op: Calendar loaded from Rust ECS via bincode file
-    }
-
-    async saveStateToDB() {
-        // No-op: Calendar saved to Rust ECS via bincode file
-    }
 }
 
 export default CalendarService;

@@ -2,9 +2,7 @@
 // Population Service - Main service orchestrator for population management
 import config from '../config/server';
 import { Server as SocketIOServer } from 'socket.io';
-
-// Event-driven architecture
-import populationEvents from '../events/populationEvents';
+import { EventEmitter } from 'events';
 
 // Socket communication service
 import SocketService from './SocketService';
@@ -16,8 +14,6 @@ import CalendarService from './calendarService';
  * @typedef {import('../../types/global').PersonData} PersonData
  */
 
-// Core modules
-import { applySenescence } from './population/lifecycle';
 import {
     stopRateTracking,
     startRateTracking,
@@ -43,11 +39,8 @@ import {
 } from './population/dataOperations';
 
 import {
-    updateTilePopulation,
-    resetAllPopulation,
-    initializeTilePopulations,
-    updateMultipleTilePopulations,
-    regeneratePopulationWithNewAgeDistribution
+    formatPopData,
+    loadPopData
 } from './population/operations';
 
 import {
@@ -62,46 +55,13 @@ import {
     setupRealtimeListeners
 } from './population/communication';
 
-// Additional modules for integrity
-import { verifyAndRepairIntegrity } from './population/integrity';
 import { stopIntegrityAudit } from './population/initializer';
 
-// Rust simulation for family management
 import rustSimulation from './rustSimulation';
-
-// Population state (Redis-backed)
-import PopulationState from './populationState';
-
-// Statistics service for vital rates tracking
 import StatisticsService from './statisticsService';
-
-// Optional metrics module (may not exist) - currently not implemented
-const metrics: { auditRunCounter?: { inc: (labels: Record<string, string>) => void }; auditDuration?: { observe: (value: number) => void }; auditFailures?: { inc: () => void }; issuesGauge?: { set: (value: number) => void }; lastRunGauge?: { set: (value: number) => void } } | null = null;
-
-// Type definitions
-interface CalendarEventData {
-    daysAdvanced: number;
-    [key: string]: unknown;
-}
 
 interface PopulationData {
     [tileId: string]: number;
-}
-
-interface IntegrityDetail {
-    tileId: number;
-    duplicatesCount?: number;
-    missingCount?: number;
-    mismatchedCount?: number;
-    error?: string;
-}
-
-// Event log moved to Rust (Phase 2)
-// Node.js now queries Rust event log via rustSimulation.getRecentEvents()
-// Keeping type definition for backward compatibility
-interface EventLogEntry {
-    type: 'birth' | 'death' | 'marriage' | 'pregnancy_started' | 'dissolution';
-    date: { year: number; month: number; day: number };
 }
 
 /**
@@ -113,7 +73,7 @@ class PopulationService {
 
     io: SocketIOServer;
     calendarService: CalendarService | null;
-    events: typeof populationEvents;
+    events: EventEmitter;
     growthInterval: ReturnType<typeof setInterval> | null;
     autoSaveInterval: ReturnType<typeof setInterval> | null;
     rateInterval: ReturnType<typeof setInterval> | null;
@@ -125,7 +85,6 @@ class PopulationService {
     totalBirthCount: number;
     totalDeathCount: number;
     lastRateReset: number;
-    eventLog: EventLogEntry[];
     statisticsService: StatisticsService;
 
     /**
@@ -144,7 +103,7 @@ class PopulationService {
         this.#socketService.initialize();
 
         // Event emitter for decoupled event handling
-        this.events = populationEvents;
+        this.events = new EventEmitter();
 
         // Service state
         this.growthInterval = null;
@@ -159,10 +118,6 @@ class PopulationService {
         this.totalDeathCount = 0;
         this.lastRateReset = Date.now();
 
-        // Event log moved to Rust (Phase 2) - events automatically logged by Rust tick()
-        // Query via rustSimulation.getRecentEvents() when needed
-        this.eventLog = []; // Deprecated - kept for backward compatibility
-
         // Statistics service for vital rates - use provided instance or create new one
         this.statisticsService = statisticsService || new StatisticsService();
 
@@ -176,30 +131,25 @@ class PopulationService {
      * @private
      */
     _setupEventListeners() {
-        // Listen to birth events and broadcast via socket
-        this.events.onBirth((data) => {
+        this.events.on('birth', (data) => {
             this.#socketService.emitBirth(data);
             this.birthCount++;
         });
 
-        // Listen to death events and broadcast via socket
-        this.events.onDeath((data) => {
+        this.events.on('death', (data) => {
             this.#socketService.emitDeath(data);
             this.deathCount++;
         });
 
-        // Listen to family created events
-        this.events.onFamilyCreated((data) => {
+        this.events.on('familyCreated', (data) => {
             this.#socketService.emitFamilyCreated(data);
         });
 
-        // Listen to population updates
-        this.events.onPopulationUpdated((data) => {
+        this.events.on('populationUpdated', (data) => {
             this.#socketService.emitPopulationUpdate(data);
         });
 
-        // Listen to save completed events
-        this.events.onSaveCompleted((data) => {
+        this.events.on('saveCompleted', (data) => {
             this.#socketService.emitGameSaved(data);
         });
     }
@@ -255,83 +205,29 @@ class PopulationService {
     async getPopulations(): Promise<PopulationData> { return await this.loadData(); }
     getFormattedPopulationData(populations: PopulationData | null = null): unknown { return formatPopulationData(populations); }
 
-    async updatePopulation(tileId: number | string, population: number): Promise<void> {
-        await updateTilePopulation(null, this.calendarService, this, tileId, population);
+    async updatePopulation(_tileId: number | string, _population: number): Promise<void> {
+        console.warn('updatePopulation deprecated - Rust ECS manages tile populations');
     }
-    async resetPopulation(options: Record<string, unknown> = {}) {
-        return await resetAllPopulation(null, this, options);
+    async resetPopulation(_options: Record<string, unknown> = {}) {
+        console.warn('resetPopulation deprecated - use /api/worldrestart instead');
+        return formatPopData();
     }
-    async initializeTilePopulations(tileIds: number[], options: Record<string, unknown> = {}) {
-        return await initializeTilePopulations(null, this.calendarService, this, tileIds, options);
+    async initializeTilePopulations(_tileIds: number[], _options: Record<string, unknown> = {}) {
+        console.warn('initializeTilePopulations deprecated - use /api/worldrestart instead');
+        return formatPopData();
     }
-    async updateTilePopulations(tilePopulations: Array<{ tileId: number; population: number }>) {
-        // Convert array to object format expected by updateMultipleTilePopulations
-        const tilePopulationsObj: Record<string, number> = {};
-        for (const { tileId, population } of tilePopulations) {
-            tilePopulationsObj[String(tileId)] = population;
-        }
-        return await updateMultipleTilePopulations(null, this.calendarService, this, tilePopulationsObj);
+    async updateTilePopulations(_tilePopulations: Array<{ tileId: number; population: number }>) {
+        console.warn('updateTilePopulations deprecated - Rust ECS manages tile populations');
+        return formatPopData();
     }
     async regeneratePopulationWithNewAgeDistribution(): Promise<unknown> {
-        return await regeneratePopulationWithNewAgeDistribution(null, this.calendarService, this);
-    }
-
-    /**
-     * Run integrity check (and optional repair) on demand
-     * options: { tiles: Array|null, repair: boolean }
-     */
-    async runIntegrityCheck(options: { tiles?: number[] | null; repair?: boolean } = {}): Promise<{ success: boolean; details: unknown }> {
-        try {
-            const { tiles = null, repair = false } = options;
-            const start = Date.now();
-            if (metrics?.auditRunCounter) metrics.auditRunCounter.inc({ source: 'manual', repair: repair ? 'true' : 'false' });
-            const res = await verifyAndRepairIntegrity(null, tiles, {}, { repair });
-            const durationSec = (Date.now() - start) / 1000;
-            if (metrics && metrics.auditDuration) metrics.auditDuration.observe(durationSec);
-            if (!res.ok) {
-                if (metrics && metrics.auditFailures) metrics.auditFailures.inc();
-                const details = res.details as IntegrityDetail[];
-                const issuesCount = Array.isArray(details) ? details.reduce((sum: number, d: IntegrityDetail) => sum + (d.duplicatesCount || d.missingCount || d.mismatchedCount || 0), 0) : 0;
-                if (metrics && metrics.issuesGauge) metrics.issuesGauge.set(issuesCount);
-            } else {
-                if (metrics && metrics.issuesGauge) metrics.issuesGauge.set(0);
-            }
-            if (metrics && metrics.lastRunGauge) metrics.lastRunGauge.set(Date.now() / 1000);
-            return { success: res.ok, details: res.details };
-        } catch (err: unknown) {
-            console.error('Error running integrity check:', err);
-            throw err;
-        }
+        console.warn('regeneratePopulationWithNewAgeDistribution deprecated - use /api/worldrestart instead');
+        return formatPopData();
     }
 
     startGrowth() { startGrowth(this); }
     stopGrowth() { stopGrowth(this); }
     async updateGrowthRate(rate: number) { return await updateGrowthRate(this, rate); }
-
-    async applySenescenceManually() {
-        const deaths = await applySenescence(null, this.calendarService, this);
-        if (deaths > 0) await this.broadcastUpdate('senescenceApplied');
-        const populations = await this.loadData();
-        return {
-            success: true,
-            deaths,
-            message: `Senescence applied: ${deaths} people died of old age`,
-            data: this.getFormattedPopulationData(populations)
-        };
-    }
-
-    async createFamiliesForExistingPopulation() {
-        // This method is deprecated - Rust simulation handles family creation automatically
-        console.warn('⚠️ createFamiliesForExistingPopulation is deprecated - Rust simulation handles family creation');
-
-        const populations = await this.loadData();
-        return {
-            success: true,
-            familiesCreated: 0,
-            message: 'Family creation is now handled by Rust simulation',
-            data: this.getFormattedPopulationData(populations)
-        };
-    }
 
     // Statistics and reporting: delegate directly to PopStats
     async getPopulationStats() {
@@ -362,7 +258,7 @@ class PopulationService {
 
         // Emit birth events for WebSocket broadcasting
         for (let i = 0; i < count; i++) {
-            this.events.emitBirth({ date, count: 1 });
+            this.events.emit('birth', { date, count: 1 });
         }
 
         // Record in statistics service asynchronously
@@ -398,7 +294,7 @@ class PopulationService {
 
         // Emit death events for WebSocket broadcasting
         for (let i = 0; i < count; i++) {
-            this.events.emitDeath({ date, count: 1 });
+            this.events.emit('death', { date, count: 1 });
         }
 
         // Record in statistics service asynchronously
@@ -452,43 +348,6 @@ class PopulationService {
         await this.saveData();
     }
 
-    /**
-     * Tick method - DEPRECATED
-     * Ticks are now fully handled by Rust calendar thread automatically.
-     * This method is kept for manual tick testing only.
-     * @param daysAdvanced - Number of days that passed in this tick (default 1)
-     */
-    async tick(daysAdvanced = 1) {
-        console.warn('⚠️ PopulationService.tick() called manually - ticks are now automatic via Rust calendar thread');
-
-        try {
-            // Execute tick in Rust simulation (handles births, deaths, marriages, pregnancies, dissolutions)
-            const result = daysAdvanced === 1
-                ? rustSimulation.tick()
-                : rustSimulation.tickMany(daysAdvanced);
-
-            // Track births and deaths for statistics
-            if (result.births > 0) {
-                this.trackBirths(result.births);
-            }
-            if (result.deaths > 0) {
-                this.trackDeaths(result.deaths);
-            }
-
-            // Events are automatically logged by Rust tick() (Phase 2)
-            // No need to push to eventLog - query via rustSimulation.getRecentEvents() when needed
-
-            // Log significant events
-            if (config.verboseLogs && (result.births > 0 || result.deaths > 0 || result.marriages > 0)) {
-                console.log(`🦀 Rust tick: ${result.births} births, ${result.deaths} deaths, ${result.marriages} marriages, pop=${result.population}`);
-            }
-
-            // Broadcast updated population data
-            await this.broadcastUpdate('populationUpdate');
-        } catch (error: unknown) {
-            console.error('Error during tick:', error);
-        }
-    }
 }
 
 export default PopulationService;

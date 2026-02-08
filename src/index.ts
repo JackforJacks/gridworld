@@ -49,7 +49,6 @@ declare global {
         DEBUG?: boolean;
         sceneInitialized?: boolean;
         initializeAndStartGame?: () => Promise<void>;
-        createScene?: (...args: unknown[]) => Promise<unknown>;
     }
 }
 
@@ -512,11 +511,6 @@ class GridWorldApp {
         }
     }
 
-    exportData(): Promise<boolean> {
-        // [log removed]
-        return Promise.resolve(false);
-    }
-
     getSelectedTile(): unknown {
         return this.tileSelector ? this.tileSelector.getSelectedTile() : null;
     }
@@ -718,11 +712,5 @@ document.addEventListener('pagehide', () => {
     console.log('[Cleanup] pagehide - forcing cleanup');
     if (app) app.destroy();
 });
-
-// Expose key functions globally for compatibility
-window.createScene = async (...args: unknown[]): Promise<unknown> => {
-    console.warn('createScene is deprecated. Use GridWorldApp instance instead.');
-    return app?.['sceneManager'] ? await (app as unknown as { sceneManager: SceneManager })['sceneManager'].createHexasphere() : null;
-};
 
 export default GridWorldApp;

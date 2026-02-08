@@ -1,6 +1,6 @@
 import express, { Router } from 'express';
 import { validateBody } from '../middleware/validate';
-import { SetDateSchema, SetIntervalSchema, SetSpeedSchema } from '../schemas';
+import { SetSpeedSchema } from '../schemas';
 
 const router: Router = express.Router();
 
@@ -99,53 +99,6 @@ router.post('/reset', (req, res) => {
         res.status(500).json({
             success: false,
             error: 'Failed to reset calendar'
-        });
-    }
-});
-
-// POST /api/calendar/date - Set specific date
-router.post('/date', validateBody(SetDateSchema), (req, res) => {
-    try {
-        const { year, month, day } = req.body;
-
-        const result = req.app.locals.calendarService.setDate(year, month, day);
-
-        res.json({
-            success: true,
-            data: {
-                dateSet: result,
-                state: req.app.locals.calendarService.getState()
-            }
-        });
-    } catch (error: unknown) {
-        console.error('Error setting calendar date:', error);
-        res.status(400).json({
-            success: false,
-            error: (error as Error).message || 'Failed to set calendar date'
-        });
-    }
-});
-
-// POST /api/calendar/interval - Change tick interval
-router.post('/interval', validateBody(SetIntervalSchema), (req, res) => {
-    try {
-        const { intervalMs } = req.body;
-
-        const result = req.app.locals.calendarService.setTickInterval(intervalMs);
-
-        res.json({
-            success: true,
-            data: {
-                intervalSet: result,
-                newInterval: intervalMs,
-                state: req.app.locals.calendarService.getState()
-            }
-        });
-    } catch (error: unknown) {
-        console.error('Error setting calendar interval:', error);
-        res.status(400).json({
-            success: false,
-            error: (error as Error).message || 'Failed to set tick interval'
         });
     }
 });

@@ -245,22 +245,6 @@ class ApiClient {
     // ==================== TILES ====================
 
     /**
-     * Get all tiles (minimal data for rendering)
-     * @deprecated Use getTileState() + client-side geometry generation instead
-     */
-    async getTiles(
-        radius: number,
-        subdivisions: number,
-        tileWidthRatio: number,
-        forceRegenerate: boolean = false
-    ): Promise<TilesResponse> {
-        const regenQuery = forceRegenerate ? '&regenerate=true' : '';
-        return this.request<TilesResponse>(
-            `/api/tiles?radius=${radius}&subdivisions=${subdivisions}&tileWidthRatio=${tileWidthRatio}${regenQuery}`
-        );
-    }
-
-    /**
      * Get tile state only (no geometry) - for client-side hexasphere generation
      * Returns compact state keyed by tile ID: { t: terrainType, b: biome }
      */

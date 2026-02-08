@@ -1,12 +1,7 @@
 // Population API Routes
 import express, { Router } from 'express';
-import StateManager from '../services/stateManager';
 import { validateBody } from '../middleware/validate';
-import {
-    UpdatePopulationSchema,
-    InitializePopulationSchema,
-    IntegrityCheckSchema
-} from '../schemas';
+import { UpdatePopulationSchema } from '../schemas';
 
 const router: Router = express.Router();
 
@@ -21,52 +16,18 @@ router.get('/', async (req, res, next) => {
     }
 });
 
-// Update population data (growth rate or tile populations)
+// Update population data (growth rate)
 router.post('/', validateBody(UpdatePopulationSchema), async (req, res, next) => {
     try {
         const populationService = req.app.locals.populationService;
-        const { rate, tilePopulations } = req.body;
+        const { rate } = req.body;
         let responseData;
 
         if (rate !== undefined) {
             responseData = await populationService.updateGrowthRate(rate);
         }
 
-        if (tilePopulations) {
-            responseData = await populationService.updateTilePopulations(tilePopulations);
-        }
-
         res.json(responseData);
-    } catch (error: unknown) {
-        next(error);
-    }
-});
-
-// Initialize tile populations
-router.post('/initialize', validateBody(InitializePopulationSchema), async (req, res, next) => {
-    try {
-        const populationService = req.app.locals.populationService;
-        const { habitableTiles, preserveDatabase } = req.body;
-
-        const responseData = await populationService.initializeTilePopulations(habitableTiles, { preserveDatabase });
-
-        // Emit update to all clients
-        res.json(responseData);
-    } catch (error: unknown) {
-        next(error);
-    }
-});
-
-// Reset all population data
-router.post('/reset', async (req, res, next) => {
-    try {
-        const populationService = req.app.locals.populationService;
-        const responseData = await populationService.resetPopulation();
-        res.json({
-            success: true,
-            message: 'All tile populations reset',
-            data: responseData
-        });
     } catch (error: unknown) {
         next(error);
     }
@@ -87,62 +48,12 @@ router.post('/save', async (req, res, next) => {
     }
 });
 
-// Get demographic population stats (male, female, under 18, over 65)
+// Get demographic population stats
 router.get('/stats', async (req, res, next) => {
     try {
         const populationService = req.app.locals.populationService;
         const stats = await populationService.getAllPopulationData();
         res.json(stats);
-    } catch (error: unknown) {
-        next(error);
-    }
-});
-
-// Regenerate population with new age distribution
-router.post('/regenerate', async (req, res, next) => {
-    try {
-        const populationService = req.app.locals.populationService;
-        const responseData = await populationService.regeneratePopulationWithNewAgeDistribution();
-        res.json({
-            success: true,
-            message: 'Population regenerated with new age distribution',
-            data: responseData
-        });
-    } catch (error: unknown) {
-        next(error);
-    }
-});
-
-// Apply senescence (death by old age) manually
-router.post('/senescence', async (req, res, next) => {
-    try {
-        const populationService = req.app.locals.populationService;
-        const responseData = await populationService.applySenescenceManually();
-        res.json(responseData);
-    } catch (error: unknown) {
-        next(error);
-    }
-});
-
-// Run integrity check (optionally repair) - ADMIN
-router.post('/integrity', validateBody(IntegrityCheckSchema), async (req, res, next) => {
-    try {
-        const populationService = req.app.locals.populationService;
-        const { tiles, repair } = req.body;
-        const options = { tiles: tiles || null, repair };
-        const result = await populationService.runIntegrityCheck(options);
-        res.json({ success: result.success, details: result.details });
-    } catch (error: unknown) {
-        next(error);
-    }
-});
-
-// Create families for existing population
-router.post('/create-families', async (req, res, next) => {
-    try {
-        const populationService = req.app.locals.populationService;
-        const responseData = await populationService.createFamiliesForExistingPopulation();
-        res.json(responseData);
     } catch (error: unknown) {
         next(error);
     }

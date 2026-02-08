@@ -37,17 +37,6 @@ export const TileIdParamSchema = z.object({
 // Calendar Schemas
 // ============================================
 
-// GridWorld uses a custom calendar: 8 days per month, 12 months per year
-export const SetDateSchema = z.object({
-    year: z.number().int().min(1).max(99999),
-    month: z.number().int().min(1).max(12),
-    day: z.number().int().min(1).max(8)
-});
-
-export const SetIntervalSchema = z.object({
-    intervalMs: z.number().int().min(100).max(60000)
-});
-
 export const SetSpeedSchema = z.object({
     speed: z.string().min(1)
 });
@@ -95,7 +84,5 @@ export type UpdatePopulationInput = z.infer<typeof UpdatePopulationSchema>;
 export type InitializePopulationInput = z.infer<typeof InitializePopulationSchema>;
 export type IntegrityCheckInput = z.infer<typeof IntegrityCheckSchema>;
 export type AssignFamilyInput = z.infer<typeof AssignFamilySchema>;
-export type SetDateInput = z.infer<typeof SetDateSchema>;
-export type SetIntervalInput = z.infer<typeof SetIntervalSchema>;
 export type SetSpeedInput = z.infer<typeof SetSpeedSchema>;
 export type WorldRestartInput = z.infer<typeof WorldRestartSchema>;

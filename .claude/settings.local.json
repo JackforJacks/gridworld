@@ -26,7 +26,9 @@
       "Bash(npm run build:server:*)",
       "Bash(curl:*)",
       "Bash(lsof:*)",
-      "Read(//c/Users/giaco/OneDrive/Documenti/github/GridWorld/**)"
+      "Read(//c/Users/giaco/OneDrive/Documenti/github/GridWorld/**)",
+      "Bash(npm uninstall:*)",
+      "Bash(del:*)"
     ]
   }
 }

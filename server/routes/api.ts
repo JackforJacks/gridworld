@@ -10,6 +10,7 @@ import statisticsRoutes from './statistics';
 import systemRoutes from './system';
 import rustRoutes from './rust';
 import StateManager from '../services/stateManager';
+import rustSimulation from '../services/rustSimulation';
 import serverConfig from '../config/server';
 import { validateBody } from '../middleware/validate';
 import { WorldRestartSchema } from '../schemas';
@@ -56,7 +57,7 @@ router.post('/sync', async (req: Request, res: Response) => {
 // GET /api/state - Get current state status
 router.get('/state', async (req: Request, res: Response) => {
     try {
-        const peopleCount = await StateManager.getPopulationCount();
+        const peopleCount = rustSimulation.getPopulation();
         res.json({
             initialized: StateManager.isInitialized(),
             people: peopleCount,

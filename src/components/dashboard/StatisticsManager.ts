@@ -62,31 +62,12 @@ interface TodayStats {
     pregnanciesStarted: number;
 }
 
-interface VitalRateData {
-    year: number;
-    birthRate: number;
-    deathRate: number;
-}
-
 interface DashboardResponse {
     success: boolean;
     error?: string;
     summary: StatisticsSummary;
     today: TodayStats;
     chart: ChartData;
-}
-
-interface VitalRatesResponse {
-    success: boolean;
-    error?: string;
-    data: VitalRateData[];
-}
-
-interface CurrentStatsResponse {
-    success: boolean;
-    error?: string;
-    summary: StatisticsSummary;
-    today: TodayStats;
 }
 
 class StatisticsManager {
@@ -367,126 +348,6 @@ class StatisticsManager {
         });
     }
 
-    // Legacy methods kept for backward compatibility
-    public async updateSummary(): Promise<void> {
-        try {
-            const response = await fetch('/api/statistics/current');
-            const result: CurrentStatsResponse = await response.json();
-
-            if (!result.success) {
-                throw new Error(result.error);
-            }
-
-            this.renderSummary(result.summary, result.today);
-        } catch (error: unknown) {
-            console.error('Error updating summary:', error);
-            const summaryDiv = document.getElementById('stats-summary');
-            const errorMessage = error instanceof Error ? (error as Error).message : 'Unknown error';
-            if (summaryDiv) {
-                summaryDiv.innerHTML = `
-                    <p style="color: #f44336;">Error loading statistics: ${errorMessage}</p>
-                `;
-            }
-        }
-    }
-
-    public async updateChart(): Promise<void> {
-        if (typeof Chart === 'undefined') {
-            // [log removed]
-            return;
-        }
-        try {
-            const yearsSelect = document.getElementById('years-select') as HTMLSelectElement | null;
-            const selectedYears = yearsSelect?.value || '100';
-            const response = await fetch(`/api/statistics/vital-rates/${selectedYears}`);
-            const result: VitalRatesResponse = await response.json();
-
-            if (!result.success) {
-                throw new Error(result.error);
-            }
-
-            const chartContainer = document.getElementById('chart-container');
-            if (result.data.length === 0) {
-                if (chartContainer) {
-                    chartContainer.innerHTML =
-                        '<p style="color: #666; text-align: center; padding: 20px;">No data available yet. Let the simulation run for at least one year.</p>';
-                }
-                return;
-            }
-
-            const chartData = result.data;
-            const yearLabels = chartData.map((d: VitalRateData) => d.year);
-            const birthRates = chartData.map((d: VitalRateData) => d.birthRate);
-            const deathRates = chartData.map((d: VitalRateData) => d.deathRate);
-
-            const canvas = document.getElementById('vitalRatesChart') as HTMLCanvasElement | null;
-            const ctx = canvas?.getContext('2d');
-            if (!ctx) return;
-
-            // Destroy existing chart if it exists
-            if (this.chart) {
-                this.chart.destroy();
-            }
-            this.chart = new Chart(ctx, {
-                type: 'line',
-                data: {
-                    labels: yearLabels,
-                    datasets: [{
-                        label: 'Birth Rate per 1000',
-                        data: birthRates,
-                        borderColor: 'rgb(75, 192, 192)',
-                        backgroundColor: 'rgba(75, 192, 192, 0.1)',
-                        tension: 0.1,
-                        pointRadius: 3
-                    }, {
-                        label: 'Death Rate per 1000',
-                        data: deathRates,
-                        borderColor: 'rgb(255, 99, 132)',
-                        backgroundColor: 'rgba(255, 99, 132, 0.1)',
-                        tension: 0.1,
-                        pointRadius: 3
-                    }]
-                },
-                options: {
-                    responsive: true,
-                    maintainAspectRatio: false,
-                    plugins: {
-                        title: {
-                            display: true,
-                            text: `Birth and Death Rates per 1000 Population (${chartData.length} years)`
-                        },
-                        legend: {
-                            display: true,
-                            position: 'top'
-                        }
-                    },
-                    scales: {
-                        y: {
-                            beginAtZero: true,
-                            title: {
-                                display: true,
-                                text: 'Rate per 1000 people'
-                            }
-                        },
-                        x: {
-                            title: {
-                                display: true,
-                                text: 'Year'
-                            }
-                        }
-                    }
-                }
-            });
-        } catch (error: unknown) {
-            console.error('Error updating chart:', error);
-            const chartContainer = document.getElementById('chart-container');
-            const errorMessage = error instanceof Error ? (error as Error).message : 'Unknown error';
-            if (chartContainer) {
-                chartContainer.innerHTML =
-                    `<p style="color: #f44336; text-align: center; padding: 20px;">Error loading chart: ${errorMessage}</p>`;
-            }
-        }
-    }
 }
 
 export default StatisticsManager;

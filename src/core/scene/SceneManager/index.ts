@@ -12,7 +12,7 @@ import type { HexTile, HexasphereData, TileColorInfo, TileDataResponse, Populati
 
 // Import modules
 import { initializeColorCaches, getBiomeColor, getBiomeColorCached, getTerrainColor } from './colorUtils';
-import { buildTilesFromData, buildTilesFromLocalHexasphere, createHexasphereMesh, calculateTileProperties, normalizePoint } from './geometryBuilder';
+import { buildTilesFromLocalHexasphere, createHexasphereMesh, calculateTileProperties, normalizePoint } from './geometryBuilder';
 import type { LocalHexasphere, CompactTileState } from './geometryBuilder';
 import { TileOverlayManager } from './tileOverlays';
 import { updateTilePopulations, checkPopulationThresholds, getPopulationStats, resetTileColors, initializeTilePopulations, reinitializePopulation } from './populationDisplay';
@@ -205,37 +205,6 @@ class SceneManager {
         }
 
         // Apply population data
-        updateTilePopulations(this.hexasphere);
-        if (this.overlayManager) {
-            checkPopulationThresholds(this.hexasphere, this.tileColorIndices, this.overlayManager);
-        }
-    }
-
-    /**
-     * @deprecated Use buildTilesFromLocalHexasphere instead for better performance
-     * Kept for backwards compatibility with server-provided tile data
-     */
-    buildTilesFromData(tileData: TileDataResponse): void {
-        const result = buildTilesFromData(tileData);
-        if (!result) return;
-
-        this.hexasphere = result.hexasphere;
-        this.habitableTileIds = result.habitableTileIds;
-        this.tileColorIndices = result.tileColorIndices;
-
-        const mesh = createHexasphereMesh(result.geometry, result.hexasphere);
-        this.hexasphereMesh = mesh;
-        this.currentTiles.push(mesh);
-        this.scene!.add(mesh);
-        getAppContext().currentTiles = this.currentTiles;
-
-        if (this.overlayManager && this.hexasphere?.tiles) {
-            this.overlayManager.createBorders(this.hexasphere.tiles);
-
-            const habitableTiles = this.hexasphere.tiles.filter(t => isHabitable(t.terrainType || 'unknown', t.biome));
-            this.overlayManager.initOverlays(habitableTiles);
-        }
-
         updateTilePopulations(this.hexasphere);
         if (this.overlayManager) {
             checkPopulationThresholds(this.hexasphere, this.tileColorIndices, this.overlayManager);

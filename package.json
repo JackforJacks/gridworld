@@ -26,65 +26,10 @@
     "full-auto": "concurrently \"npm run dev\" \"npm run server:watch\"",
     "full-dev": "concurrently \"npm run dev\" \"npm run server:dev\"",
     "prod": "npm run build && npm run server",
-    "db:init": "tsx server/migrations/init_database.ts",
-    "db:reset": "tsx server/migrations/reset_schema_for_migrations.ts && npm run db:init",
-    "simulate": "cross-env NODE_OPTIONS=--max-old-space-size=8192 tsx scripts/simulate_100_years.ts",
-    "simulate:10y": "cross-env YEARS=10 NODE_OPTIONS=--max-old-space-size=8192 tsx scripts/simulate_100_years.ts",
-    "simulate:50y": "cross-env YEARS=50 NODE_OPTIONS=--max-old-space-size=8192 tsx scripts/simulate_100_years.ts",
-    "simulate:accurate": "cross-env FAST=false NODE_OPTIONS=--max-old-space-size=8192 tsx scripts/simulate_100_years.ts",
-    "test": "jest --runInBand",
-    "test:unit": "jest --runInBand --testPathIgnorePatterns=integration",
-    "test:integration": "jest --runInBand --testPathPattern=integration",
-    "test:coverage": "jest --coverage --runInBand --testPathIgnorePatterns=integration",
-    "test:watch": "jest --watch",
-    "test:unit:watch": "jest --watch --testPathIgnorePatterns=integration",
-    "test:file": "jest --runInBand",
     "typecheck": "tsc --noEmit",
     "typecheck:watch": "tsc --noEmit --watch",
     "lint": "eslint . --ext .ts,.js",
     "lint:fix": "eslint . --ext .ts,.js --fix"
-  },
-  "jest": {
-    "preset": "ts-jest",
-    "testEnvironment": "node",
-    "roots": [
-      "<rootDir>/server",
-      "<rootDir>/src"
-    ],
-    "transform": {
-      "^.+\\.tsx?$": [
-        "ts-jest",
-        {
-          "tsconfig": "tsconfig.json"
-        }
-      ]
-    },
-    "testMatch": [
-      "**/__tests__/**/*.test.ts",
-      "**/?(*.)+(spec|test).ts"
-    ],
-    "moduleFileExtensions": [
-      "ts",
-      "tsx",
-      "js",
-      "jsx",
-      "json",
-      "node"
-    ],
-    "collectCoverage": false,
-    "coverageDirectory": "coverage",
-    "coveragePathIgnorePatterns": [
-      "/node_modules/"
-    ],
-    "coverageThreshold": {
-      "global": {
-        "branches": 70,
-        "functions": 70,
-        "lines": 70,
-        "statements": 70
-      }
-    },
-    "globalTeardown": "./server/jestGlobalTeardown.ts"
   },
   "devDependencies": {
     "@babel/core": "^7.23.0",
@@ -92,9 +37,8 @@
     "@types/compression": "^1.8.1",
     "@types/cors": "^2.8.19",
     "@types/express": "^4.17.25",
-    "@types/jest": "^30.0.0",
     "@types/node": "^25.1.0",
-"@types/socket.io": "^3.0.1",
+    "@types/socket.io": "^3.0.1",
     "@types/three": "^0.182.0",
     "@typescript-eslint/eslint-plugin": "^7.0.0",
     "@typescript-eslint/parser": "^7.0.0",
@@ -107,13 +51,11 @@
     "css-loader": "^6.8.1",
     "eslint": "^8.57.0",
     "html-webpack-plugin": "^5.5.4",
-    "jest": "^29.7.0",
     "mini-css-extract-plugin": "^2.9.2",
     "nodemon": "^3.1.10",
     "rimraf": "^5.0.5",
     "style-loader": "^3.3.3",
     "terser-webpack-plugin": "^5.3.14",
-    "ts-jest": "^29.4.6",
     "ts-loader": "^9.5.4",
     "ts-node": "^10.9.2",
     "tsconfig-paths": "^4.2.0",
@@ -129,9 +71,7 @@
     "cors": "^2.8.5",
     "dotenv": "^16.4.5",
     "express": "^5.1.0",
-    "fs-extra": "^11.3.0",
-    "node-fetch": "^3.3.2",
-"socket.io": "^4.8.1",
+    "socket.io": "^4.8.1",
     "socket.io-client": "^4.8.1",
     "three": "^0.164.1",
     "zod": "^4.3.6"

@@ -116,14 +116,6 @@ module.exports = (env, argv) => {
             globOptions: {
               ignore: ['**/*.map']
             }
-          },
-          {
-            from: 'include/FileSaver.min.js', // Only copy FileSaver, not three.min.js
-            to: 'include/FileSaver.min.js'
-          },
-          {
-            from: 'equirectangle_projection.png',
-            to: 'equirectangle_projection.png'
           }
         ]
       })
