@@ -32,7 +32,7 @@ async function addPeopleToTile(pool, tileId, count, currentYear, currentMonth, c
     interface PersonObj {
         id: number;
         tile_id: number;
-        residency: null;
+        residency: number;
         sex: boolean;
         date_of_birth: string;
         health: number;
@@ -47,7 +47,7 @@ async function addPeopleToTile(pool, tileId, count, currentYear, currentMonth, c
         persons.push({
             id: ids[i],
             tile_id: tileId,
-            residency: null, // Will be assigned later
+            residency: tileId,
             sex: sex,
             date_of_birth: birthDate,
             health: 100,

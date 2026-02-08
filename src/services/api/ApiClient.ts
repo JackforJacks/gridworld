@@ -122,7 +122,6 @@ export interface StatisticsData {
     pregnantFamilies?: number;
     familiesWithChildren?: number;
     avgChildrenPerFamily?: number;
-    villagesCount?: number;
 }
 
 /** Vital rates data point */

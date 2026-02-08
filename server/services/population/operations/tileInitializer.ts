@@ -203,25 +203,8 @@ async function checkExistingPopulation(
             };
         }
 
-        // Inconsistent state - try to rebuild
-        console.warn('[PopulationOperations] Inconsistent storage state: counts exist but no per-tile populations. Attempting rebuild...');
-        try {
-            const rebuildRes = await PopulationState.rebuildVillageMemberships();
-            if (rebuildRes && rebuildRes.success && rebuildRes.total > 0) {
-                const repaired = await PopulationState.getAllTilePopulations();
-                if (repaired && Object.keys(repaired).length > 0) {
-                    return {
-                        success: true,
-                        message: `Using repaired population data (${existingCount} people)`,
-                        isExisting: true,
-                        ...formatPopData(repaired)
-                    };
-                }
-            }
-        } catch (e: unknown) {
-            const errorMessage = e instanceof Error ? e.message : String(e);
-            console.warn('[PopulationOperations] rebuildVillageMemberships failed:', errorMessage);
-        }
+        // Inconsistent state - counts exist but no per-tile populations
+        console.warn('[PopulationOperations] Inconsistent storage state: counts exist but no per-tile populations.');
     }
 
     return null;
@@ -354,10 +337,8 @@ async function waitForStorageSync(
     PopulationState: PopulationStateModule,
     selectedTiles: number[]
 ): Promise<void> {
-    // Note: At this point, people are written to the 'person' hash with residency=0.
-    // Village membership sets (village:*:*:people) are NOT created until 
-    // ensureVillagesForPopulatedTiles() runs after this function completes.
-    // So we verify that people exist in storage by checking total count, not village sets.
+    // Note: At this point, people are written to the 'person' hash with residency=tile_id.
+    // We verify that people exist in storage by checking total count.
     try {
         const waitStart = Date.now();
         const MAX_WAIT_MS = 3000;
@@ -386,8 +367,7 @@ async function getFinalPopulations(
     pool: Pool,
     PopulationState: PopulationStateModule
 ): Promise<TilePopulations> {
-    // At this point, people have residency=0, so getAllTilePopulations() won't find them.
-    // Instead, count people by tile_id directly from the person hash.
+    // Count people by tile_id directly from the person hash.
     try {
         const allPeople = await PopulationState.getAllPeople();
         const populations: TilePopulations = {};
@@ -398,7 +378,7 @@ async function getFinalPopulations(
         }
         return populations;
     } catch {
-        // Fallback to village set-based counting (will be empty until residency assigned)
+        // Fallback to tile population counting
         return await PopulationState.getAllTilePopulations();
     }
 }

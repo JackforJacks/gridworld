@@ -68,8 +68,6 @@ async function getPopulationStats(pool, calendarService, populationServiceInstan
             elderly: 0,
             bachelors: 0
         };
-        let villagesCount = 0;
-
         // Only use storage (Redis) for all stats
         if (storage.isAvailable()) {
             // Parse currentDateStr to object for getDemographicStats
@@ -77,13 +75,6 @@ async function getPopulationStats(pool, calendarService, populationServiceInstan
             const storageStats = await PopulationState.getDemographicStats({ year, month, day });
             if (storageStats) {
                 stats = storageStats;
-            }
-            // Get villages count from storage ('village' hash)
-            try {
-                const villageData = await storage.hgetall('village');
-                villagesCount = villageData ? Object.keys(villageData).length : 0;
-            } catch (e: unknown) {
-                villagesCount = 0;
             }
         }
 
@@ -116,7 +107,6 @@ async function getPopulationStats(pool, calendarService, populationServiceInstan
             working_age: stats.working_age,
             elderly: stats.elderly,
             bachelors: stats.bachelors,
-            villagesCount: villagesCount,
             ...rates,
             ...inGameRatesYear,
             ...inGameRates12m
@@ -126,7 +116,6 @@ async function getPopulationStats(pool, calendarService, populationServiceInstan
         const rates = calculateRates(populationServiceInstance);
         return {
             totalPopulation: 0, male: 0, female: 0, minors: 0, working_age: 0, elderly: 0, bachelors: 0,
-            villagesCount: 0,
             ...rates
         };
     }
@@ -178,59 +167,6 @@ async function getAllPopulationData(pool, calendarService, populationServiceInst
             populations = best;
         } catch (e: unknown) {
             console.warn('[getAllPopulationData] storage.getAllTilePopulations failed:', (e as Error).message);
-        }
-    }
-
-    // If storage didn't have data after polling, attempt a repair if person hash exists
-    // AND people have residency assigned (> 0). If all people have residency=0, skip rebuild
-    // since village sets can't be created until ensureVillagesForPopulatedTiles runs.
-    if (Object.keys(populations).length === 0) {
-        try {
-            // Use HLEN to check count without loading all data
-            const personCount = await storage.hlen('person');
-
-            if (personCount > 0) {
-                // Sample a few records using HSCAN to check for valid residency
-                // This avoids loading all people into memory
-                let hasValidResidency = false;
-                const sampleStream = storage.hscanStream('person', { count: 100 });
-
-                sampleLoop:
-                for await (const result of sampleStream) {
-                    const entries = result as string[];
-                    for (let i = 0; i < entries.length; i += 2) {
-                        const json = entries[i + 1];
-                        if (!json) continue;
-                        try {
-                            const person = JSON.parse(json);
-                            if (person.residency !== null && person.residency !== undefined && person.residency !== 0) {
-                                hasValidResidency = true;
-                                break sampleLoop;
-                            }
-                        } catch { /* ignore parse errors */ }
-                    }
-                    // Only check first batch to avoid memory issues
-                    break;
-                }
-
-                if (hasValidResidency) {
-                    console.warn('[getAllPopulationData] Detected persons with residency but no per-tile data; attempting rebuild of village membership sets...');
-                    try {
-                        const rebuildRes = await PopulationState.rebuildVillageMemberships();
-                        if (rebuildRes && 'success' in rebuildRes && rebuildRes.success) {
-                            const repaired = await PopulationState.getAllTilePopulations();
-                            if (repaired && Object.keys(repaired).length > 0) {
-                                populations = repaired;
-                            }
-                        }
-                    } catch (e: unknown) {
-                        console.warn('[getAllPopulationData] rebuildVillageMemberships failed:', e instanceof Error ? e.message : String(e));
-                    }
-                }
-                // If no valid residency, silently skip - residency assignment hasn't happened yet
-            }
-        } catch (e: unknown) {
-            // ignore - no fallback
         }
     }
 

@@ -38,7 +38,7 @@ describe('initializeTilePopulations (storage-first)', () => {
         }
     });
 
-    test('creates populations on selected tiles and indexes people into village sets', async () => {
+    test('creates populations on selected tiles', async () => {
         const fakeTileId = 9999;
         const pool = {
             query: async (text) => {

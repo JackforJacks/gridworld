@@ -37,14 +37,13 @@ async function fallbackClearStorage(): Promise<void> {
     try {
         // Clear all known hash keys
         await storage.del(
-            'village', 'person', 'family',
+            'person', 'family',
             'tile', 'tile:lands', 'tile:fertility',
-            'village:cleared', 'counts:global'
+            'counts:global'
         );
 
         // Clear all pattern-based keys using scanStream
         const patterns = [
-            'village:*:*:people',   // Village population sets
             'eligible:*:*',         // Eligible matchmaking sets
             'pending:*',            // All pending operations
             'fertile:*',            // Fertile family sets

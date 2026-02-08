@@ -19,7 +19,6 @@ interface LoadContext {
 }
 
 interface LoadResult {
-    villages: number;
     people: number;
     families: number;
     skipped?: boolean;
@@ -60,7 +59,7 @@ class StateManager {
         const token = await acquireLock(lockKey, 60000, 5000);
         if (!token) {
             console.warn('[StateManager] loadFromDatabase skipped: could not acquire load lock');
-            return { villages: 0, people: 0, families: 0, skipped: true };
+            return { people: 0, families: 0, skipped: true };
         }
 
         try {
@@ -72,7 +71,7 @@ class StateManager {
                 } catch (e: unknown) {
                     // If we cannot pause the calendar, skip loading to avoid inconsistent state
                     console.warn('⚠️ Could not pause calendar, skipping state load');
-                    return { villages: 0, people: 0, families: 0, skipped: true };
+                    return { people: 0, families: 0, skipped: true };
                 }
             }
 
@@ -108,9 +107,7 @@ class StateManager {
             'pending:person:deletes',
             'pending:family:inserts',
             'pending:family:updates',
-            'pending:family:deletes',
-            'pending:village:inserts',
-            'pending:tiles:regenerate'
+            'pending:family:deletes'
         ];
         for (const key of pendingSets) {
             try {
@@ -140,18 +137,6 @@ class StateManager {
     }
 
     // Delegate Redis operations to redisOperations module
-    static async getVillage(villageId: number | string): Promise<any> {
-        return redisOps.getVillage(villageId);
-    }
-
-    static async updateVillage(villageId: number | string, updates: any): Promise<any> {
-        return redisOps.updateVillage(villageId, updates);
-    }
-
-    static async getAllVillages(): Promise<any[]> {
-        return redisOps.getAllVillages();
-    }
-
     static async getPerson(personId: number | string): Promise<any> {
         return redisOps.getPerson(personId);
     }
@@ -168,16 +153,8 @@ class StateManager {
         return redisOps.getAllPeople();
     }
 
-    static async getVillagePopulation(tileId: string, chunkIndex: number): Promise<any> {
-        return redisOps.getVillagePopulation(tileId, chunkIndex);
-    }
-
     static async getTileFertility(tileId: string): Promise<any> {
         return redisOps.getTileFertility(tileId);
-    }
-
-    static async getVillageClearedLand(villageId: string): Promise<any> {
-        return redisOps.getVillageClearedLand(villageId);
     }
 
     static async addPersonToStorage(person: any): Promise<any> {

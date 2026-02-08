@@ -35,8 +35,6 @@ export async function clearStoragePopulation(options: PopulationOptions = {}): P
 
         // Clear person hash
         await storage.del('person');
-        // Clear village hash (village objects)
-        await storage.del('village');
         // Clear family hash
         await storage.del('family');
         // Clear all pending operations (prevent stale pending entries from previous sessions)
@@ -46,14 +44,6 @@ export async function clearStoragePopulation(options: PopulationOptions = {}): P
         await storage.del('pending:family:inserts');
         await storage.del('pending:family:updates');
         await storage.del('pending:family:deletes');
-        await storage.del('pending:village:inserts');
-        // Clear all village:*:*:people sets
-        const stream = storage.scanStream({ match: 'village:*:*:people', count: 1000 });
-        const keys: string[] = [];
-        for await (const resultKeys of stream) {
-            for (const key of resultKeys) keys.push(key);
-        }
-        if (keys.length > 0) await storage.del(...keys);
         // Reset counts
         await storage.del('counts:global');
         if (serverConfig.verboseLogs) console.log('[clearStoragePopulation] Cleared storage population data');

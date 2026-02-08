@@ -36,7 +36,6 @@ class PeopleState {
     static getPerson = PersonCrud.getPerson;
     static updatePerson = PersonCrud.updatePerson;
     static getAllPeople = PersonCrud.getAllPeople;
-    static getTilePopulation = PersonCrud.getTilePopulation;
     static getGlobalCounts = PersonCrud.getGlobalCounts;
     static getTotalPopulation = PersonCrud.getTotalPopulation;
 
@@ -45,7 +44,6 @@ class PeopleState {
     static batchRemovePersons = BatchOperations.batchRemovePersons;
     static batchClearFamilyIds = BatchOperations.batchClearFamilyIds;
     static batchDeleteFamilies = BatchOperations.batchDeleteFamilies;
-    static batchUpdateResidency = BatchOperations.batchUpdateResidency;
     static reassignIds = BatchOperations.reassignIds;
 
     // =========== PENDING OPERATIONS ===========
@@ -65,7 +63,6 @@ class PeopleState {
 
     // =========== SYNC ===========
     static syncFromPostgres = PopulationSync.syncFromPostgres;
-    static rebuildVillageMemberships = PopulationSync.rebuildVillageMemberships;
     static repairIfNeeded = PopulationSync.repairIfNeeded;
 }
 

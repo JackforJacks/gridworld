@@ -16,7 +16,6 @@ import {
     CalendarService,
     PopulationServiceInstance,
     FamilyRecord,
-    PersonRecord,
     DeliveryResult,
     FamilyStats
 } from './types';
@@ -48,29 +47,12 @@ async function deliverBabyInternal(
     const { getRandomSex } = deps.getCalculator();
     const babySex = getRandomSex();
 
-    // Get father's residency - baby inherits father's village assignment
-    let babyResidency: number | null = null;
-    if (family.husband_id) {
-        const father = await PopulationState.getPerson(family.husband_id) as PersonRecord | null;
-        if (father && father.residency !== null && father.residency !== undefined && father.residency !== 0) {
-            babyResidency = father.residency;
-        }
-    }
-
-    // If father has no residency, try mother's residency
-    if (babyResidency === null && family.wife_id) {
-        const mother = await PopulationState.getPerson(family.wife_id) as PersonRecord | null;
-        if (mother && mother.residency !== null && mother.residency !== undefined && mother.residency !== 0) {
-            babyResidency = mother.residency;
-        }
-    }
-
     const babyId = await PopulationState.getNextId();
 
     const personObj = {
         id: babyId,
         tile_id: family.tile_id,
-        residency: babyResidency,
+        residency: family.tile_id,
         sex: babySex,
         date_of_birth: birthDate,
         health: 100,

@@ -45,7 +45,6 @@ interface PopulationApiStats {
     familiesWithChildren?: number;
     avgChildrenPerFamily?: number;
     totalPopulation?: number;
-    villagesCount?: number;
     totalTiles?: number;
 }
 
@@ -68,7 +67,6 @@ interface StatsData {
     pregnantFamilies?: number;
     familiesWithChildren?: number;
     avgChildrenPerFamily?: number;
-    villagesCount?: number;
     totalTiles?: number;
     habitableTiles?: number;
     populatedTiles?: number;
@@ -150,7 +148,7 @@ function mergeApiStats(stats: StatsData, popData: PopulationApiStats): void {
         'birthRate', 'deathRate', 'birthCount', 'deathCount',
         'totalBirthCount', 'totalDeathCount',
         'totalFamilies', 'pregnantFamilies', 'familiesWithChildren',
-        'avgChildrenPerFamily', 'totalPopulation', 'villagesCount',
+        'avgChildrenPerFamily', 'totalPopulation',
         'totalTiles'  // Use server's tile count (more accurate after world restart)
     ];
     for (const key of keys) {
@@ -699,7 +697,6 @@ class UIManager {
                     ${statRow('Total Deaths', fmt(stats.totalDeathCount, '0'), 'stats-modal-death-count')}
                     ${SEP}
                     ${statRow('Total Tiles', String(stats.totalTiles ?? 'N/A'))}
-                    ${statRow('Total Villages', fmt(stats.villagesCount, '0'), 'stats-modal-total-villages')}
                     ${statRow('Habitable Tiles', String(stats.habitableTiles ?? 'N/A'))}
                     ${statRow('Populated Tiles', String(stats.populatedTiles ?? 'N/A'))}
                     ${statRow(`High Pop Tiles (≥${stats.threshold ?? 0})`, String(stats.highPopulationTiles ?? 'N/A'))}

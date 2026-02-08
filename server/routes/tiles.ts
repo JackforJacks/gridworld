@@ -1,39 +1,9 @@
 // Tiles API Route - READ-ONLY endpoint
 // Tile generation is handled exclusively by /api/worldrestart
 import express, { Request, Response } from 'express';
-import villageService from '../services/villageService';
 import serverConfig from '../config/server';
 import storage from '../services/storage';
 import Hexasphere from '../../src/core/hexasphere/HexaSphere';
-
-// Interfaces for tile data
-interface LandData {
-    tile_id: number;
-    chunk_index: number;
-    land_type: string;
-    cleared: boolean;
-    village_id?: number;
-    village_name?: string;
-    housing_slots?: number;
-    housing_capacity?: number;
-    food_stores?: number;
-    food_capacity?: number;
-    food_production_rate?: number;
-    last_food_update?: string;
-}
-
-interface VillageData {
-    id: number;
-    name: string;
-    tile_id: number;
-    land_chunk_index: number;
-    housing_slots: number;
-    housing_capacity: number;
-    food_stores: number;
-    food_capacity: number;
-    food_production_rate: number;
-    last_food_update: string;
-}
 
 // __dirname is available in CommonJS mode (our server target)
 
@@ -124,7 +94,7 @@ loadWorldSeed();
 // GET /api/tiles
 // READ-ONLY endpoint - returns MINIMAL tile data for initial rendering
 // Only includes: id, boundary, centerPoint, terrainType, biome
-// Detailed data (lands, fertility, villages) fetched via GET /api/tiles/:id
+// Detailed data (fertility) fetched via GET /api/tiles/:id
 router.get('/', async (req: Request, res: Response): Promise<void> => {
     const startTime = Date.now();
 
@@ -147,7 +117,7 @@ router.get('/', async (req: Request, res: Response): Promise<void> => {
         // Use cached hexasphere for geometry (boundary points, neighbor IDs)
         const hexasphere = getCachedHexasphere(radius, subdivisions, tileWidthRatio);
 
-        // Fetch ONLY tile data (terrain/biome) - skip lands and villages for initial load
+        // Fetch tile data (terrain/biome) for initial load
         const allTileData = await storage.hgetall('tile');
 
         if (!allTileData || Object.keys(allTileData).length === 0) {
@@ -186,7 +156,7 @@ router.get('/', async (req: Request, res: Response): Promise<void> => {
                     const tileData = JSON.parse(tileDataJson);
                     result.terrainType = tileData.terrain_type;
                     result.biome = tileData.biome;
-                    // Note: fertility, lands, villages NOT included - fetch via /api/tiles/:id
+                    // Note: fertility NOT included - fetch via /api/tiles/:id
                 } catch (e: unknown) {
                     // Use defaults if parse fails
                     result.terrainType = 'unknown';
@@ -274,19 +244,14 @@ router.post('/restart', async (_req: Request, res: Response): Promise<void> => {
 });
 
 // GET /api/tiles/:id - Get detailed data for a single tile (on-demand)
-// Includes: lands, fertility, villages, food data
+// Includes: terrain, biome, fertility
 // NOTE: This MUST be the last GET route as it matches any path segment
 router.get('/:id', async (req: Request, res: Response): Promise<void> => {
     const startTime = Date.now();
     const tileId = req.params.id;
 
     try {
-        // Fetch tile data, lands, and all villages in parallel
-        const [tileDataJson, landsDataJson, allVillageData] = await Promise.all([
-            storage.hget('tile', tileId),
-            storage.hget('tile:lands', tileId),
-            storage.hgetall('village')
-        ]);
+        const tileDataJson = await storage.hget('tile', tileId);
 
         if (!tileDataJson) {
             res.status(404).json({ error: 'Tile not found', tileId });
@@ -294,65 +259,6 @@ router.get('/:id', async (req: Request, res: Response): Promise<void> => {
         }
 
         const tileData = JSON.parse(tileDataJson);
-
-        // Build village lookup for this tile's lands
-        const villageLookup = new Map<string, VillageData>();
-        for (const [, villageJson] of Object.entries(allVillageData || {})) {
-            try {
-                const village: VillageData = JSON.parse(villageJson as string);
-                if (village.tile_id === parseInt(tileId)) {
-                    const key = `${village.tile_id}:${village.land_chunk_index}`;
-                    villageLookup.set(key, village);
-                }
-            } catch (e: unknown) {
-                // Skip malformed village data
-            }
-        }
-
-        // Parse lands and attach village info
-        let lands: LandData[] = [];
-        const villageIdsToUpdate: number[] = [];
-
-        if (landsDataJson) {
-            try {
-                const landsData = JSON.parse(landsDataJson);
-                lands = landsData.map((land: LandData) => {
-                    const lookupKey = `${land.tile_id}:${land.chunk_index}`;
-                    const village = villageLookup.get(lookupKey);
-                    if (village) {
-                        villageIdsToUpdate.push(village.id);
-                        return {
-                            ...land,
-                            village_id: village.id,
-                            village_name: village.name,
-                            housing_slots: village.housing_slots,
-                            housing_capacity: village.housing_capacity,
-                            food_stores: village.food_stores,
-                            food_capacity: village.food_capacity,
-                            food_production_rate: village.food_production_rate,
-                            last_food_update: village.last_food_update
-                        };
-                    }
-                    return land;
-                });
-            } catch (e: unknown) {
-                lands = [];
-            }
-        }
-
-        // Update food production for villages on this tile
-        if (villageIdsToUpdate.length > 0) {
-            await Promise.all(
-                villageIdsToUpdate.map(async villageId => {
-                    try {
-                        await villageService.updateVillageFoodProduction(villageId);
-                        await villageService.updateVillageFoodStores(villageId);
-                    } catch (err: unknown) {
-                        // Ignore food update errors
-                    }
-                })
-            );
-        }
 
         const elapsed = Date.now() - startTime;
         if (serverConfig.verboseLogs) {
@@ -363,8 +269,7 @@ router.get('/:id', async (req: Request, res: Response): Promise<void> => {
             id: parseInt(tileId),
             terrainType: tileData.terrain_type,
             biome: tileData.biome,
-            fertility: tileData.fertility,
-            lands
+            fertility: tileData.fertility
         });
     } catch (err: unknown) {
         const error = err as Error;

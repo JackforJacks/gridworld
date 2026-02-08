@@ -4,16 +4,15 @@
  * This module re-exports all population state classes for easy importing.
  * 
  * Usage:
- *   import { PeopleState, FamilyState, VillagePopulationState } from './populationState';
- * 
+ *   import { PeopleState, FamilyState } from './populationState';
+ *
  * Or for backwards compatibility:
  *   import PopulationState from './populationState';
- *   // PopulationState is an alias for PeopleState with additional family/village methods
+ *   // PopulationState is an alias for PeopleState with additional family methods
  */
 
 import PeopleState from './PeopleState';
 import FamilyState from './FamilyState';
-import VillagePopulationState from './VillagePopulationState';
 import storage from '../storage';
 import { getPool } from './redisHelpers';
 import type { FamilyData } from '../../../types/global';
@@ -22,7 +21,6 @@ import type { FamilyData } from '../../../types/global';
 interface PersonInput {
     id: number;
     tile_id?: number | null;
-    residency?: number | null;
     sex?: boolean;
     health?: number;
     date_of_birth?: string | Date;
@@ -32,7 +30,6 @@ interface PersonInput {
 /** Person updates type */
 interface PersonUpdates {
     tile_id?: number | null;
-    residency?: number | null;
     sex?: boolean;
     health?: number;
     date_of_birth?: string | Date;
@@ -43,7 +40,6 @@ interface PersonUpdates {
 interface StoredPerson {
     id: number;
     tile_id: number | null;
-    residency: number | null;
     sex: boolean;
     health: number;
     date_of_birth: string | Date;
@@ -87,12 +83,6 @@ interface DemographicStats {
     bachelors: number;
 }
 
-/** Residency update type */
-interface ResidencyUpdate {
-    personId: number;
-    newResidency: number;
-}
-
 /**
  * Backwards-compatible PopulationState class that delegates to the new modular classes
  * This allows existing code to continue working while we migrate
@@ -121,7 +111,6 @@ class PopulationState {
     static async getPerson(personId: number | string): Promise<StoredPerson | null> { return PeopleState.getPerson(Number(personId)); }
     static async updatePerson(personId: number | string, updates: PersonUpdates): Promise<boolean> { return PeopleState.updatePerson(Number(personId), updates); }
     static async getAllPeople(): Promise<StoredPerson[]> { return PeopleState.getAllPeople(); }
-    static async getTilePopulation(tileId: number | string, residency?: number): Promise<StoredPerson[]> { return PeopleState.getTilePopulation(Number(tileId), residency ?? 0); }
     static async getGlobalCounts(): Promise<GlobalCounts> { return PeopleState.getGlobalCounts(); }
     static async getTotalPopulation(): Promise<number> { return PeopleState.getTotalPopulation(); }
     static async addEligiblePerson(personId: number | string, isMale: boolean, tileId: number | string): Promise<boolean> { return PeopleState.addEligiblePerson(Number(personId), isMale, Number(tileId)); }
@@ -135,7 +124,6 @@ class PopulationState {
     static async getAllTilePopulations(): Promise<Record<number, number>> { return PeopleState.getAllTilePopulations(); }
     static async getDemographicStats(currentDate: CurrentDate): Promise<DemographicStats | null> { return PeopleState.getDemographicStats(currentDate); }
     static async syncFromPostgres(): Promise<ReturnType<typeof PeopleState.syncFromPostgres>> { return PeopleState.syncFromPostgres(); }
-    static async rebuildVillageMemberships(): Promise<ReturnType<typeof PeopleState.rebuildVillageMemberships>> { return PeopleState.rebuildVillageMemberships(); }
     static async repairIfNeeded(): Promise<ReturnType<typeof PeopleState.repairIfNeeded>> { return PeopleState.repairIfNeeded(); }
 
     // =========== BATCH OPERATIONS (delegates to PeopleState) ===========
@@ -143,7 +131,6 @@ class PopulationState {
     static async batchRemovePersons(personIds: (number | string)[], markDeleted?: boolean): Promise<number> { return PeopleState.batchRemovePersons(personIds.map(Number), markDeleted); }
     static async batchDeleteFamilies(familyIds: (number | string)[], markDeleted?: boolean): Promise<number> { return PeopleState.batchDeleteFamilies(familyIds.map(Number), markDeleted); }
     static async batchAddPersons(persons: PersonInput[], isNew?: boolean): Promise<number> { return PeopleState.batchAddPersons(persons, isNew); }
-    static async batchUpdateResidency(updates: ResidencyUpdate[]): Promise<number> { return PeopleState.batchUpdateResidency(updates); }
     static async getIdBatch(count: number): Promise<number[]> { return PeopleState.getIdBatch(count); }
 
     // =========== FAMILY OPERATIONS (delegates to FamilyState) ===========
@@ -161,16 +148,12 @@ class PopulationState {
     static async getPendingFamilyDeletes(): Promise<number[]> { return FamilyState.getPendingDeletes(); }
     static async clearPendingFamilyOperations(): Promise<void> { return FamilyState.clearPendingOperations(); }
     static async reassignFamilyIds(mappings: IdMapping[]): Promise<void> { return FamilyState.reassignIds(mappings); }
-
-    // =========== VILLAGE OPERATIONS (delegates to VillagePopulationState) ===========
-    static async getPendingVillageInserts(): Promise<ReturnType<typeof VillagePopulationState.getPendingInserts>> { return VillagePopulationState.getPendingInserts(); }
-    static async reassignVillageIds(mappings: IdMapping[]): Promise<ReturnType<typeof VillagePopulationState.reassignIds>> { return VillagePopulationState.reassignIds(mappings); }
 }
 
 export default PopulationState;
 
 // Also export individual modules for direct access
-export { PeopleState, FamilyState, VillagePopulationState };
+export { PeopleState, FamilyState };
 export const isRedisAvailable = (): boolean => storage.isAvailable();
 export const getRedis = (): ReturnType<typeof storage.getAdapter> | typeof storage => {
     const adapter = storage.getAdapter ? storage.getAdapter() : storage;

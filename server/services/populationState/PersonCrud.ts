@@ -3,7 +3,7 @@
  * 
  * Handles:
  * - addPerson, removePerson, updatePerson, getPerson
- * - getAllPeople, getTilePopulation
+ * - getAllPeople
  * - Global counts management
  */
 
@@ -14,7 +14,6 @@ import {
     PersonInput,
     PersonUpdates,
     GlobalCounts,
-    PipelineResult,
     getErrorMessage
 } from './types';
 import { removeEligiblePerson } from './EligibleSets';
@@ -53,22 +52,12 @@ export async function addPerson(person: PersonInput, isNew: boolean = false): Pr
     try {
         const id = person.id.toString();
 
-        // Check if person already exists - if so, handle residency change properly
+        // Check if person already exists
         const existing = await storage.hget('person', id);
-        let oldTileId: number | null = null;
-        let oldResidency: number | null = null;
-        if (existing) {
-            try {
-                const existingPerson = JSON.parse(existing) as StoredPerson;
-                oldTileId = existingPerson.tile_id;
-                oldResidency = existingPerson.residency;
-            } catch { /* ignore parse error */ }
-        }
 
         const p = {
             id: person.id,
             tile_id: person.tile_id,
-            residency: person.residency,
             sex: person.sex,
             health: person.health || 100,
             date_of_birth: person.date_of_birth,
@@ -76,22 +65,6 @@ export async function addPerson(person: PersonInput, isNew: boolean = false): Pr
             _isNew: isNew
         };
         await storage.hset('person', id, JSON.stringify(p));
-
-        // Handle village set membership atomically
-        const newTileId = p.tile_id;
-        const newResidency = p.residency;
-
-        // Remove from old set if it existed and was different
-        if (oldTileId && oldResidency !== null && oldResidency !== undefined && oldResidency !== 0) {
-            if (oldTileId !== newTileId || oldResidency !== newResidency) {
-                await storage.srem(`village:${oldTileId}:${oldResidency}:people`, id);
-            }
-        }
-
-        // Add to new set if residency is valid
-        if (newTileId && newResidency !== null && newResidency !== undefined && newResidency !== 0) {
-            await storage.sadd(`village:${newTileId}:${newResidency}:people`, id);
-        }
 
         // Update global counts (only if truly new)
         if (!existing) {
@@ -119,11 +92,6 @@ export async function removePerson(personId: number, markDeleted: boolean = fals
         const json = await storage.hget('person', personId.toString());
         if (!json) return false;
         const p = JSON.parse(json);
-
-        // Remove from tile's village population set
-        if (p.tile_id && p.residency !== null && p.residency !== undefined) {
-            await storage.srem(`village:${p.tile_id}:${p.residency}:people`, personId.toString());
-        }
 
         // Decrement global counts
         await storage.hincrby('counts:global', 'total', -1);
@@ -167,26 +135,8 @@ export async function updatePerson(personId: number, updates: PersonUpdates): Pr
         const person = await getPerson(personId);
         if (!person) return false;
 
-        const oldTileId = person.tile_id;
-        const oldResidency = person.residency;
-
         const updated = { ...person, ...updates };
         await storage.hset('person', personId.toString(), JSON.stringify(updated));
-
-        // Handle tile/residency change: update village sets
-        if ((updates.tile_id !== undefined && updates.tile_id !== oldTileId) ||
-            (updates.residency !== undefined && updates.residency !== oldResidency)) {
-            // Only remove from old set if residency was a valid village ID (> 0)
-            if (oldTileId && oldResidency !== null && oldResidency !== undefined && oldResidency !== 0) {
-                await storage.srem(`village:${oldTileId}:${oldResidency}:people`, personId.toString());
-            }
-            const newTile = updates.tile_id !== undefined ? updates.tile_id : oldTileId;
-            const newRes = updates.residency !== undefined ? updates.residency : oldResidency;
-            // Only add to new set if residency is a valid village ID (> 0)
-            if (newTile && newRes !== null && newRes !== undefined && newRes !== 0) {
-                await storage.sadd(`village:${newTile}:${newRes}:people`, personId.toString());
-            }
-        }
 
         // Track modified people for batch update (only for existing Postgres records)
         if (personId > 0 && !person._isNew) {
@@ -242,36 +192,6 @@ export async function streamAllPeople(
     }
 
     return { total };
-}
-
-/**
- * Get people by tile and residency (village)
- */
-export async function getTilePopulation(tileId: number, residency: number): Promise<StoredPerson[]> {
-    if (!storage.isAvailable()) return [];
-    try {
-        const ids = await storage.smembers(`village:${tileId}:${residency}:people`);
-        if (ids.length === 0) return [];
-
-        const pipeline = storage.pipeline();
-        for (const id of ids) {
-            pipeline.hget('person', id);
-        }
-        const results = await pipeline.exec() as PipelineResult;
-
-        const people: StoredPerson[] = [];
-        for (const [err, json] of results) {
-            if (!err && json) {
-                try {
-                    people.push(JSON.parse(json as string) as StoredPerson);
-                } catch { /* skip invalid JSON */ }
-            }
-        }
-        return people;
-    } catch (err: unknown) {
-        console.warn('[PersonCrud] getTilePopulation failed:', getErrorMessage(err));
-        return [];
-    }
 }
 
 /**

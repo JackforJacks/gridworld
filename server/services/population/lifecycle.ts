@@ -10,7 +10,7 @@ import {
     DEATH_CHANCE_INCREASE_PER_YEAR
 } from '../../config/gameBalance';
 import { Pool } from 'pg';
-import { CalendarDate, PersonData, FamilyData, VillageData } from '../../../types/global';
+import { CalendarDate, PersonData, FamilyData } from '../../../types/global';
 
 // ===== Type Definitions =====
 
@@ -46,13 +46,6 @@ interface ResidencyUpdate {
     newResidency: number;
 }
 
-/** Village slot update structure */
-interface VillageSlotUpdate {
-    add: number[];
-    remove: number[];
-    currentSlots: number[];
-}
-
 /** Family events result */
 interface FamilyEventsResult {
     deliveries: number;
@@ -74,12 +67,6 @@ interface PopulationStateModule {
     batchUpdateResidency(updates: ResidencyUpdate[]): Promise<void>;
     removeFertileFamily(familyId: number): Promise<void>;
     addEligiblePerson(personId: number, isMale: boolean, tileId: number): Promise<boolean>;
-}
-
-/** StateManager module interface */
-interface StateManagerModule {
-    getAllVillages(): Promise<VillageData[]>;
-    updateVillage(villageId: number, updates: Partial<VillageData>): Promise<void>;
 }
 
 /** Calculator module interface */
@@ -500,149 +487,3 @@ export {
 };
 
 export type { PopulationData };
-
-/**
- * Assigns residency to adults (age 18+) who don't have housing
- * Optimized: Uses batch operations for better Redis performance
- * @param pool - Database pool instance
- * @param tileId - The tile ID
- * @param calendarService - Calendar service instance
- */
-async function assignResidencyForAdults(
-    pool: Pool | null,
-    tileId: string | number,
-    calendarService: CalendarService | null
-): Promise<void> {
-    try {
-        const StateManager = deps.getStateManager() as StateManagerModule | null;
-        const PopulationState = deps.getPopulationState() as unknown as PopulationStateModule | null;
-
-        if (!StateManager || !PopulationState) {
-            return;
-        }
-
-        // Get current date
-        let currentYear = 4000, currentMonth = 1, currentDay = 1;
-        if (calendarService && typeof calendarService.getCurrentDate === 'function') {
-            const currentDate = calendarService.getCurrentDate();
-            currentYear = currentDate.year;
-            currentMonth = currentDate.month;
-            currentDay = currentDate.day;
-        }
-
-        // Get villages for this tile from Redis
-        const allVillages = await StateManager.getAllVillages();
-        const villages = allVillages.filter(v => v.tile_id == tileId);
-
-        if (villages.length === 0) return; // No villages to assign to
-
-        const calculator = deps.getCalculator() as CalculatorModule | null;
-        if (!calculator) return;
-
-        // Get all people from Redis
-        const allPeople = await PopulationState.getAllPeople();
-        const tilePeople = allPeople.filter(p => p.tile_id == tileId);
-
-        // Collect all residency updates for batch processing
-        const residencyUpdates: ResidencyUpdate[] = [];
-        const villageSlotUpdates = new Map<number, VillageSlotUpdate>(); // villageId -> { add: [], remove: [] }
-
-        // First, move people from over-capacity villages
-        for (const village of villages) {
-            const occupied = Array.isArray(village.housing_slots) ? village.housing_slots.length : 0;
-            if (occupied <= village.housing_capacity) continue;
-
-            // Get 18+ people in this village
-            const adultsInVillage = tilePeople.filter(person => {
-                if (person.residency != village.id) return false;
-                if (!person.date_of_birth) return false;
-                const age = calculator.calculateAge(person.date_of_birth, currentYear, currentMonth, currentDay);
-                return age >= 18;
-            });
-
-            // Move excess adults (over capacity) to available villages
-            const excess = occupied - village.housing_capacity;
-            const toMove = Math.min(adultsInVillage.length, excess);
-
-            for (let i = 0; i < toMove; i++) {
-                const person = adultsInVillage[i];
-                // Find available village
-                const availableVillage = villages.find(v => {
-                    const vOccupied = Array.isArray(v.housing_slots) ? v.housing_slots.length : 0;
-                    return vOccupied < v.housing_capacity;
-                });
-                if (!availableVillage) break; // No available
-
-                // Queue residency update
-                residencyUpdates.push({ personId: person.id, newResidency: availableVillage.id });
-
-                // Track slot changes
-                if (!villageSlotUpdates.has(village.id)) {
-                    villageSlotUpdates.set(village.id, { add: [], remove: [], currentSlots: village.housing_slots || [] });
-                }
-                villageSlotUpdates.get(village.id)!.remove.push(person.id);
-
-                if (!villageSlotUpdates.has(availableVillage.id)) {
-                    villageSlotUpdates.set(availableVillage.id, { add: [], remove: [], currentSlots: availableVillage.housing_slots || [] });
-                }
-                villageSlotUpdates.get(availableVillage.id)!.add.push(person.id);
-
-                // Update local copies for subsequent calculations in this loop
-                village.housing_slots = (village.housing_slots || []).filter(id => id != person.id);
-                availableVillage.housing_slots = [...(availableVillage.housing_slots || []), person.id];
-            }
-        }
-
-        // Then, assign unassigned adults
-        const unassignedAdults = tilePeople.filter(person => {
-            if (person.residency !== null && person.residency !== 0) return false;
-            if (!person.date_of_birth) return false;
-            const age = calculator.calculateAge(person.date_of_birth, currentYear, currentMonth, currentDay);
-            return age >= 18;
-        });
-
-        if (unassignedAdults.length > 0) {
-            let peopleIndex = 0;
-
-            for (const village of villages) {
-                const currentOccupied = Array.isArray(village.housing_slots) ? village.housing_slots.length : 0;
-                const available = village.housing_capacity - currentOccupied;
-
-                if (available <= 0 || peopleIndex >= unassignedAdults.length) continue;
-
-                const toAssign = Math.min(available, unassignedAdults.length - peopleIndex);
-                const assignedPeople = unassignedAdults.slice(peopleIndex, peopleIndex + toAssign);
-
-                // Queue residency updates
-                for (const person of assignedPeople) {
-                    residencyUpdates.push({ personId: person.id, newResidency: village.id });
-                }
-
-                // Track slot additions
-                if (!villageSlotUpdates.has(village.id)) {
-                    villageSlotUpdates.set(village.id, { add: [], remove: [], currentSlots: village.housing_slots || [] });
-                }
-                villageSlotUpdates.get(village.id)!.add.push(...assignedPeople.map(p => p.id));
-
-                // Update local
-                village.housing_slots = [...(village.housing_slots || []), ...assignedPeople.map(p => p.id)];
-
-                peopleIndex += toAssign;
-            }
-        }
-
-        // Execute batch residency update
-        if (residencyUpdates.length > 0) {
-            await PopulationState.batchUpdateResidency(residencyUpdates);
-        }
-
-        // Update village slots (still needs individual updates due to complex slot logic)
-        for (const [villageId, changes] of villageSlotUpdates) {
-            let finalSlots = changes.currentSlots.filter(id => !changes.remove.includes(id));
-            finalSlots = [...finalSlots, ...changes.add];
-            await StateManager.updateVillage(villageId, { housing_slots: finalSlots });
-        }
-    } catch (error: unknown) {
-        console.error('Error assigning residency to adults:', error);
-    }
-}

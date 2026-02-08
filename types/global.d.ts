@@ -58,21 +58,6 @@ export interface TileData {
 }
 
 /**
- * Village data structure
- */
-export interface VillageData {
-    id: number;
-    tile_id: number;
-    land_chunk_index: number;
-    name: string;
-    housing_slots: number[];
-    housing_capacity: number;
-    food_stores: number;
-    food_capacity: number;
-    food_production_rate: number;
-}
-
-/**
  * Person data structure
  */
 export interface PersonData {
@@ -80,9 +65,7 @@ export interface PersonData {
     tile_id: number | null;
     sex: boolean; // true=male, false=female
     date_of_birth: string;
-    residency: number | null;
     family_id: number | null;
-    village_id?: number;
 }
 
 /**

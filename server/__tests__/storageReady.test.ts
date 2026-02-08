@@ -53,8 +53,6 @@ test('StateManager.loadFromDatabase is called on init and on storage ready event
         };
     });
 
-    jest.mock('../services/villageSeeder', () => ({ seedIfNoVillages: async () => ({ created: 0 }) }));
-
     // Mock StateManager so we can assert calls
     const mockLoad = jest.fn(async () => { });
     jest.mock('../services/stateManager', () => ({

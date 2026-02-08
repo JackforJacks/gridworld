@@ -3,7 +3,7 @@
  * 
  * Handles:
  * - batchAddPersons, batchRemovePersons
- * - batchUpdateResidency, batchClearFamilyIds
+ * - batchClearFamilyIds
  * - batchDeleteFamilies
  * - reassignIds
  */
@@ -13,7 +13,6 @@ import {
     StoredPerson,
     PersonInput,
     PipelineResult,
-    ResidencyUpdate,
     IdMapping,
     getErrorMessage
 } from './types';
@@ -93,10 +92,6 @@ export async function batchRemovePersons(personIds: number[], markDeleted: boole
 
         for (const { personId, person } of personsData) {
             const personIdStr = personId.toString();
-
-            if (person.tile_id && person.residency !== null && person.residency !== undefined) {
-                removePipeline.srem(`village:${person.tile_id}:${person.residency}:people`, personIdStr);
-            }
 
             removePipeline.hincrby('counts:global', 'total', -1);
             if (checkIsMale(person.sex)) removePipeline.hincrby('counts:global', 'male', -1);
@@ -196,7 +191,6 @@ export async function batchAddPersons(persons: PersonInput[], isNew: boolean = f
             const p: StoredPerson = {
                 id: person.id,
                 tile_id: person.tile_id ?? null,
-                residency: person.residency ?? null,
                 sex: person.sex ?? false,
                 health: person.health || 100,
                 date_of_birth: person.date_of_birth ?? '',
@@ -206,23 +200,8 @@ export async function batchAddPersons(persons: PersonInput[], isNew: boolean = f
 
             pipeline.hset('person', id, JSON.stringify(p));
 
-            // Handle village set membership
-            if (existing) {
-                // Remove from old set if residency changed
-                const oldTileId = existing.tile_id;
-                const oldResidency = existing.residency;
-                if (oldTileId && oldResidency !== null && oldResidency !== undefined && oldResidency !== 0) {
-                    if (oldTileId !== p.tile_id || oldResidency !== p.residency) {
-                        pipeline.srem(`village:${oldTileId}:${oldResidency}:people`, id);
-                    }
-                }
-            } else {
+            if (!existing) {
                 newCount++;
-            }
-
-            // Add to new set if residency is valid
-            if (p.tile_id && p.residency !== null && p.residency !== undefined && p.residency !== 0) {
-                pipeline.sadd(`village:${p.tile_id}:${p.residency}:people`, id);
             }
 
             if (checkIsMale(p.sex)) maleCount++;
@@ -251,62 +230,6 @@ export async function batchAddPersons(persons: PersonInput[], isNew: boolean = f
 }
 
 /**
- * Batch update residency for multiple persons
- */
-export async function batchUpdateResidency(updates: ResidencyUpdate[]): Promise<number> {
-    if (!storage.isAvailable() || !updates || updates.length === 0) return 0;
-    try {
-        const readPipeline = storage.pipeline();
-        for (const { personId } of updates) {
-            readPipeline.hget('person', personId.toString());
-        }
-        const readResults = await readPipeline.exec() as PipelineResult;
-
-        const writePipeline = storage.pipeline();
-        let updateCount = 0;
-
-        for (let i = 0; i < updates.length; i++) {
-            const { personId, newResidency } = updates[i];
-            const [err, json] = readResults[i];
-            if (err || !json) continue;
-
-            let person: StoredPerson;
-            try { person = JSON.parse(json as string) as StoredPerson; } catch { continue; }
-
-            const oldTileId = person.tile_id;
-            const oldResidency = person.residency;
-
-            person.residency = newResidency;
-            writePipeline.hset('person', personId.toString(), JSON.stringify(person));
-
-            if (oldResidency !== newResidency) {
-                // Only remove from old set if residency was a valid village ID (> 0)
-                if (oldTileId && oldResidency !== null && oldResidency !== undefined && oldResidency !== 0) {
-                    writePipeline.srem(`village:${oldTileId}:${oldResidency}:people`, personId.toString());
-                }
-                // Only add to new set if residency is a valid village ID (> 0)
-                if (oldTileId && newResidency !== null && newResidency !== undefined && newResidency !== 0) {
-                    writePipeline.sadd(`village:${oldTileId}:${newResidency}:people`, personId.toString());
-                }
-            }
-
-            if (personId > 0 && !person._isNew) {
-                writePipeline.sadd('pending:person:updates', personId.toString());
-            }
-            updateCount++;
-        }
-
-        if (updateCount > 0) {
-            await writePipeline.exec();
-        }
-        return updateCount;
-    } catch (err: unknown) {
-        console.warn('[BatchOperations] batchUpdateResidency failed:', getErrorMessage(err));
-        return 0;
-    }
-}
-
-/**
  * Reassign temporary IDs to Postgres IDs after batch insert
  */
 export async function reassignIds(mappings: IdMapping[]): Promise<void> {
@@ -328,12 +251,6 @@ export async function reassignIds(mappings: IdMapping[]): Promise<void> {
             try { person = JSON.parse(json as string) as StoredPerson; } catch { continue; }
 
             writePipeline.hdel('person', tempId.toString());
-
-            // Only manage village sets for valid village IDs (> 0)
-            if (person.tile_id && person.residency !== null && person.residency !== undefined && person.residency !== 0) {
-                writePipeline.srem(`village:${person.tile_id}:${person.residency}:people`, tempId.toString());
-                writePipeline.sadd(`village:${person.tile_id}:${person.residency}:people`, newId.toString());
-            }
 
             if (person.tile_id) {
                 const setKey = checkIsMale(person.sex) ? `eligible:males:tile:${person.tile_id}` : `eligible:females:tile:${person.tile_id}`;

@@ -1,20 +1,17 @@
 /**
  * World Restart Service
- * 
+ *
  * Unified, Redis-first world restart logic with data integrity guarantees.
  * This is the SINGLE source of truth for all restart operations.
- * 
- * Postgres is NEVER touched during restart - only on explicit save/load/autosave.
- * 
+ *
  * Flow:
  * 1. Flush Redis completely (clean slate)
  * 2. Generate new world seed
  * 3. Regenerate tiles from hexasphere
  * 4. Select habitable tiles (with strict validation)
  * 5. Create population on habitable tiles
- * 6. Create villages for populated tiles
- * 7. Verify data integrity
- * 8. Broadcast to clients
+ * 6. Verify data integrity
+ * 7. Broadcast to clients
  */
 
 import storage from '../storage';
@@ -23,10 +20,7 @@ import Hexasphere from '../../../src/core/hexasphere/HexaSphere';
 import idAllocator from '../idAllocator';
 import {
     calculateTileProperties,
-    generateLandsForTile,
     isHabitable,
-    type LandChunk,
-    type TileProperties
 } from '../terrain';
 
 // ============================================================================
@@ -52,7 +46,6 @@ export interface WorldRestartResult {
     seed: number;
     tiles: number;
     people: number;
-    villages: number;
     elapsed: number;
     integrity: IntegrityResult;
     error?: string;
@@ -71,38 +64,12 @@ interface SocketIO {
     emit: (event: string, data: unknown) => void;
 }
 
-interface StoredTileData {
-    id: number;
-    center_x: number;
-    center_y: number;
-    center_z: number;
-    latitude: number;
-    longitude: number;
-    terrain_type: string;
-    biome: string | null;
-    fertility: number;
-    boundary_points: string;
-    neighbor_ids: string;
-}
-
 interface Person {
     id: number;
     tile_id: number;
     sex: boolean; // true=male, false=female
     date_of_birth: string;
-    residency: number | null;
     family_id: number | null;
-}
-
-interface Village {
-    id: number;
-    tile_id: number;
-    land_chunk_index: number;
-    name: string;
-    housing_capacity: number;
-    food_stores: number;
-    food_capacity: number;
-    food_production_rate: number;
 }
 
 interface IntegrityResult {
@@ -113,9 +80,6 @@ interface IntegrityResult {
         habitableTiles: number;
         populatedTiles: number;
         people: number;
-        villages: number;
-        peopleWithResidency: number;
-        orphanedPeople: number;
     };
 }
 
@@ -128,16 +92,6 @@ const PEOPLE_PER_TILE_MIN = 0;
 const PEOPLE_PER_TILE_MAX = 100;
 const CALENDAR_START_YEAR = 4000;
 
-// Village names pool
-const VILLAGE_NAMES = [
-    'Willowbrook', 'Stonehaven', 'Oakridge', 'Riverdale', 'Meadowvale',
-    'Pinewood', 'Sunfield', 'Clearwater', 'Hillcrest', 'Greendale',
-    'Fairview', 'Lakeside', 'Woodhaven', 'Northgate', 'Westbrook',
-    'Eastholm', 'Southdale', 'Ironforge', 'Goldleaf', 'Silverbrook',
-    'Redmont', 'Bluehaven', 'Greenmoor', 'Whitepeak', 'Blackwood',
-    'Thornhill', 'Ashford', 'Birchwood', 'Cedarfall', 'Elmgrove'
-];
-
 // ============================================================================
 // SEEDED RANDOM
 // ============================================================================
@@ -149,16 +103,6 @@ function createSeededRandom(seed: number): SeededRandomFn {
     return function (): number {
         s = (s * 16807) % 2147483647;
         return (s - 1) / 2147483646;
-    };
-}
-
-function mulberry32(seed: number): SeededRandomFn {
-    let s = seed;
-    return function (): number {
-        let t = s += 0x6D2B79F5;
-        t = Math.imul(t ^ t >>> 15, t | 1);
-        t ^= t + Math.imul(t ^ t >>> 7, t | 61);
-        return ((t ^ t >>> 14) >>> 0) / 4294967296;
     };
 }
 
@@ -184,28 +128,24 @@ export async function restartWorld(options: WorldRestartOptions = {}): Promise<W
         const calendarWasRunning = pauseCalendar(options.context?.calendarService);
 
         // Step 2: Flush Redis completely
-        console.log('🔄 [WorldRestart] Step 1/6: Flushing Redis...');
+        console.log('🔄 [WorldRestart] Step 1/5: Flushing Redis...');
         await flushRedis();
 
         // Step 3: Reset ID allocators
-        console.log('🔢 [WorldRestart] Step 2/6: Resetting ID allocators...');
+        console.log('🔢 [WorldRestart] Step 2/5: Resetting ID allocators...');
         await resetIdAllocators();
 
         // Step 4: Generate tiles from hexasphere
-        console.log('🗺️ [WorldRestart] Step 3/6: Generating tiles...');
+        console.log('🗺️ [WorldRestart] Step 3/5: Generating tiles...');
         const tilesGenerated = await generateTiles(seed);
 
         // Step 5: Select habitable tiles, let Rust decide population counts, then create Redis people
-        console.log('👥 [WorldRestart] Step 4/6: Creating population...');
-        const { habitableTiles, selectedTiles, people, tilePeopleCounts } = await createPopulation(seed, tileCount);
+        console.log('👥 [WorldRestart] Step 4/5: Creating population...');
+        const { habitableTiles, selectedTiles, people } = await createPopulation(seed, tileCount);
         console.log(`   🦀 Rust ECS seeded: ${rustSimulation.getPopulation()} people across ${selectedTiles.length} tiles`);
 
-        // Step 6: Create villages for populated tiles
-        console.log('🏘️ [WorldRestart] Step 5/6: Creating villages...');
-        const villages = await createVillages(selectedTiles, people);
-
-        // Step 7: Verify data integrity
-        console.log('✅ [WorldRestart] Step 6/6: Verifying integrity...');
+        // Step 6: Verify data integrity
+        console.log('✅ [WorldRestart] Step 5/5: Verifying integrity...');
         const integrity = await verifyIntegrity();
 
         // Reset calendar if requested
@@ -218,13 +158,13 @@ export async function restartWorld(options: WorldRestartOptions = {}): Promise<W
 
         // Broadcast to clients
         if (options.context?.io) {
-            broadcastRestart(options.context.io, villages, seed);
+            broadcastRestart(options.context.io, seed);
         }
 
         const elapsed = Date.now() - startTime;
 
         console.log(`🎲 [WorldRestart] World restarted with seed: ${seed} (took ${elapsed}ms)`);
-        console.log(`   📊 Stats: ${tilesGenerated} tiles, ${habitableTiles} habitable, ${selectedTiles.length} populated, ${people.length} people, ${villages.length} villages`);
+        console.log(`   📊 Stats: ${tilesGenerated} tiles, ${habitableTiles} habitable, ${selectedTiles.length} populated, ${people.length} people`);
 
         if (!integrity.valid) {
             console.warn(`   ⚠️ Integrity issues: ${integrity.issues.join(', ')}`);
@@ -235,7 +175,6 @@ export async function restartWorld(options: WorldRestartOptions = {}): Promise<W
             seed,
             tiles: tilesGenerated,
             people: people.length,
-            villages: villages.length,
             elapsed,
             integrity
         };
@@ -249,9 +188,8 @@ export async function restartWorld(options: WorldRestartOptions = {}): Promise<W
             seed,
             tiles: 0,
             people: 0,
-            villages: 0,
             elapsed: Date.now() - startTime,
-            integrity: { valid: false, issues: [errorMessage], stats: { tiles: 0, habitableTiles: 0, populatedTiles: 0, people: 0, villages: 0, peopleWithResidency: 0, orphanedPeople: 0 } },
+            integrity: { valid: false, issues: [errorMessage], stats: { tiles: 0, habitableTiles: 0, populatedTiles: 0, people: 0 } },
             error: errorMessage
         };
     }
@@ -295,16 +233,14 @@ async function clearRemainingKeys(keys: string[]): Promise<void> {
 async function clearAllKnownKeys(): Promise<void> {
     // Delete all known hash keys
     await storage.del(
-        'tile', 'tile:lands', 'tile:fertility', 'tile:populations',
-        'village', 'village:cleared',
+        'tile', 'tile:fertility', 'tile:populations',
         'person', 'family',
         'counts:global',
-        'next:person:id', 'next:family:id', 'next:village:id'
+        'next:person:id', 'next:family:id'
     );
 
     // Clear pattern-based keys
     const patterns = [
-        'village:*:*:people',
         'eligible:*:*',
         'pending:*',
         'fertile:*',
@@ -372,7 +308,6 @@ async function generateTiles(seed: number): Promise<number> {
         const tileId = props.id;
 
         // Calculate ALL terrain/biome properties from centralized module
-        // This ensures consistency across the entire codebase
         const tileProps = calculateTileProperties(x, y, z, seed);
 
         if (tileProps.isHabitable) habitableCount++;
@@ -396,12 +331,6 @@ async function generateTiles(seed: number): Promise<number> {
         if (tileProps.fertility > 0) {
             pipeline.hset('tile:fertility', tileId.toString(), tileProps.fertility.toString());
         }
-
-        // Generate lands for habitable tiles
-        if (tileProps.isHabitable) {
-            const lands = generateLandsForTile(tileId, seed);
-            pipeline.hset('tile:lands', tileId.toString(), JSON.stringify(lands));
-        }
     }
 
     await pipeline.exec();
@@ -424,29 +353,17 @@ interface PopulationResult {
 async function createPopulation(seed: number, tileCount: number): Promise<PopulationResult> {
     // Get all tiles from Redis
     const allTiles = await storage.hgetall('tile');
-    const allLands = await storage.hgetall('tile:lands');
 
     if (!allTiles || Object.keys(allTiles).length === 0) {
         throw new Error('No tiles found in Redis after generation');
     }
 
-    // Find habitable tiles with cleared lands
+    // Find habitable tiles
     const habitableTileIds: number[] = [];
 
     for (const [tileId, tileJson] of Object.entries(allTiles)) {
         const tile = JSON.parse(tileJson);
-
-        // Derive habitability from terrain + biome
         if (!isHabitable(tile.terrain_type, tile.biome, tile.terrain_type !== 'ocean')) continue;
-
-        // Check for cleared lands
-        const landsJson = allLands[tileId];
-        if (!landsJson) continue;
-
-        const lands = JSON.parse(landsJson);
-        const hasClearedLand = lands.some((l: LandChunk) => l.cleared);
-        if (!hasClearedLand) continue;
-
         habitableTileIds.push(parseInt(tileId));
     }
 
@@ -465,8 +382,6 @@ async function createPopulation(seed: number, tileCount: number): Promise<Popula
     const selectedTiles = shuffled.slice(0, targetCount);
 
     console.log(`   Seeding ${selectedTiles.length} tiles (${Math.round(selectedTiles.length / habitableTileIds.length * 100)}% of ${habitableTileIds.length} habitable)`);
-
-    console.log(`   Selected ${selectedTiles.length} tiles from ${habitableTileIds.length} habitable`);
 
     // Let Rust ECS decide population counts per tile within the configured range
     rustSimulation.reset();
@@ -509,19 +424,18 @@ async function createPopulation(seed: number, tileCount: number): Promise<Popula
                 tile_id: tileId,
                 sex: isMale,
                 date_of_birth: `${birthYear}-${String(birthMonth).padStart(2, '0')}-${String(birthDay).padStart(2, '0')}`,
-                residency: null,
                 family_id: null
             };
 
             allPeople.push(person);
             pipeline.hset('person', personId.toString(), JSON.stringify(person));
-            
-            // Add to eligible sets for matchmaking (all new adults without families are eligible)
+
+            // Add to eligible sets for matchmaking
             const eligibleSetKey = isMale ? `eligible:males:tile:${tileId}` : `eligible:females:tile:${tileId}`;
             const tilesSetKey = isMale ? 'tiles_with_eligible_males' : 'tiles_with_eligible_females';
             pipeline.sadd(eligibleSetKey, personId.toString());
             pipeline.sadd(tilesSetKey, tileId.toString());
-            pipelineCount += 3; // Count all 3 commands
+            pipelineCount += 3;
 
             // Flush pipeline in chunks to avoid memory issues
             if (pipelineCount >= PIPELINE_CHUNK_SIZE) {
@@ -537,28 +451,7 @@ async function createPopulation(seed: number, tileCount: number): Promise<Popula
         await pipeline.exec();
     }
 
-    // DEBUG: Verify a sample of eligible sets are correctly populated
-    const sampleTile = selectedTiles[0];
-    const maleSetMembers = await storage.smembers(`eligible:males:tile:${sampleTile}`) || [];
-    const femaleSetMembers = await storage.smembers(`eligible:females:tile:${sampleTile}`) || [];
-    
-    if (maleSetMembers.length > 0) {
-        const sampleMaleJson = await storage.hget('person', maleSetMembers[0]);
-        if (sampleMaleJson) {
-            const sampleMale = JSON.parse(sampleMaleJson);
-            console.log(`   [WorldRestart] Verify males set: person ${maleSetMembers[0]} has sex=${sampleMale.sex} (expected: true)`);
-        }
-    }
-    if (femaleSetMembers.length > 0) {
-        const sampleFemaleJson = await storage.hget('person', femaleSetMembers[0]);
-        if (sampleFemaleJson) {
-            const sampleFemale = JSON.parse(sampleFemaleJson);
-            console.log(`   [WorldRestart] Verify females set: person ${femaleSetMembers[0]} has sex=${sampleFemale.sex} (expected: false)`);
-        }
-    }
-    console.log(`   [WorldRestart] Tile ${sampleTile}: ${maleSetMembers.length} in males set, ${femaleSetMembers.length} in females set`);
-
-    console.log(`   Created ${allPeople.length} people on ${selectedTiles.length} tiles (added to eligible sets)`);
+    console.log(`   Created ${allPeople.length} people on ${selectedTiles.length} tiles`);
 
     return {
         habitableTiles: habitableTileIds.length,
@@ -569,104 +462,7 @@ async function createPopulation(seed: number, tileCount: number): Promise<Popula
 }
 
 // ============================================================================
-// STEP 5: CREATE VILLAGES
-// ============================================================================
-
-async function createVillages(selectedTiles: number[], people: Person[]): Promise<Village[]> {
-    // Group people by tile
-    const peopleByTile = new Map<number, Person[]>();
-    for (const person of people) {
-        const tileId = person.tile_id;
-        if (!peopleByTile.has(tileId)) {
-            peopleByTile.set(tileId, []);
-        }
-        peopleByTile.get(tileId)!.push(person);
-    }
-
-    // Pre-fetch all lands data in one call
-    const allLands = await storage.hgetall('tile:lands');
-
-    // Pre-determine how many villages we need (tiles with people and cleared lands)
-    const tilesNeedingVillages: number[] = [];
-    for (const tileId of selectedTiles) {
-        const tilePeople = peopleByTile.get(tileId) || [];
-        if (tilePeople.length === 0) continue;
-
-        const landsJson = allLands[tileId.toString()];
-        if (!landsJson) continue;
-
-        const lands: LandChunk[] = JSON.parse(landsJson);
-        if (lands.some(l => l.cleared)) {
-            tilesNeedingVillages.push(tileId);
-        }
-    }
-
-    // Batch allocate all village IDs
-    const villageIds = await idAllocator.getVillageIdBatch(tilesNeedingVillages.length);
-
-    const PIPELINE_CHUNK_SIZE = 10000;
-    const villages: Village[] = [];
-    let pipeline = storage.pipeline();
-    let pipelineCount = 0;
-    let nameIndex = 0;
-    let villageIdIndex = 0;
-
-    for (const tileId of tilesNeedingVillages) {
-        const tilePeople = peopleByTile.get(tileId) || [];
-        const landsJson = allLands[tileId.toString()];
-        const lands: LandChunk[] = JSON.parse(landsJson);
-        const clearedChunks = lands.filter(l => l.cleared).map(l => l.chunk_index);
-
-        // Create one village per tile (on first cleared chunk)
-        const villageId = villageIds[villageIdIndex++];
-        const chunkIndex = clearedChunks[0];
-        const villageName = VILLAGE_NAMES[nameIndex % VILLAGE_NAMES.length];
-        nameIndex++;
-
-        const village: Village = {
-            id: villageId,
-            tile_id: tileId,
-            land_chunk_index: chunkIndex,
-            name: villageName,
-            housing_capacity: 1000,
-            food_stores: 10000,
-            food_capacity: 50000,
-            food_production_rate: 100
-        };
-
-        villages.push(village);
-        pipeline.hset('village', villageId.toString(), JSON.stringify(village));
-        pipelineCount++;
-
-        // Assign all people on this tile to this village
-        const membershipKey = `village:${tileId}:${chunkIndex}:people`;
-        for (const person of tilePeople) {
-            person.residency = villageId;
-            pipeline.hset('person', person.id.toString(), JSON.stringify(person));
-            pipeline.sadd(membershipKey, person.id.toString());
-            pipelineCount += 2;
-
-            // Flush pipeline in chunks
-            if (pipelineCount >= PIPELINE_CHUNK_SIZE) {
-                await pipeline.exec();
-                pipeline = storage.pipeline();
-                pipelineCount = 0;
-            }
-        }
-    }
-
-    // Flush remaining
-    if (pipelineCount > 0) {
-        await pipeline.exec();
-    }
-
-    console.log(`   Created ${villages.length} villages with ${people.length} residents`);
-
-    return villages;
-}
-
-// ============================================================================
-// STEP 6: VERIFY INTEGRITY
+// STEP 5: VERIFY INTEGRITY
 // ============================================================================
 
 async function verifyIntegrity(): Promise<IntegrityResult> {
@@ -675,11 +471,9 @@ async function verifyIntegrity(): Promise<IntegrityResult> {
     // Get all data
     const tiles = await storage.hgetall('tile');
     const people = await storage.hgetall('person');
-    const villages = await storage.hgetall('village');
 
     const tileCount = Object.keys(tiles || {}).length;
     const personCount = Object.keys(people || {}).length;
-    const villageCount = Object.keys(villages || {}).length;
 
     // Count habitable tiles
     let habitableCount = 0;
@@ -691,26 +485,11 @@ async function verifyIntegrity(): Promise<IntegrityResult> {
     }
 
     // Check people integrity
-    let peopleWithResidency = 0;
-    let orphanedPeople = 0;
-
     for (const personJson of Object.values(people || {})) {
         const person = JSON.parse(personJson);
 
         if (person.tile_id) {
             populatedTileIds.add(person.tile_id);
-        }
-
-        if (person.residency) {
-            peopleWithResidency++;
-
-            // Verify village exists
-            if (villages && !villages[person.residency.toString()]) {
-                issues.push(`Person ${person.id} has residency ${person.residency} but village doesn't exist`);
-                orphanedPeople++;
-            }
-        } else {
-            orphanedPeople++;
         }
 
         // Verify person is on habitable tile
@@ -725,22 +504,6 @@ async function verifyIntegrity(): Promise<IntegrityResult> {
         }
     }
 
-    // Check village integrity
-    for (const [villageId, villageJson] of Object.entries(villages || {})) {
-        const village = JSON.parse(villageJson);
-
-        // Verify village is on habitable tile
-        if (tiles) {
-            const tileJson = tiles[village.tile_id?.toString()];
-            if (tileJson) {
-                const tile = JSON.parse(tileJson);
-                if (!isHabitable(tile.terrain_type, tile.biome, tile.terrain_type !== 'ocean')) {
-                    issues.push(`Village ${villageId} is on uninhabitable tile ${village.tile_id} (${tile.terrain_type})`);
-                }
-            }
-        }
-    }
-
     return {
         valid: issues.length === 0,
         issues,
@@ -749,9 +512,6 @@ async function verifyIntegrity(): Promise<IntegrityResult> {
             habitableTiles: habitableCount,
             populatedTiles: populatedTileIds.size,
             people: personCount,
-            villages: villageCount,
-            peopleWithResidency,
-            orphanedPeople
         }
     };
 }
@@ -796,9 +556,8 @@ function resetCalendar(calendarService: CalendarService): void {
 // BROADCAST HELPERS
 // ============================================================================
 
-function broadcastRestart(io: SocketIO, villages: Village[], seed: number): void {
-    io.emit('worldRestarted', { seed, villages: villages.length });
-    io.emit('villagesUpdated', villages);
+function broadcastRestart(io: SocketIO, seed: number): void {
+    io.emit('worldRestarted', { seed });
     io.emit('populationReset', {});
 }
 

@@ -22,7 +22,6 @@ interface PoolInfo {
 interface Pools {
     people: PoolInfo;
     family: PoolInfo;
-    villages: PoolInfo;
     [key: string]: PoolInfo;
 }
 
@@ -37,8 +36,7 @@ class IdAllocator {
         // ID pools for each entity type
         this.pools = {
             people: { redisKey: 'id:seq:people', sequence: 'people_id_seq', localNext: 0, localMax: 0 },
-            family: { redisKey: 'id:seq:family', sequence: 'family_id_seq', localNext: 0, localMax: 0 },
-            villages: { redisKey: 'id:seq:villages', sequence: 'villages_id_seq', localNext: 0, localMax: 0 }
+            family: { redisKey: 'id:seq:family', sequence: 'family_id_seq', localNext: 0, localMax: 0 }
         };
         this.defaultBlockSize = 1000;
         this.refillLocks = new Map();
@@ -92,7 +90,7 @@ class IdAllocator {
 
     /**
      * Reserve a block of IDs from Redis atomically
-     * @param entityType - 'people', 'family', or 'villages'
+     * @param entityType - 'people' or 'family'
      * @param count - Number of IDs needed
      */
     async refillPool(entityType: string, count: number): Promise<void> {
@@ -160,7 +158,7 @@ class IdAllocator {
 
     /**
      * Get the next available ID for an entity type
-     * @param entityType - 'people', 'family', or 'villages'
+     * @param entityType - 'people' or 'family'
      */
     async getNextId(entityType: string): Promise<number> {
         // Ensure initialized
@@ -183,7 +181,7 @@ class IdAllocator {
 
     /**
      * Get a batch of IDs for an entity type
-     * @param entityType - 'people', 'family', or 'villages'
+     * @param entityType - 'people' or 'family'
      * @param count - Number of IDs needed
      */
     async getIdBatch(entityType: string, count: number): Promise<number[]> {
@@ -220,13 +218,11 @@ class IdAllocator {
      * Called by StateManager after loading data from Postgres
      * @param maxPeopleId - Maximum people ID found in loaded data
      * @param maxFamilyId - Maximum family ID found in loaded data
-     * @param maxVillageId - Maximum village ID found in loaded data
      */
-    async syncFromLoadedData(maxPeopleId: number, maxFamilyId: number, maxVillageId: number): Promise<void> {
+    async syncFromLoadedData(maxPeopleId: number, maxFamilyId: number): Promise<void> {
         const updates: Array<{ entityType: string; maxId: number }> = [
             { entityType: 'people', maxId: maxPeopleId },
             { entityType: 'family', maxId: maxFamilyId },
-            { entityType: 'villages', maxId: maxVillageId }
         ];
 
         for (const { entityType, maxId } of updates) {
@@ -255,14 +251,13 @@ class IdAllocator {
      * Get the current counter values for save operations
      * Used when saving to sync Postgres sequences
      */
-    async getCountersForSave(): Promise<{ people: number; family: number; villages: number }> {
-        const result: { people: number; family: number; villages: number } = {
+    async getCountersForSave(): Promise<{ people: number; family: number }> {
+        const result: { people: number; family: number } = {
             people: 0,
             family: 0,
-            villages: 0
         };
 
-        for (const entityType of ['people', 'family', 'villages'] as const) {
+        for (const entityType of ['people', 'family'] as const) {
             const poolInfo = this.pools[entityType];
             if (storage.isAvailable()) {
                 try {
@@ -309,20 +304,12 @@ class IdAllocator {
         return this.getNextId('family');
     }
 
-    async getNextVillageId(): Promise<number> {
-        return this.getNextId('villages');
-    }
-
     async getPersonIdBatch(count: number): Promise<number[]> {
         return this.getIdBatch('people', count);
     }
 
     async getFamilyIdBatch(count: number): Promise<number[]> {
         return this.getIdBatch('family', count);
-    }
-
-    async getVillageIdBatch(count: number): Promise<number[]> {
-        return this.getIdBatch('villages', count);
     }
 
     /**
@@ -341,11 +328,10 @@ class IdAllocator {
     /**
      * Get status of all pools
      */
-    getAllPoolStatus(): { people: ReturnType<typeof this.getPoolStatus>; family: ReturnType<typeof this.getPoolStatus>; villages: ReturnType<typeof this.getPoolStatus> } {
+    getAllPoolStatus(): { people: ReturnType<typeof this.getPoolStatus>; family: ReturnType<typeof this.getPoolStatus> } {
         return {
             people: this.getPoolStatus('people'),
             family: this.getPoolStatus('family'),
-            villages: this.getPoolStatus('villages')
         };
     }
 }

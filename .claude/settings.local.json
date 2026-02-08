@@ -12,7 +12,8 @@
       "Bash(powershell:*)",
       "Bash(npm run build:*)",
       "Bash(ls:*)",
-      "Bash(taskkill:*)"
+      "Bash(taskkill:*)",
+      "Bash(git checkout:*)"
     ]
   }
 }

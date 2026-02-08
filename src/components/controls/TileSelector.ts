@@ -9,7 +9,6 @@ export type {
     BoundaryPoint,
     HexTile,
     LandData,
-    VillageApiData,
     HexasphereData,
     SceneManagerLike
 } from './TileSelector/types';

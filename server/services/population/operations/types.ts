@@ -67,7 +67,6 @@ export interface PopulationStateModule {
     getTotalPopulation(): Promise<number>;
     getAllTilePopulations(): Promise<TilePopulations>;
     getAllPeople(): Promise<PersonRecord[]>;
-    rebuildVillageMemberships(): Promise<{ success: boolean; total: number }>;
     addPerson(person: PersonRecord, isNew: boolean): Promise<void>;
     addFamily(family: FamilyRecord, isNew: boolean): Promise<void>;
     batchAddPersons(persons: PersonRecord[], isNew: boolean): Promise<number>;

@@ -6,7 +6,6 @@
 export interface StoredPerson {
     id: number;
     tile_id: number | null;
-    residency: number | null;
     sex: boolean; // true = male, false = female
     health: number;
     date_of_birth: string | Date;
@@ -18,7 +17,6 @@ export interface StoredPerson {
 export interface PersonInput {
     id: number;
     tile_id?: number | null;
-    residency?: number | null;
     sex?: boolean;
     health?: number;
     date_of_birth?: string | Date;
@@ -28,7 +26,6 @@ export interface PersonInput {
 /** Partial updates for a person */
 export interface PersonUpdates {
     tile_id?: number | null;
-    residency?: number | null;
     sex?: boolean;
     health?: number;
     date_of_birth?: string | Date;
@@ -37,12 +34,6 @@ export interface PersonUpdates {
 
 /** Redis pipeline execution result */
 export type PipelineResult = [Error | null, unknown][];
-
-/** Residency update batch item */
-export interface ResidencyUpdate {
-    personId: number;
-    newResidency: number;
-}
 
 /** ID reassignment mapping */
 export interface IdMapping {

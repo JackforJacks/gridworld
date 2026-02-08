@@ -24,41 +24,6 @@ import BackgroundStars from './core/renderer/BackgroundStars';
 import { initializeAndStartGame } from './core/scene/init';
 import SocketService, { getSocketService } from './services/socket/SocketService';
 
-// Village data structure for socket updates
-interface VillageUpdate {
-    id: number;
-    tile_id: number;
-    land_chunk_index: number;
-    name?: string;
-    village_name?: string;
-    food_stores?: number;
-    food_capacity?: number;
-    food_production_rate?: number;
-    housing_capacity?: number;
-    housing_slots?: number[];
-    occupied_slots?: number;
-}
-
-// Land chunk structure on tiles
-interface LandChunk {
-    chunk_index: number;
-    village_id?: number;
-    village_name?: string;
-    food_stores?: number;
-    food_capacity?: number;
-    food_production_rate?: number;
-    housing_capacity?: number;
-    housing_slots?: number[];
-    occupied_slots?: number;
-}
-
-// Extended tile with lands
-interface TileWithLands {
-    id: number | string;
-    lands?: LandChunk[];
-    [key: string]: unknown;
-}
-
 // Extend Window interface for global properties used in this module
 // Note: Some properties are already declared in SceneManager.ts and global.d.ts
 // Only declare properties not already defined there
@@ -295,7 +260,7 @@ class GridWorldApp {
             this.socketService = getSocketService();
             await this.socketService.connect();
 
-            // Set up socket event handlers for village updates
+            // Set up socket event handlers
             this.setupSocketEventHandlers();
         } catch (error: unknown) {
             console.error('Failed to initialize socket:', error);
@@ -308,57 +273,6 @@ class GridWorldApp {
      */
     private setupSocketEventHandlers(): void {
         if (!this.socketService) return;
-
-        // Apply incoming village updates to client-side tiles so UI totals refresh in real time
-        const applyVillageUpdate = (village: VillageUpdate): void => {
-            try {
-                const ctx = getAppContext();
-                const sceneManager = ctx.sceneManager;
-                if (!sceneManager || !sceneManager.hexasphere) return;
-                const hexasphere = sceneManager.hexasphere as unknown as { tiles?: TileWithLands[] };
-                const tiles = hexasphere.tiles || [];
-                const tile = tiles.find((t: TileWithLands) => t.id === village.tile_id);
-                if (!tile || !Array.isArray(tile.lands)) return;
-                const land = tile.lands.find((l: LandChunk) => l.chunk_index === village.land_chunk_index);
-                if (land) {
-                    land.village_id = village.id;
-                    land.village_name = village.name || village.village_name || land.village_name;
-                    land.food_stores = village.food_stores;
-                    land.food_capacity = village.food_capacity;
-                    land.food_production_rate = village.food_production_rate;
-                    land.housing_capacity = village.housing_capacity;
-
-                    // Propagate housing slot array and occupied count so client-side
-                    // fallback (tile.lands -> villages) shows correct occupancy
-                    if (Array.isArray(village.housing_slots)) {
-                        land.housing_slots = village.housing_slots;
-                        land.occupied_slots = village.housing_slots.length;
-                    } else if (typeof village.occupied_slots !== 'undefined') {
-                        land.occupied_slots = village.occupied_slots;
-                        // keep existing housing_slots if present, else empty array
-                        land.housing_slots = land.housing_slots || [];
-                    }
-                }
-
-                // If the info panel for this tile is open, refresh it immediately
-                const selector = ctx.tileSelector;
-                if (selector && selector.infoRefreshTileId === tile.id && typeof selector.updateInfoPanel === 'function') {
-                    selector.updateInfoPanel(tile);
-                }
-            } catch (e: unknown) {
-                console.warn('Error applying village update:', e);
-            }
-        };
-
-        this.socketService.on('villageUpdated', applyVillageUpdate);
-        this.socketService.on('villagesUpdated', (villages: unknown) => {
-            try {
-                if (!Array.isArray(villages)) return;
-                (villages as VillageUpdate[]).forEach(applyVillageUpdate);
-            } catch (e: unknown) {
-                console.warn('Error handling villagesUpdated:', e);
-            }
-        });
 
         // Listen for auto-save completion and log timing
         this.socketService.on('autoSaveComplete', (data: unknown) => {
@@ -575,9 +489,9 @@ class GridWorldApp {
     // Public API methods
     selectTile(tileId: number | string): void {
         if (this.tileSelector && this.sceneManager && this.sceneManager.hexasphere) {
-            const hexasphere = this.sceneManager.hexasphere as unknown as { tiles?: TileWithLands[] };
+            const hexasphere = this.sceneManager.hexasphere as unknown as { tiles?: any[] };
             const tiles = hexasphere.tiles || [];
-            const tile = tiles.find((t: TileWithLands) => t.id === tileId);
+            const tile = tiles.find((t: any) => t.id === tileId);
             if (tile) {
                 // Cast tile and call selectTile with one argument
                 const tileAny = tile as unknown as Parameters<typeof this.tileSelector.selectTile>[0];

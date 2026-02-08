@@ -316,7 +316,7 @@ class SceneManager {
     async regenerateTiles(): Promise<void> {
         const confirmed = window.confirm(
             '⚠️ WARNING: This will DELETE ALL POPULATION DATA permanently!\n\n' +
-            'All people, families, and villages will be wiped and regenerated.\n\n' +
+            'All people and families will be wiped and regenerated.\n\n' +
             'Are you absolutely sure you want to regenerate tiles?'
         );
 

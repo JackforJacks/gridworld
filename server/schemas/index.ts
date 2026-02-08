@@ -25,30 +25,12 @@ export const IntegrityCheckSchema = z.object({
     repair: z.boolean().optional().default(false)
 });
 
-// ============================================
-// Village Schemas
-// ============================================
-
-export const CreateVillageSchema = z.object({
-    tile_id: z.number().int().positive(),
-    land_chunk_index: z.number().int().min(0).max(99),
-    name: z.string().min(1).max(100).optional().default('Village')
-});
-
-export const SeedRandomVillagesSchema = z.object({
-    count: z.number().int().min(1).max(100).optional().nullable()
-});
-
 export const AssignFamilySchema = z.object({
     family_id: z.number().int().positive()
 });
 
 export const TileIdParamSchema = z.object({
     tileId: z.string().regex(/^\d+$/, 'tileId must be a numeric string')
-});
-
-export const VillageIdParamSchema = z.object({
-    id: z.string().regex(/^\d+$/, 'id must be a numeric string')
 });
 
 // ============================================
@@ -112,8 +94,6 @@ export const YearsQuerySchema = z.object({
 export type UpdatePopulationInput = z.infer<typeof UpdatePopulationSchema>;
 export type InitializePopulationInput = z.infer<typeof InitializePopulationSchema>;
 export type IntegrityCheckInput = z.infer<typeof IntegrityCheckSchema>;
-export type CreateVillageInput = z.infer<typeof CreateVillageSchema>;
-export type SeedRandomVillagesInput = z.infer<typeof SeedRandomVillagesSchema>;
 export type AssignFamilyInput = z.infer<typeof AssignFamilySchema>;
 export type SetDateInput = z.infer<typeof SetDateSchema>;
 export type SetIntervalInput = z.infer<typeof SetIntervalSchema>;

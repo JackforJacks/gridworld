@@ -15,8 +15,6 @@ import socketConfig from './config/socket';
 
 // Import routes
 import apiRoutes from './routes/api';
-import villagesRouter from './routes/villages';
-import pool from './config/database';
 
 // Import services
 import PopulationService from './services/PopulationService';
@@ -70,7 +68,7 @@ class GridWorldServer {
 
         // Setup routes
         this.app.use('/api', apiRoutes);
-        this.app.use('/api/villages', villagesRouter);        // Serve frontend for all non-API routes (SPA behavior)
+        // Serve frontend for all non-API routes (SPA behavior)
         this.app.get('/', (req: Request, res: Response) => {
             res.sendFile(path.join(serverDirname, '../dist', 'index.html'));
         });
@@ -112,7 +110,7 @@ class GridWorldServer {
             // Services already initialized
         }
 
-        // Load state from PostgreSQL into Redis
+        // Load saved state into Redis
         try {
             StateManager.setIo(this.io);
             StateManager.setCalendarService(calendarServiceInstance);
@@ -143,7 +141,7 @@ class GridWorldServer {
                                 console.log('🔁 Storage adapter ready, but skipping reload (worldrestart in progress)');
                                 return;
                             }
-                            console.log('🔁 Storage adapter ready, reloading state from Postgres...');
+                            console.log('🔁 Storage adapter ready, reloading state...');
                             await StateManager.loadFromDatabase();
                         } catch (e: unknown) {
                             console.warn('⚠️ Failed to reload state after storage reconnect:', (e as Error).message);
@@ -170,7 +168,7 @@ class GridWorldServer {
                 console.warn('⚠️ Failed to setup periodic population integrity monitor:', error?.message || e);
             }
         } catch (err: unknown) {
-            console.error('❌ Failed to load state from PostgreSQL:', (err as Error).message);
+            console.error('❌ Failed to load state:', (err as Error).message);
             console.log('🌍 Creating fresh world instead...');
             
             // Create a fresh world so the app is usable
@@ -189,11 +187,6 @@ class GridWorldServer {
             }
         }
 
-        // Setup food production on calendar ticks (instead of interval timer)
-        const VillageServiceModule = await import('./services/villageService');
-        const VillageService = VillageServiceModule.default;
-        VillageService.setIo(this.io);
-        VillageService.setupTickBasedFoodUpdates(calendarServiceInstance);
     }
 
     setupSocketHandlers(): void {
@@ -271,12 +264,6 @@ class GridWorldServer {
             const _storage = await import('./services/storage');
             const personCount = await _storage.default.hlen('person');
             console.log(`[DEBUG] At shutdown start: person hash has ${personCount} entries`);
-
-            // Stop food update timer
-            try {
-                const VillageServiceModule = await import('./services/villageService');
-                VillageServiceModule.default.stopFoodUpdateTimer();
-            } catch (e: unknown) { /* ignore */ }
 
             // Stop memory tracker
             try { memoryTracker.stop(); } catch (e: unknown) { /* ignore */ }

@@ -64,8 +64,7 @@ export async function fetchTilesLands(): Promise<LandLoadResult> {
             chunk_index: land.chunk_index,
             land_type: land.land_type,
             cleared: land.cleared,
-            owner_id: land.owner_id,
-            village_id: land.village_id
+            owner_id: land.owner_id
         });
     }
 

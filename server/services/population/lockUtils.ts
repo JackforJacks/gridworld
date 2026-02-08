@@ -150,7 +150,7 @@ export async function withFamilyLock<T>(
 }
 
 /**
- * Creates a lock config for sync operations (syncFromPostgres, rebuildVillageMemberships, etc.)
+ * Creates a lock config for sync operations (syncFromPostgres, etc.)
  */
 export function syncLockConfig(options?: Partial<LockConfig>): LockConfig {
     return {

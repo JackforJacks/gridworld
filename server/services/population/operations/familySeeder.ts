@@ -216,7 +216,7 @@ async function assignChildrenToFamilies(
             const person: PersonRecord = {
                 id: newIds[j],
                 tile_id,
-                residency: 0,
+                residency: tile_id,
                 sex: getRandomSex(),
                 date_of_birth: birthDate,
                 family_id: null

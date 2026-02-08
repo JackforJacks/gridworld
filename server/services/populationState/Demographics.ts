@@ -11,11 +11,8 @@ import {
     StoredPerson,
     CurrentDate,
     DemographicStats,
-    PipelineResult,
     getErrorMessage
 } from './types';
-import { getAllPeople } from './PersonCrud';
-import { repairIfNeeded } from './PopulationSync';
 
 /** Check if sex value represents male (handles various data formats) */
 function checkIsMale(sex: boolean | string | number | null | undefined): boolean {
@@ -24,55 +21,28 @@ function checkIsMale(sex: boolean | string | number | null | undefined): boolean
 
 /**
  * Get all populations by tile (for statistics)
- * Optimized: Single pass with deduplication
+ * Scans the person hash directly and counts people per tile_id
  */
 export async function getAllTilePopulations(): Promise<Record<number, number>> {
     if (!storage.isAvailable()) return {};
     try {
-        const tileSets = new Map<number, Set<string>>();
-        let totalMemberships = 0;
-        const stream = storage.scanStream({ match: 'village:*:*:people', count: 100 });
+        const tileCounts: Record<number, number> = {};
+        const personStream = storage.hscanStream('person', { count: 500 });
 
-        for await (const keys of stream) {
-            if (!Array.isArray(keys) || keys.length === 0) continue;
-
-            const pipeline = storage.pipeline();
-            for (const key of keys) pipeline.smembers(key);
-            const results = await pipeline.exec() as PipelineResult;
-
-            for (let i = 0; i < keys.length; i++) {
-                const key = keys[i] as string;
-                const parts = key.split(':');
-                if (parts.length !== 4) continue;
-                const tileId = parseInt(parts[1], 10);
-                const [err, members] = results[i];
-                if (err || !Array.isArray(members)) continue;
-
-                totalMemberships += members.length;
-                if (!tileSets.has(tileId)) tileSets.set(tileId, new Set());
-                const set = tileSets.get(tileId)!;
-                for (const id of members) set.add(String(id));
+        for await (const result of personStream) {
+            const entries = result as string[];
+            for (let i = 0; i < entries.length; i += 2) {
+                const json = entries[i + 1];
+                if (!json) continue;
+                try {
+                    const p = JSON.parse(json) as StoredPerson;
+                    if (p.tile_id !== null && p.tile_id !== undefined) {
+                        tileCounts[p.tile_id] = (tileCounts[p.tile_id] || 0) + 1;
+                    }
+                } catch { /* skip */ }
             }
         }
-
-        const result: Record<number, number> = {};
-        let totalUnique = 0;
-        for (const [tileId, set] of tileSets.entries()) {
-            result[tileId] = set.size;
-            totalUnique += set.size;
-        }
-
-        if (totalMemberships > totalUnique) {
-            console.warn(`[Demographics] Duplicate memberships detected: ${totalMemberships} memberships for ${totalUnique} unique people. Auto-repairing...`);
-            // Auto-repair duplicates
-            try {
-                await repairIfNeeded();
-            } catch (e: unknown) {
-                console.warn('[Demographics] Auto-repair failed:', getErrorMessage(e));
-            }
-        }
-
-        return result;
+        return tileCounts;
     } catch (err: unknown) {
         console.warn('[Demographics] getAllTilePopulations failed:', getErrorMessage(err));
         return {};

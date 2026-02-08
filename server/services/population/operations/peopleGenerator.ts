@@ -55,7 +55,7 @@ export async function generatePeopleForTiles(
             const person: PersonRecord = {
                 id: tilePersonIds[tilePersonIndex++],
                 tile_id,
-                residency: 0,
+                residency: tile_id,
                 sex: true,
                 date_of_birth: birthDate,
                 family_id: null
@@ -71,7 +71,7 @@ export async function generatePeopleForTiles(
             const person: PersonRecord = {
                 id: tilePersonIds[tilePersonIndex++],
                 tile_id,
-                residency: 0,
+                residency: tile_id,
                 sex: false,
                 date_of_birth: birthDate,
                 family_id: null
@@ -89,7 +89,7 @@ export async function generatePeopleForTiles(
             const person: PersonRecord = {
                 id: tilePersonIds[tilePersonIndex++],
                 tile_id,
-                residency: 0,
+                residency: tile_id,
                 sex,
                 date_of_birth: birthDate,
                 family_id: null

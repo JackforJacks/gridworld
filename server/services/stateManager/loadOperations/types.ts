@@ -31,7 +31,6 @@ export interface LoadContext {
 
 /** Result from loading or seeding */
 export interface LoadResult {
-    villages: number;
     people: number;
     families: number;
     male?: number;
@@ -40,14 +39,6 @@ export interface LoadResult {
     tilesLands?: number;
     skipped?: boolean;
     seeded?: boolean;
-}
-
-/** Result from seedWorldIfEmpty */
-export interface SeedWorldResult {
-    seeded: boolean;
-    people: number;
-    villages: number;
-    tiles?: number;
 }
 
 /** Pipeline interface (subset of ioredis ChainableCommander) */
@@ -79,27 +70,12 @@ export interface LandRow {
     land_type: string;
     cleared: boolean;
     owner_id: number | null;
-    village_id: number | null;
-}
-
-/** Village row from database */
-export interface VillageRow {
-    id: number;
-    tile_id: number;
-    land_chunk_index: number;
-    name: string;
-    food_stores: string | number;
-    food_capacity: string | number;
-    food_production_rate: string | number;
-    housing_capacity: string | number;
-    housing_slots: number[] | string | null;
 }
 
 /** Person row from database */
 export interface PersonRow {
     id: number;
     tile_id: number | null;
-    residency: number | null;
     sex: boolean | string | number;
     health: number | null;
     family_id: number | null;
@@ -124,36 +100,8 @@ export interface LoadPeopleResult {
     femaleCount: number;
 }
 
-/** Land count row from query */
-export interface LandCountRow {
-    village_id: number;
-    cleared_cnt: string;
-}
-
-/** Lands grouped by tile */
-export interface LandsByTile {
-    [tileId: string]: Array<{
-        tile_id: number;
-        chunk_index: number;
-        land_type: string;
-        cleared: boolean;
-        owner_id: number | null;
-        village_id: number | null;
-    }>;
-}
-
 /** People lookup by ID */
 export interface PeopleMap {
     [id: number]: PersonRow;
 }
 
-/** Village ID lookup by tile:chunk key */
-export interface VillageIdLookup {
-    [key: string]: number;
-}
-
-/** Validation issue from VillageManager */
-export interface ValidationIssue {
-    type: string;
-    tileId: number;
-}

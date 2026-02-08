@@ -6,10 +6,8 @@ import { getAppContext } from '../../../core/AppContext';
 import { HexTile, SceneManagerLike } from './types';
 import { createTileBorder, removeTileBorder } from './tileBorder';
 import { updateInfoPanel } from './infoPanel';
-import { updateVillagesPage } from './villagesPage';
-
 // Re-export types
-export type { HexTile, LandData, VillageApiData, SceneManagerLike, HexasphereData, BoundaryPoint } from './types';
+export type { HexTile, LandData, SceneManagerLike, HexasphereData, BoundaryPoint } from './types';
 
 class TileSelector {
     private scene: THREE.Scene;
@@ -312,7 +310,6 @@ class TileSelector {
     private updatePanel(tile: HexTile): void {
         if (!this.tileInfoPanel) return;
         updateInfoPanel(this.tileInfoPanel, tile);
-        updateVillagesPage(this.tileInfoPanel, tile);
     }
 
     private stopRefresh(): void {

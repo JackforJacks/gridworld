@@ -13,14 +13,6 @@ export interface LandData {
     land_type?: string;
     cleared?: boolean;
     chunk_index?: number;
-    village_id?: number | null;
-    village_name?: string;
-    food_stores?: number;
-    food_capacity?: number;
-    food_production_rate?: number;
-    housing_slots?: number[];
-    housing_capacity?: number;
-    occupied_slots?: number;
 }
 
 /** Tile interface for the hexasphere tiles */
@@ -47,21 +39,6 @@ export interface HexasphereData {
 /** SceneManager interface (minimal for TileSelector usage) */
 export interface SceneManagerLike {
     hexasphere?: HexasphereData | null;
-}
-
-/** Village data from API */
-export interface VillageApiData {
-    id?: number | null;
-    tile_id?: number;
-    land_chunk_index?: number;
-    village_name?: string;
-    name?: string;
-    food_stores?: number;
-    food_capacity?: number;
-    food_production_rate?: number;
-    housing_slots?: number[];
-    housing_capacity?: number;
-    occupied_slots?: number;
 }
 
 /** Biome icon mapping */
