@@ -1,5 +1,6 @@
-// Statistics Service - In-memory vital statistics tracking
+// Statistics Service - Vital statistics tracking (now using Rust calculations)
 import { VITAL_EVENTS_MAX_RECORDS } from '../config/gameBalance';
+import rustSimulation from './rustSimulation';
 
 interface VitalEvent {
     year: number;
@@ -15,14 +16,24 @@ interface CalendarDate {
     month: number;
 }
 
+/**
+ * Statistics Service (Phase 3 - Rust integration)
+ *
+ * This service now uses Rust event log for accurate vital statistics calculations.
+ * The in-memory vitalEvents array is deprecated but kept for backward compatibility.
+ *
+ * Source of truth: Rust EventLog (persisted in bincode saves)
+ * Calculations: Rust VitalStatistics (birth/death/marriage rates per 1000 per year)
+ * Node.js role: Format data for client, WebSocket broadcasting, maintain recording API
+ */
 class StatisticsService {
-    vitalEvents: VitalEvent[];
+    vitalEvents: VitalEvent[]; // DEPRECATED - kept for backward compatibility only
     calendarService: any;
     isTracking: boolean;
 
     constructor(calendarService: any = null) {
-        // In-memory storage for vital events
-        this.vitalEvents = []; // Array of { year, month, births, deaths, population }
+        // In-memory storage (DEPRECATED - Rust event log is source of truth)
+        this.vitalEvents = [];
         this.calendarService = calendarService;
         this.isTracking = false;
     }
@@ -147,58 +158,40 @@ class StatisticsService {
         }
     }    /**
      * Get vital rates chart data for the last N years
+     * Now uses Rust event log for accurate historical statistics
      * @param {number} years - Number of years to include
      * @returns {Object} Chart.js compatible data structure
      */
     getVitalRatesForChart(years = 100) {
         const currentDate = this.getCurrentCalendarDate();
-        const cutoffYear = currentDate.year - years;
+        const startYear = currentDate.year - years + 1;
 
-        // Filter events to the requested time period
-        const relevantEvents = this.vitalEvents.filter(event => event.year >= cutoffYear);
-
-        // Group by year and calculate annual rates
-        const yearlyData = {};
-
-        relevantEvents.forEach(event => {
-            if (!yearlyData[event.year]) {
-                yearlyData[event.year] = {
-                    year: event.year,
-                    totalBirths: 0,
-                    totalDeaths: 0,
-                    avgPopulation: 0,
-                    monthCount: 0
-                };
-            }
-
-            yearlyData[event.year].totalBirths += event.births;
-            yearlyData[event.year].totalDeaths += event.deaths;
-            yearlyData[event.year].avgPopulation += event.population;
-            yearlyData[event.year].monthCount++;
-        });
-
-        // Calculate rates and prepare chart data
+        // Prepare chart data arrays
         const chartLabels: string[] = [];
         const birthRates: number[] = [];
         const deathRates: number[] = [];
 
-        // Sort years and calculate rates
-        const sortedYears = Object.keys(yearlyData).sort((a, b) => parseInt(a) - parseInt(b));
+        try {
+            // Get statistics from Rust for each year in the range
+            for (let year = startYear; year <= currentDate.year; year++) {
+                const stats = rustSimulation.calculateVitalStatistics(year, year);
 
-        sortedYears.forEach(year => {
-            const data = yearlyData[year];
-            const avgPop = data.avgPopulation / Math.max(data.monthCount, 1);
+                chartLabels.push(year.toString());
+                birthRates.push(parseFloat(stats.birthRate.toFixed(2)));
+                deathRates.push(parseFloat(stats.deathRate.toFixed(2)));
+            }
 
-            // Calculate rates per 1000 people
-            const birthRate = avgPop > 0 ? (data.totalBirths / avgPop) * 1000 : 0;
-            const deathRate = avgPop > 0 ? (data.totalDeaths / avgPop) * 1000 : 0;
-
-            chartLabels.push(year);
-            birthRates.push(parseFloat(birthRate.toFixed(2)));
-            deathRates.push(parseFloat(deathRate.toFixed(2)));
-        });        // If no data, provide dummy data for the last 10 years of the requested range
-        if (chartLabels.length === 0) {
-            const currentDate = this.getCurrentCalendarDate();
+            // If no data (early in simulation), provide zeros for last 10 years
+            if (chartLabels.length === 0) {
+                for (let i = 9; i >= 0; i--) {
+                    chartLabels.push((currentDate.year - i).toString());
+                    birthRates.push(0);
+                    deathRates.push(0);
+                }
+            }
+        } catch (error) {
+            console.error('Error fetching Rust statistics for chart:', error);
+            // Fallback: provide zeros for last 10 years
             for (let i = 9; i >= 0; i--) {
                 chartLabels.push((currentDate.year - i).toString());
                 birthRates.push(0);
@@ -229,25 +222,41 @@ class StatisticsService {
 
     /**
      * Get summary statistics
+     * Now uses Rust event log for accurate statistics
      * @returns {Object} Summary stats
      */
     getSummaryStats() {
-        const recentEvents = this.vitalEvents.slice(-12); // Last 12 months
-        const totalBirths = recentEvents.reduce((sum, event) => sum + event.births, 0);
-        const totalDeaths = recentEvents.reduce((sum, event) => sum + event.deaths, 0);
-        const avgPopulation = recentEvents.length > 0
-            ? recentEvents.reduce((sum, event) => sum + event.population, 0) / recentEvents.length
-            : 0;
+        try {
+            // Get current year statistics from Rust
+            const currentYearStats = rustSimulation.calculateCurrentYearStatistics();
+            const eventCount = rustSimulation.getEventCount();
+            const currentDate = this.getCurrentCalendarDate();
 
-        return {
-            totalEvents: this.vitalEvents.length,
-            recentBirths: totalBirths,
-            recentDeaths: totalDeaths,
-            avgPopulation: Math.round(avgPopulation),
-            dataRange: this.vitalEvents.length > 0
-                ? `${Math.min(...this.vitalEvents.map(e => e.year))} - ${Math.max(...this.vitalEvents.map(e => e.year))}`
-                : 'No data'
-        };
+            return {
+                totalEvents: eventCount,
+                recentBirths: currentYearStats.totalBirths,
+                recentDeaths: currentYearStats.totalDeaths,
+                avgPopulation: currentYearStats.population,
+                birthRate: parseFloat(currentYearStats.birthRate.toFixed(2)),
+                deathRate: parseFloat(currentYearStats.deathRate.toFixed(2)),
+                naturalIncreaseRate: parseFloat(currentYearStats.naturalIncreaseRate.toFixed(2)),
+                dataRange: eventCount > 0
+                    ? `Year ${currentDate.year} (${eventCount} events total)`
+                    : 'No data'
+            };
+        } catch (error) {
+            console.error('Error fetching Rust summary statistics:', error);
+            return {
+                totalEvents: 0,
+                recentBirths: 0,
+                recentDeaths: 0,
+                avgPopulation: 0,
+                birthRate: 0,
+                deathRate: 0,
+                naturalIncreaseRate: 0,
+                dataRange: 'No data'
+            };
+        }
     }
 
     /**

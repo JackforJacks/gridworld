@@ -579,3 +579,91 @@ pub fn clear_event_log(world: External<WorldHandle>) {
     let mut w = world.lock().unwrap();
     w.event_log.clear();
 }
+
+// ============================================================================
+// Vital Statistics Calculations (Phase 3)
+// ============================================================================
+
+/// Vital statistics for a time period
+#[napi(object)]
+pub struct JsVitalStatistics {
+    /// Births per 1000 population per year
+    pub birth_rate: f64,
+    /// Deaths per 1000 population per year
+    pub death_rate: f64,
+    /// Marriages per 1000 population per year
+    pub marriage_rate: f64,
+    /// Natural increase rate (births - deaths) per 1000 population per year
+    pub natural_increase_rate: f64,
+    /// Total births in period
+    pub total_births: u32,
+    /// Total deaths in period
+    pub total_deaths: u32,
+    /// Total marriages in period
+    pub total_marriages: u32,
+    /// Population (current)
+    pub population: u32,
+    /// Period length in years
+    pub period_years: f64,
+}
+
+/// Calculate vital statistics for a date range (inclusive)
+#[napi]
+pub fn calculate_vital_statistics(
+    world: External<WorldHandle>,
+    start_year: i32,
+    end_year: i32,
+) -> JsVitalStatistics {
+    let w = world.lock().unwrap();
+    let stats = w.calculate_vital_statistics(start_year as u16, end_year as u16);
+
+    JsVitalStatistics {
+        birth_rate: stats.birth_rate,
+        death_rate: stats.death_rate,
+        marriage_rate: stats.marriage_rate,
+        natural_increase_rate: stats.natural_increase_rate,
+        total_births: stats.total_births,
+        total_deaths: stats.total_deaths,
+        total_marriages: stats.total_marriages,
+        population: stats.population,
+        period_years: stats.period_years,
+    }
+}
+
+/// Calculate vital statistics for the current year only
+#[napi]
+pub fn calculate_current_year_statistics(world: External<WorldHandle>) -> JsVitalStatistics {
+    let w = world.lock().unwrap();
+    let stats = w.calculate_current_year_statistics();
+
+    JsVitalStatistics {
+        birth_rate: stats.birth_rate,
+        death_rate: stats.death_rate,
+        marriage_rate: stats.marriage_rate,
+        natural_increase_rate: stats.natural_increase_rate,
+        total_births: stats.total_births,
+        total_deaths: stats.total_deaths,
+        total_marriages: stats.total_marriages,
+        population: stats.population,
+        period_years: stats.period_years,
+    }
+}
+
+/// Calculate vital statistics for the last N years
+#[napi]
+pub fn calculate_recent_statistics(world: External<WorldHandle>, years: u32) -> JsVitalStatistics {
+    let w = world.lock().unwrap();
+    let stats = w.calculate_recent_statistics(years as u16);
+
+    JsVitalStatistics {
+        birth_rate: stats.birth_rate,
+        death_rate: stats.death_rate,
+        marriage_rate: stats.marriage_rate,
+        natural_increase_rate: stats.natural_increase_rate,
+        total_births: stats.total_births,
+        total_deaths: stats.total_deaths,
+        total_marriages: stats.total_marriages,
+        population: stats.population,
+        period_years: stats.period_years,
+    }
+}

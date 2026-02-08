@@ -215,6 +215,82 @@ pub struct Demographics {
     pub age_brackets: [u32; 7],
 }
 
+/// Vital statistics (Phase 3) - calculated from event log
+pub struct VitalStatistics {
+    /// Births per 1000 population per year
+    pub birth_rate: f64,
+    /// Deaths per 1000 population per year
+    pub death_rate: f64,
+    /// Marriages per 1000 population per year
+    pub marriage_rate: f64,
+    /// Natural increase rate (births - deaths) per 1000 population per year
+    pub natural_increase_rate: f64,
+    /// Total births in period
+    pub total_births: u32,
+    /// Total deaths in period
+    pub total_deaths: u32,
+    /// Total marriages in period
+    pub total_marriages: u32,
+    /// Population (average over period)
+    pub population: u32,
+    /// Period length in years
+    pub period_years: f64,
+}
+
+impl SimulationWorld {
+    /// Calculate vital statistics from event log for a date range
+    ///
+    /// # Arguments
+    /// * `start_year` - Start year (inclusive)
+    /// * `end_year` - End year (inclusive)
+    ///
+    /// # Returns
+    /// VitalStatistics for the specified period
+    pub fn calculate_vital_statistics(&self, start_year: u16, end_year: u16) -> VitalStatistics {
+        use crate::components::EventType;
+
+        let births = self.event_log.count_by_type(EventType::Birth, start_year, end_year) as u32;
+        let deaths = self.event_log.count_by_type(EventType::Death, start_year, end_year) as u32;
+        let marriages = self.event_log.count_by_type(EventType::Marriage, start_year, end_year) as u32;
+
+        let population = self.entity_count() as u32;
+        let period_years = (end_year.saturating_sub(start_year) + 1) as f64;
+
+        // Calculate rates per 1000 population per year
+        let pop_factor = if population > 0 { 1000.0 / (population as f64 * period_years) } else { 0.0 };
+
+        let birth_rate = births as f64 * pop_factor * period_years;
+        let death_rate = deaths as f64 * pop_factor * period_years;
+        let marriage_rate = marriages as f64 * pop_factor * period_years;
+        let natural_increase_rate = birth_rate - death_rate;
+
+        VitalStatistics {
+            birth_rate,
+            death_rate,
+            marriage_rate,
+            natural_increase_rate,
+            total_births: births,
+            total_deaths: deaths,
+            total_marriages: marriages,
+            population,
+            period_years,
+        }
+    }
+
+    /// Calculate vital statistics for the current year only
+    pub fn calculate_current_year_statistics(&self) -> VitalStatistics {
+        let year = self.calendar.year;
+        self.calculate_vital_statistics(year, year)
+    }
+
+    /// Calculate vital statistics for the last N years
+    pub fn calculate_recent_statistics(&self, years: u16) -> VitalStatistics {
+        let end_year = self.calendar.year;
+        let start_year = end_year.saturating_sub(years.saturating_sub(1));
+        self.calculate_vital_statistics(start_year, end_year)
+    }
+}
+
 impl Default for SimulationWorld {
     fn default() -> Self {
         Self::new()

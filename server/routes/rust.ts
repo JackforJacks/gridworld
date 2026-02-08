@@ -215,4 +215,44 @@ router.delete('/events', (req: Request, res: Response) => {
     }
 });
 
+// ============================================================================
+// Vital Statistics Routes (Phase 3)
+// ============================================================================
+
+// GET /api/rust/statistics/vital - Calculate vital statistics for date range
+router.get('/statistics/vital', (req: Request, res: Response) => {
+    try {
+        const startYear = parseInt((req.query.startYear as string) || '4000', 10);
+        const endYear = parseInt((req.query.endYear as string) || '5000', 10);
+        const stats = rustSimulation.calculateVitalStatistics(startYear, endYear);
+        res.json({ success: true, startYear, endYear, ...stats });
+    } catch (error: unknown) {
+        console.error('Error calculating vital statistics:', error);
+        res.status(500).json({ success: false, error: (error as Error).message });
+    }
+});
+
+// GET /api/rust/statistics/current-year - Get current year vital statistics
+router.get('/statistics/current-year', (req: Request, res: Response) => {
+    try {
+        const stats = rustSimulation.calculateCurrentYearStatistics();
+        res.json({ success: true, ...stats });
+    } catch (error: unknown) {
+        console.error('Error calculating current year statistics:', error);
+        res.status(500).json({ success: false, error: (error as Error).message });
+    }
+});
+
+// GET /api/rust/statistics/recent - Get recent N years vital statistics
+router.get('/statistics/recent', (req: Request, res: Response) => {
+    try {
+        const years = parseInt((req.query.years as string) || '10', 10);
+        const stats = rustSimulation.calculateRecentStatistics(years);
+        res.json({ success: true, years, ...stats });
+    } catch (error: unknown) {
+        console.error('Error calculating recent statistics:', error);
+        res.status(500).json({ success: false, error: (error as Error).message });
+    }
+});
+
 export default router;

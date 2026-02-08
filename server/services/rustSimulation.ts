@@ -309,6 +309,50 @@ class RustSimulationService {
     clearEventLog(): void {
         simulation.clearEventLog(this.world);
     }
+
+    // ========================================================================
+    // Vital Statistics (Phase 3)
+    // ========================================================================
+
+    /**
+     * Calculate vital statistics for a date range (inclusive)
+     * @param startYear - Start year
+     * @param endYear - End year
+     * @returns Vital statistics including birth rate, death rate, marriage rate per 1000 population per year
+     */
+    calculateVitalStatistics(startYear: number, endYear: number): VitalStatistics {
+        return simulation.calculateVitalStatistics(this.world, startYear, endYear) as VitalStatistics;
+    }
+
+    /**
+     * Calculate vital statistics for the current year only
+     * @returns Vital statistics for current year
+     */
+    calculateCurrentYearStatistics(): VitalStatistics {
+        return simulation.calculateCurrentYearStatistics(this.world) as VitalStatistics;
+    }
+
+    /**
+     * Calculate vital statistics for the last N years
+     * @param years - Number of years to look back
+     * @returns Vital statistics for the specified period
+     */
+    calculateRecentStatistics(years: number): VitalStatistics {
+        return simulation.calculateRecentStatistics(this.world, years) as VitalStatistics;
+    }
+}
+
+// VitalStatistics interface
+export interface VitalStatistics {
+    birthRate: number;
+    deathRate: number;
+    marriageRate: number;
+    naturalIncreaseRate: number;
+    totalBirths: number;
+    totalDeaths: number;
+    totalMarriages: number;
+    population: number;
+    periodYears: number;
 }
 
 // Export singleton instance
