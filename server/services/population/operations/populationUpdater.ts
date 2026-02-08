@@ -1,4 +1,6 @@
 // Population Operations - Population Updater Module
+// Phase 6: Tile population updates are now handled by Rust ECS
+// This module contains deprecated functions maintained for backward compatibility
 import { addPeopleToTile } from '../manager';
 import {
     CalendarService,

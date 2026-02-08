@@ -3,14 +3,15 @@ import { getTotalPopulation } from './PopStats';
 // Storage removed - all data in Rust ECS
 
 /**
- * Loads population data from Redis (only source of truth)
- * Storage removed - all data in Rust ECS
+ * Loads tile population counts from Rust ECS (Phase 6)
+ * All tile populations are now aggregated on-demand from Rust ECS person queries
  * @param {Pool} pool - Database pool instance (unused, kept for API compatibility)
- * @returns {Object} Population data by tile ID
+ * @returns {Object} Population data by tile ID (tile_id -> count)
  */
 async function loadPopulationData(pool) {
     try {
-        // Storage removed - all data managed by Rust ECS
+        // Phase 6: Tile populations come directly from Rust ECS
+        // Chain: PopulationState.getAllTilePopulations() -> rustSimulation.getPopulationByTile()
         // Wait briefly for compatibility
         await new Promise(resolve => setTimeout(resolve, 200));
 
