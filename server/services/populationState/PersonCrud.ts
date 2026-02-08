@@ -8,7 +8,7 @@
  */
 
 import storage from '../storage';
-import idAllocator from '../idAllocator';
+import rustSimulation from '../rustSimulation';
 import {
     StoredPerson,
     PersonInput,
@@ -24,17 +24,17 @@ function checkIsMale(sex: boolean | string | number | null | undefined): boolean
 }
 
 /**
- * Get the next real Postgres ID for a new person
+ * Get the next person ID from Rust ECS
  */
-export async function getNextId(): Promise<number> {
-    return idAllocator.getNextPersonId();
+export function getNextId(): number {
+    return rustSimulation.getNextPersonId();
 }
 
 /**
- * Get a batch of real Postgres IDs for multiple new people
+ * Get a batch of person IDs from Rust ECS
  */
-export async function getIdBatch(count: number): Promise<number[]> {
-    return idAllocator.getPersonIdBatch(count);
+export function getIdBatch(count: number): number[] {
+    return rustSimulation.getPersonIdBatch(count);
 }
 
 /**

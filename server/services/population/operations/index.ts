@@ -3,8 +3,7 @@
 
 export { formatPopData, loadPopData, getAge } from './helpers';
 export { clearStoragePopulation, resetAllPopulation } from './storageReset';
-export { generatePeopleForTiles } from './peopleGenerator';
-export { seedFamiliesForTiles } from './familySeeder';
+// Legacy removed: generatePeopleForTiles, seedFamiliesForTiles (now handled by Rust ECS)
 export { initializeTilePopulations } from './tileInitializer';
 export {
     updateTilePopulation,

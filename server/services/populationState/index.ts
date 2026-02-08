@@ -1,18 +1,17 @@
 /**
  * Population State - Barrel export for modular population state management
- * 
+ *
  * This module re-exports all population state classes for easy importing.
- * 
+ *
  * Usage:
- *   import { PeopleState, FamilyState } from './populationState';
+ *   import { PeopleState } from './populationState';
  *
  * Or for backwards compatibility:
  *   import PopulationState from './populationState';
- *   // PopulationState is an alias for PeopleState with additional family methods
+ *   // PopulationState is an alias for PeopleState (families now in Rust ECS)
  */
 
 import PeopleState from './PeopleState';
-import FamilyState from './FamilyState';
 import storage from '../storage';
 import type { FamilyData } from '../../../types/global';
 
@@ -131,27 +130,14 @@ class PopulationState {
     static async batchAddPersons(persons: PersonInput[], isNew?: boolean): Promise<number> { return PeopleState.batchAddPersons(persons, isNew); }
     static async getIdBatch(count: number): Promise<number[]> { return PeopleState.getIdBatch(count); }
 
-    // =========== FAMILY OPERATIONS (delegates to FamilyState) ===========
-    static async getNextFamilyId(): Promise<number> { return FamilyState.getNextId(); }
-    static async addFamily(family: FamilyData, isNew?: boolean): Promise<boolean> { return FamilyState.addFamily(family, isNew); }
-    static async batchAddFamilies(families: FamilyData[], isNew?: boolean): Promise<number> { return FamilyState.batchAddFamilies(families, isNew); }
-    static async getFamily(familyId: number | string): Promise<StoredFamilyData | null> { return FamilyState.getFamily(Number(familyId)); }
-    static async updateFamily(familyId: number | string, updates: Partial<FamilyData>): Promise<boolean> { return FamilyState.updateFamily(Number(familyId), updates); }
-    static async getAllFamilies(): Promise<StoredFamilyData[]> { return FamilyState.getAllFamilies(); }
-    static async addFertileFamily(familyId: number | string, tileId: number | string): Promise<boolean> { return FamilyState.addFertileFamily(Number(familyId), Number(tileId)); }
-    static async removeFertileFamily(familyId: number | string): Promise<boolean> { return FamilyState.removeFertileFamily(Number(familyId)); }
-    static async getFertileFamilies(tileId?: number | string): Promise<string[]> { return FamilyState.getFertileFamilies(tileId !== undefined ? Number(tileId) : 0); }
-    static async getPendingFamilyInserts(): Promise<StoredFamilyData[]> { return FamilyState.getPendingInserts(); }
-    static async getPendingFamilyUpdates(): Promise<StoredFamilyData[]> { return FamilyState.getPendingUpdates(); }
-    static async getPendingFamilyDeletes(): Promise<number[]> { return FamilyState.getPendingDeletes(); }
-    static async clearPendingFamilyOperations(): Promise<void> { return FamilyState.clearPendingOperations(); }
-    static async reassignFamilyIds(mappings: IdMapping[]): Promise<void> { return FamilyState.reassignIds(mappings); }
+    // Family operations removed - families now managed by Rust ECS (Partner component)
+    // Legacy methods can be added as no-ops if needed for backwards compatibility
 }
 
 export default PopulationState;
 
 // Also export individual modules for direct access
-export { PeopleState, FamilyState };
+export { PeopleState };
 export const isRedisAvailable = (): boolean => storage.isAvailable();
 export const getRedis = (): ReturnType<typeof storage.getAdapter> | typeof storage => {
     const adapter = storage.getAdapter ? storage.getAdapter() : storage;
