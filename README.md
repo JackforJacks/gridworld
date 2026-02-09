@@ -6,12 +6,14 @@ An Open Source Tauri v2 desktop application featuring an interactive 3D hexasphe
 
 ## Prerequisites
 
-- **Node.js** >= 18.0.0
+- **Node.js** >= 18.0.0 (build tools only - not needed at runtime)
 - **Rust** >= 1.70 (install via [rustup.rs](https://rustup.rs/))
 - **Tauri v2 system dependencies** (see [Tauri prerequisites](https://v2.tauri.app/start/prerequisites/))
   - Windows: Microsoft Visual Studio C++ Build Tools, WebView2
   - Linux: `libwebkit2gtk-4.1-dev`, `libappindicator3-dev`, `librsvg2-dev`, `patchelf`
   - macOS: Xcode Command Line Tools
+
+**No servers, no databases** - GridWorld is a self-contained desktop application.
 
 ## Quick Start
 
@@ -103,14 +105,41 @@ GridWorld/
 └── package.json                # Node.js dependencies and scripts
 ```
 
+## Features
+
+- **🎮 Interactive 3D Globe** - Explore a hexasphere world with smooth camera controls
+- **👥 Population Simulation** - Realistic demographics with aging, birth, death, and marriage systems
+- **⚡ High Performance** - Rust ECS simulation engine with 100% native performance
+- **💾 Portable Saves** - Binary save files (~742KB for 1000+ people with full event history)
+- **📊 Real-time Statistics** - Live vital rates, demographics, and event tracking
+- **🎯 Pure Desktop App** - No servers, no databases, no internet required
+- **🔄 Hot Reload** - Webpack HMR for instant frontend updates during development
+
 ## Architecture
 
-GridWorld is a **Tauri v2 desktop app** with all simulation logic running in Rust:
+GridWorld is a **pure Tauri v2 desktop application** with all simulation logic running in Rust:
 
-- **Frontend**: Three.js renders a 3D hexasphere. TypeScript managers communicate with the backend via Tauri IPC (`invoke()` for commands, `listen()` for events).
-- **Backend**: Tauri commands call into the `simulation` Rust library, which uses an ECS architecture (hecs) for people, relationships, and calendar state.
-- **Simulation**: A background Rust thread ticks the calendar automatically, running aging, death, birth, and matchmaking systems each tick. Results are emitted as Tauri events.
-- **Persistence**: World state is saved to binary files (`saves/world.bin`) using bincode serialization. No external databases required.
+### Communication Layer
+- **Pure Tauri IPC** - No HTTP, no WebSocket, no network layer
+- **28 Tauri Commands** - Direct Rust function calls from frontend (`invoke()`)
+- **Real-time Events** - `calendar-tick` events broadcast simulation updates (`listen()`)
+- **ApiClient Singleton** - TypeScript wrapper for all IPC calls
+
+### Core Components
+- **Frontend (Three.js)**: Renders 3D hexasphere with indexed geometry, shader-based overlays, and RAF-batched population updates
+- **Backend (Tauri)**: 8 command modules (calendar, world, population, people, statistics, tiles, config, memory)
+- **Simulation (Rust ECS)**: Uses `hecs` for entity management - people, partnerships, calendar state
+- **Calendar Thread**: Background Rust thread auto-ticks simulation (1 day/second or 1 month/125ms)
+- **Persistence**: Bincode binary saves (~742KB for 1000 people) with atomic writes
+
+### Data Flow
+```
+User Action → Three.js Frontend → Tauri invoke() → Rust Command
+    ↓                                                      ↓
+UI Update ← CalendarManager/PopulationManager ← Tauri Event ← Simulation Tick
+```
+
+See [ARCHITECTURE.md](ARCHITECTURE.md) for detailed technical documentation.
 
 ## Controls
 

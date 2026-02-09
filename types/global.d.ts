@@ -6,15 +6,6 @@
 import * as THREE from 'three';
 
 /**
- * Environment configuration
- */
-export interface EnvironmentConfig {
-    NODE_ENV: string;
-    PORT: string;
-    [key: string]: string | undefined;
-}
-
-/**
  * Terrain types available in the game
  */
 export type TerrainType =
@@ -53,22 +44,6 @@ export interface PersonData {
     sex: boolean; // true=male, false=female
     date_of_birth: string;
     family_id: number | null;
-}
-
-/**
- * Family data structure
- * @deprecated Families are now managed exclusively by Rust ECS (Partner component)
- * Use rustSimulation.getDemographics() for aggregate family statistics
- * This interface is kept for backward compatibility only
- */
-export interface FamilyData {
-    id: number;
-    husband_id: number | null;
-    wife_id: number | null;
-    tile_id: number;
-    pregnancy: boolean;
-    delivery_date: string | null;
-    children_ids: number[];
 }
 
 /**
@@ -114,22 +89,6 @@ export interface SceneConfig {
 export interface RotationState {
     x: number;
     y: number;
-}
-
-/**
- * Database error with context
- */
-export interface DatabaseError extends Error {
-    name: 'DatabaseError';
-    originalError: Error | null;
-    timestamp: string;
-}
-
-/**
- * Repository transaction client
- */
-export interface TransactionClient {
-    query: (sql: string, params?: any[]) => Promise<any>;
 }
 
 declare global {
