@@ -131,7 +131,7 @@ GridWorld is a **Tauri v2 desktop app** with all simulation logic running in Rus
 
 ## License
 
-MIT License
+Apache 2.0
 
 ## Credits
 
