@@ -301,6 +301,21 @@ class SceneManager {
 
             // Rebuild hexasphere with fresh tile state
             await this.createHexasphere();
+
+            // Fetch and apply newly generated population data
+            await this.initializeTilePopulations(this.habitableTileIds);
+
+            // Refresh total population count in dashboard
+            const totalPop = await getApiClient().getPopulation();
+            const popEl = document.getElementById('pop-value');
+            if (popEl) {
+                popEl.textContent = totalPop.toLocaleString();
+            }
+
+            // Refresh view mode colors if in population mode
+            if (this.viewModeManager?.getCurrentMode() === 'population') {
+                this.viewModeManager.updateAllTileColors();
+            }
         } catch (error: unknown) {
             console.error('Failed to regenerate tiles:', error);
             throw error;
@@ -310,10 +325,6 @@ class SceneManager {
     private async applyCalendarState(): Promise<void> {
         try {
             const calendarState = await getApiClient().getCalendarState();
-            const yearEl = document.getElementById('calendar-year-inline');
-            if (yearEl) {
-                yearEl.textContent = `Year: ${calendarState.date.year}`;
-            }
             const ctx = getAppContext();
             if (ctx.calendarManager?.updateState) {
                 ctx.calendarManager.updateState({

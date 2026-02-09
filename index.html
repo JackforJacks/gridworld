@@ -39,6 +39,77 @@
         </div>
     </div>
 
+    <!-- New Game Setup Modal -->
+    <div id="new-game-setup-modal" class="menu-modal-overlay hidden">
+        <div class="menu-modal" style="width: 33.33vw; height: 100vh; max-height: 100vh; margin: 0;">
+            <div class="menu-modal-header">
+                <strong>World Configuration</strong>
+                <button class="options-modal-close" id="new-game-setup-close">&times;</button>
+            </div>
+            <div class="options-modal-content" style="overflow-x: hidden; overflow-y: hidden; height: calc(100vh - 100px); display: flex; flex-direction: column; padding: 20px;">
+                <form id="new-game-form" class="new-game-form">
+                    <div class="form-section">
+                        <div class="form-group">
+                            <label for="world-name">Planet Name</label>
+                            <input type="text" id="world-name" name="worldName" value="New World" maxlength="50">
+                        </div>
+
+                        <div class="form-group">
+                            <label for="world-seed">Seed (optional)</label>
+                            <input type="text" id="world-seed" name="seed" placeholder="Leave empty for random">
+                            <small>Use the same seed to generate identical worlds</small>
+                        </div>
+
+                        <div class="form-group">
+                            <label for="world-size">World Size</label>
+                            <select id="world-size" name="worldSize">
+                                <option value="12" selected>Small (1,442 tiles)</option>
+                                <option value="16">Medium (2,562 tiles)</option>
+                                <option value="20">Large (4,002 tiles)</option>
+                            </select>
+                            <small>Larger worlds require more memory and processing power</small>
+                        </div>
+
+                        <div class="form-group">
+                            <label for="population-density">Population</label>
+                            <select id="population-density" name="populationDensity">
+                                <option value="sparse">Sparsely populated</option>
+                                <option value="fertile" selected>Concentrated in fertile plains</option>
+                                <option value="heavy">Heavily populated</option>
+                            </select>
+                        </div>
+
+                        <div class="form-group">
+                            <label for="land-water-ratio">Land/Water Ratio</label>
+                            <input type="range" id="land-water-ratio" name="landWaterRatio"
+                                   min="0" max="100" value="50" step="1">
+                            <div class="slider-labels">
+                                <span>More Water</span>
+                                <span id="land-water-value">50%</span>
+                                <span>More Land</span>
+                            </div>
+                        </div>
+
+                        <div class="form-group">
+                            <label for="roughness">Roughness</label>
+                            <input type="range" id="roughness" name="roughness"
+                                   min="0" max="100" value="50" step="1">
+                            <div class="slider-labels">
+                                <span>Flat</span>
+                                <span id="roughness-value">50%</span>
+                                <span>Mountainous</span>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="form-actions">
+                        <button type="submit" class="btn-primary">Start Game</button>
+                    </div>
+                </form>
+            </div>
+        </div>
+    </div>
+
     <div id="stars" class="stars"></div>
     <div id="dashboard" class="hidden">
         <button id="menu-btn" class="dashboard-button menu-button">☰</button>
@@ -238,6 +309,35 @@
                 }
 
             });
+        })();
+    </script>
+    <script>
+        // World Configuration Sliders
+        (function() {
+            function initializeSliders() {
+                const landWaterSlider = document.getElementById('land-water-ratio');
+                const landWaterValue = document.getElementById('land-water-value');
+                const roughnessSlider = document.getElementById('roughness');
+                const roughnessValue = document.getElementById('roughness-value');
+
+                if (landWaterSlider && landWaterValue) {
+                    landWaterSlider.addEventListener('input', function() {
+                        landWaterValue.textContent = this.value + '%';
+                    });
+                }
+
+                if (roughnessSlider && roughnessValue) {
+                    roughnessSlider.addEventListener('input', function() {
+                        roughnessValue.textContent = this.value + '%';
+                    });
+                }
+            }
+
+            if (document.readyState === 'loading') {
+                document.addEventListener('DOMContentLoaded', initializeSliders);
+            } else {
+                initializeSliders();
+            }
         })();
     </script>
     <!-- Menu Modal -->

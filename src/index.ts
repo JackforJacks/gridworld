@@ -70,6 +70,9 @@ class GridWorldApp {
     // Menu phase resize handler (before InputHandler takes over)
     private menuResizeHandler: (() => void) | null = null;
 
+    // New game configuration
+    private selectedSubdivisions: number | null = null;
+
     constructor() {
         this.lastTime = Date.now();
 
@@ -207,12 +210,15 @@ class GridWorldApp {
             });
         }
 
-        // New Game button - starts the game
+        // New Game button - shows setup modal
         if (btnNewGame) {
             btnNewGame.addEventListener('click', () => {
-                this.startGame();
+                this.showNewGameSetup();
             });
         }
+
+        // Setup New Game modal handlers
+        this.setupNewGameModal();
 
         // Load Game button - triggers load game dialog
         if (btnLoadGame) {
@@ -303,6 +309,82 @@ class GridWorldApp {
     }
 
     /**
+     * Show the New Game Setup modal
+     */
+    private showNewGameSetup(): void {
+        const modal = document.getElementById('new-game-setup-modal');
+        if (modal) {
+            modal.classList.remove('hidden');
+        }
+    }
+
+    /**
+     * Setup New Game modal handlers
+     */
+    private setupNewGameModal(): void {
+        const modal = document.getElementById('new-game-setup-modal');
+        const form = document.getElementById('new-game-form') as HTMLFormElement;
+        const closeBtn = document.getElementById('new-game-setup-close');
+        const cancelBtn = document.getElementById('new-game-cancel');
+
+        // Close button
+        if (closeBtn) {
+            closeBtn.addEventListener('click', () => {
+                if (modal) modal.classList.add('hidden');
+            });
+        }
+
+        // Cancel button
+        if (cancelBtn) {
+            cancelBtn.addEventListener('click', () => {
+                if (modal) modal.classList.add('hidden');
+            });
+        }
+
+        // Close when clicking overlay
+        if (modal) {
+            modal.addEventListener('click', (e) => {
+                if (e.target === modal) {
+                    modal.classList.add('hidden');
+                }
+            });
+        }
+
+        // Form submission
+        if (form) {
+            form.addEventListener('submit', (e) => {
+                e.preventDefault();
+
+                // Get form values
+                const formData = new FormData(form);
+                const worldName = formData.get('worldName') as string;
+                const seed = formData.get('seed') as string;
+                const worldSize = parseInt(formData.get('worldSize') as string);
+                const startingPopulation = parseInt(formData.get('startingPopulation') as string);
+                const startYear = parseInt(formData.get('startYear') as string);
+
+                // Store selected subdivisions for world generation
+                this.selectedSubdivisions = worldSize;
+
+                // Log configuration (for now - will be used later)
+                console.log('New Game Configuration:', {
+                    worldName,
+                    seed: seed || 'random',
+                    worldSize,
+                    startingPopulation,
+                    startYear
+                });
+
+                // Hide modal
+                if (modal) modal.classList.add('hidden');
+
+                // Start the game
+                this.startGame();
+            });
+        }
+    }
+
+    /**
      * Set up resize handler for menu phase (before InputHandler takes over)
      */
     private setupMenuResizeHandler(): void {
@@ -353,6 +435,12 @@ class GridWorldApp {
         if (container) container.classList.add('with-dashboard');
 
         try {
+            // Regenerate hexasphere with selected subdivisions if specified
+            if (this.selectedSubdivisions !== null && this.sceneManager) {
+                console.log(`🌐 Regenerating world with ${this.selectedSubdivisions} subdivisions...`);
+                await this.sceneManager.createHexasphere(null, this.selectedSubdivisions, null, true);
+                this.requestRender();
+            }
             // Connect population manager (Tauri IPC)
             await populationManager.connect();
 

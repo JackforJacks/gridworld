@@ -665,7 +665,14 @@ class UIManager {
                 this.updatePopulationDisplay(rustData);
             }
         });
-        populationManager.connect();
+
+        // Fetch initial population (in case connect() was already called)
+        const initialPopulation = populationManager.getTotalPopulation();
+        this.currentTotalPopulation = initialPopulation;
+        const popEl = document.getElementById('pop-value');
+        if (popEl) {
+            popEl.textContent = initialPopulation.toLocaleString();
+        }
     }
 
     // Update the population display in real-time

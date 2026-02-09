@@ -166,13 +166,13 @@ export class ViewModeManager {
     }
 
     /**
-     * Population gradient: White (0) -> Light Blue -> Dark Blue (high)
+     * Population gradient: White (0) -> Light Green -> Dark Green (high)
      */
     private populationGradient(normalized: number): THREE.Color {
-        // White to dark blue/purple gradient
-        const r = 1.0 - (normalized * 0.85);  // 1.0 -> 0.15
-        const g = 1.0 - (normalized * 0.85);  // 1.0 -> 0.15
-        const b = 1.0 - (normalized * 0.3);   // 1.0 -> 0.7 (keep more blue)
+        // White to dark green gradient
+        const r = 1.0 - (normalized * 0.9);   // 1.0 -> 0.1 (reduce red)
+        const g = 1.0 - (normalized * 0.4);   // 1.0 -> 0.6 (keep more green)
+        const b = 1.0 - (normalized * 0.9);   // 1.0 -> 0.1 (reduce blue)
 
         return new THREE.Color().setRGB(r, g, b);
     }
