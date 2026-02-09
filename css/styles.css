@@ -761,6 +761,13 @@ kbd {
     overflow-y: auto;
 }
 
+#new-game-setup-modal .options-modal-content {
+    height: calc(100vh - 100px);
+    display: flex;
+    flex-direction: column;
+    padding: 20px;
+}
+
 .options-section {
     display: flex;
     flex-direction: column;
@@ -1842,8 +1849,7 @@ kbd {
 
 .new-game-form .form-section {
     flex: 1;
-    overflow-y: auto;
-    overflow-x: hidden;
+    overflow: hidden;
     max-width: 100%;
 }
 

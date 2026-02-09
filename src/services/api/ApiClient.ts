@@ -190,12 +190,14 @@ class ApiClient {
     async calculateTileProperties(
         tiles: TileCenter[],
         landWaterRatio?: number,
-        roughness?: number
+        roughness?: number,
+        precipitation?: number
     ): Promise<TileProperties[]> {
         return invoke<TileProperties[]>('calculate_tile_properties', {
             tiles,
             landWaterRatio,
             roughness,
+            precipitation,
         });
     }
 

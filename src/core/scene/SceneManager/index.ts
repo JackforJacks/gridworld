@@ -126,7 +126,8 @@ class SceneManager {
         tileWidthRatio: number | null = null,
         forceRegenerate: boolean = false,
         landWaterRatio?: number,
-        roughness?: number
+        roughness?: number,
+        precipitation?: number
     ): Promise<void> {
         this.clearTiles();
 
@@ -145,7 +146,7 @@ class SceneManager {
             }
         }
 
-        await this.fetchAndBuildTiles(radius!, subdivisions!, tileWidthRatio!, forceRegenerate, landWaterRatio, roughness);
+        await this.fetchAndBuildTiles(radius!, subdivisions!, tileWidthRatio!, forceRegenerate, landWaterRatio, roughness, precipitation);
     }
 
     async fetchAndBuildTiles(
@@ -154,7 +155,8 @@ class SceneManager {
         tileWidthRatio: number,
         _forceRegenerate: boolean = false,
         landWaterRatio?: number,
-        roughness?: number
+        roughness?: number,
+        precipitation?: number
     ): Promise<void> {
         try {
             // Step 1: Generate hexasphere geometry locally
@@ -176,7 +178,8 @@ class SceneManager {
                 const tileProps = await getApiClient().calculateTileProperties(
                     tileCenters,
                     landWaterRatio,
-                    roughness
+                    roughness,
+                    precipitation
                 );
                 // Convert to CompactTileState format expected by buildTilesFromLocalHexasphere
                 for (const prop of tileProps) {
@@ -187,7 +190,7 @@ class SceneManager {
                     };
                 }
                 const fetchTime = (performance.now() - fetchStart).toFixed(2);
-                console.log(`  Tile properties calculated in ${fetchTime}ms (${tileProps.length} tiles, land/water: ${landWaterRatio ?? 50}%, roughness: ${roughness ?? 50}%)`);
+                console.log(`  Tile properties calculated in ${fetchTime}ms (${tileProps.length} tiles, land/water: ${landWaterRatio ?? 50}%, roughness: ${roughness ?? 25}%, precipitation: ${precipitation ?? 75}%)`);
             } catch (error: unknown) {
                 console.warn('Failed to calculate tile properties, using local terrain generation:', error);
             }

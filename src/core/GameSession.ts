@@ -63,7 +63,7 @@ export class GameSession {
             if (config) {
                 await this.sceneManager.createHexasphere(
                     null, config.subdivisions, null, true,
-                    config.landWaterRatio, config.roughness
+                    config.landWaterRatio, config.roughness, config.precipitation
                 );
                 this.requestRender();
             }

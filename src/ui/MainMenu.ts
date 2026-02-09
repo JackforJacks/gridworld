@@ -9,6 +9,7 @@ export interface GameConfig {
     subdivisions: number;
     landWaterRatio: number;
     roughness: number;
+    precipitation: number;
 }
 
 export interface AppSettings {
@@ -151,6 +152,15 @@ export class MainMenu {
         const closeBtn = document.getElementById('new-game-setup-close');
         const cancelBtn = document.getElementById('new-game-cancel');
 
+        // Enable scrolling without native scrollbar (overflow:hidden + JS wheel)
+        const scrollContainer = modal?.querySelector('.form-section') as HTMLElement | null;
+        if (scrollContainer) {
+            scrollContainer.addEventListener('wheel', (e) => {
+                e.preventDefault();
+                scrollContainer.scrollTop += e.deltaY;
+            }, { passive: false });
+        }
+
         if (closeBtn) {
             closeBtn.addEventListener('click', () => {
                 if (modal) modal.classList.add('hidden');
@@ -171,6 +181,7 @@ export class MainMenu {
                     subdivisions: parseInt(formData.get('worldSize') as string),
                     landWaterRatio: parseInt(formData.get('landWaterRatio') as string),
                     roughness: parseInt(formData.get('roughness') as string),
+                    precipitation: parseInt(formData.get('precipitation') as string),
                 };
 
                 if (modal) modal.classList.add('hidden');

@@ -46,7 +46,7 @@
                 <strong>World Configuration</strong>
                 <button class="options-modal-close" id="new-game-setup-close">&times;</button>
             </div>
-            <div class="options-modal-content" style="overflow-x: hidden; overflow-y: hidden; height: calc(100vh - 100px); display: flex; flex-direction: column; padding: 20px;">
+            <div class="options-modal-content">
                 <form id="new-game-form" class="new-game-form">
                     <div class="form-section">
                         <div class="form-group">
@@ -82,10 +82,10 @@
                         <div class="form-group">
                             <label for="land-water-ratio">Land/Water Ratio</label>
                             <input type="range" id="land-water-ratio" name="landWaterRatio"
-                                   min="0" max="100" value="50" step="1">
+                                   min="0" max="100" value="35" step="1">
                             <div class="slider-labels">
                                 <span>More Water</span>
-                                <span id="land-water-value">50%</span>
+                                <span id="land-water-value">35%</span>
                                 <span>More Land</span>
                             </div>
                         </div>
@@ -93,11 +93,22 @@
                         <div class="form-group">
                             <label for="roughness">Roughness</label>
                             <input type="range" id="roughness" name="roughness"
-                                   min="0" max="100" value="50" step="1">
+                                   min="0" max="100" value="25" step="1">
                             <div class="slider-labels">
                                 <span>Flat</span>
-                                <span id="roughness-value">50%</span>
+                                <span id="roughness-value">25%</span>
                                 <span>Mountainous</span>
+                            </div>
+                        </div>
+
+                        <div class="form-group">
+                            <label for="precipitation">Precipitation</label>
+                            <input type="range" id="precipitation" name="precipitation"
+                                   min="0" max="100" value="75" step="1">
+                            <div class="slider-labels">
+                                <span>Desertic</span>
+                                <span id="precipitation-value">75%</span>
+                                <span>Lushness</span>
                             </div>
                         </div>
                     </div>

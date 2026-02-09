@@ -81,6 +81,21 @@ impl PositionRandom {
     }
 }
 
+/// Spatially coherent noise: sine waves in random 3D directions (no axis bias).
+fn spherical_noise(x: f64, y: f64, z: f64, seed: f64, octaves: &[(f64, f64)]) -> f64 {
+    let mut result = 0.0;
+    for (i, &(freq, amp)) in octaves.iter().enumerate() {
+        let idx = i as f64;
+        let theta = position_hash(seed, idx, 0.0, 0.0) * std::f64::consts::TAU;
+        let cos_phi = position_hash(seed, idx, 1.0, 0.0) * 2.0 - 1.0;
+        let sin_phi = (1.0 - cos_phi * cos_phi).sqrt();
+        let (dx, dy, dz) = (sin_phi * theta.cos(), sin_phi * theta.sin(), cos_phi);
+        let phase = position_hash(seed, idx, 2.0, 0.0) * std::f64::consts::TAU;
+        result += ((dx * x + dy * y + dz * z) * freq + phase).sin() * amp;
+    }
+    result
+}
+
 fn calculate_terrain(x: f64, y: f64, z: f64, seed: u32, land_water_ratio: f64, roughness: f64) -> String {
     let seed_f = seed as f64;
     let p1 = position_hash(seed_f, seed_f * 0.7, seed_f * 0.3, 0.0) * std::f64::consts::TAU;
@@ -106,36 +121,20 @@ fn calculate_terrain(x: f64, y: f64, z: f64, seed: u32, land_water_ratio: f64, r
         return "ocean".into();
     }
 
-    let land_height = continent_mask - land_threshold;
+    // Mountain/hill: per-tile uniform hash (0–1), independent of continent shape.
+    // Uniform distribution guarantees roughness=N → ~N% of land tiles become mountains.
+    let elevation = position_hash(x, y, z, seed_f + 500.0);
 
-    // Apply roughness multiplier to terrain detail
-    // roughness 0-100 maps to 0.5-2.0 multiplier
-    let roughness_multiplier = 0.5 + (roughness / 100.0) * 1.5;
-    let detail1 = (x * 0.35 + z * 0.30 + p1).sin() * (y * 0.32 + p2).cos() * 0.12 * roughness_multiplier;
-    let detail2 = position_hash(x, y, z, seed_f) * 0.08 - 0.04;
-    let elevation = land_height + detail1 + detail2;
+    // roughness=25 → threshold=0.75 → top 25% of land tiles become mountains
+    let mountain_frac = roughness / 100.0;
+    let mountain_threshold = 1.0 - mountain_frac;
+    // Hills occupy the next band (1.5× roughness total elevated terrain)
+    let hill_frac = (mountain_frac * 1.5).min(1.0);
+    let hill_threshold = 1.0 - hill_frac;
 
-    // Adjust elevation thresholds based on roughness
-    // roughness = 0-5: all flats (thresholds impossibly high)
-    // roughness = 95-100: all mountains (mountain threshold impossibly low)
-    // roughness = 50: balanced mix
-    let mountain_threshold = if roughness > 95.0 {
-        -10.0 // All land becomes mountains
-    } else if roughness < 5.0 {
-        10.0 // No mountains (all flats)
-    } else {
-        0.7 - ((roughness - 5.0) / 90.0) * 0.9
-    };
-
-    let hill_threshold = if roughness < 5.0 {
-        10.0 // No hills (all flats)
-    } else if roughness > 95.0 {
-        -10.0 // Even hills become mountains
-    } else {
-        0.4 - ((roughness - 5.0) / 90.0) * 0.3
-    };
-
-    if elevation > mountain_threshold {
+    if roughness < 5.0 {
+        "flats".into()
+    } else if elevation > mountain_threshold {
         "mountains".into()
     } else if elevation > hill_threshold {
         "hills".into()
@@ -157,7 +156,7 @@ fn calculate_biome(x: f64, y: f64, z: f64, terrain: &str, seed: u32) -> Option<S
     let mut rng = PositionRandom::new(x, y, z, seed as f64);
 
     if latitude > 60.0 {
-        Some(if rng.next() < 0.8 { "tundra" } else { "alpine" }.into())
+        Some("tundra".into())
     } else if latitude > 45.0 {
         Some(if rng.next() < 0.7 { "plains" } else { "tundra" }.into())
     } else if latitude > 30.0 {
