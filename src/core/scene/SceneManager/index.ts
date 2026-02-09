@@ -120,7 +120,14 @@ class SceneManager {
         }
     }
 
-    async createHexasphere(radius: number | null = null, subdivisions: number | null = null, tileWidthRatio: number | null = null, forceRegenerate: boolean = false): Promise<void> {
+    async createHexasphere(
+        radius: number | null = null,
+        subdivisions: number | null = null,
+        tileWidthRatio: number | null = null,
+        forceRegenerate: boolean = false,
+        landWaterRatio?: number,
+        roughness?: number
+    ): Promise<void> {
         this.clearTiles();
 
         // If no parameters provided, fetch defaults from Tauri config
@@ -138,10 +145,17 @@ class SceneManager {
             }
         }
 
-        await this.fetchAndBuildTiles(radius!, subdivisions!, tileWidthRatio!, forceRegenerate);
+        await this.fetchAndBuildTiles(radius!, subdivisions!, tileWidthRatio!, forceRegenerate, landWaterRatio, roughness);
     }
 
-    async fetchAndBuildTiles(radius: number, subdivisions: number, tileWidthRatio: number, _forceRegenerate: boolean = false): Promise<void> {
+    async fetchAndBuildTiles(
+        radius: number,
+        subdivisions: number,
+        tileWidthRatio: number,
+        _forceRegenerate: boolean = false,
+        landWaterRatio?: number,
+        roughness?: number
+    ): Promise<void> {
         try {
             // Step 1: Generate hexasphere geometry locally
             const genStart = performance.now();
@@ -159,7 +173,11 @@ class SceneManager {
                     y: tile.centerPoint.y,
                     z: tile.centerPoint.z,
                 }));
-                const tileProps = await getApiClient().calculateTileProperties(tileCenters);
+                const tileProps = await getApiClient().calculateTileProperties(
+                    tileCenters,
+                    landWaterRatio,
+                    roughness
+                );
                 // Convert to CompactTileState format expected by buildTilesFromLocalHexasphere
                 for (const prop of tileProps) {
                     tileState[String(prop.id)] = {
@@ -169,7 +187,7 @@ class SceneManager {
                     };
                 }
                 const fetchTime = (performance.now() - fetchStart).toFixed(2);
-                console.log(`  Tile properties calculated in ${fetchTime}ms (${tileProps.length} tiles)`);
+                console.log(`  Tile properties calculated in ${fetchTime}ms (${tileProps.length} tiles, land/water: ${landWaterRatio ?? 50}%, roughness: ${roughness ?? 50}%)`);
             } catch (error: unknown) {
                 console.warn('Failed to calculate tile properties, using local terrain generation:', error);
             }

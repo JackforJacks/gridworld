@@ -2,7 +2,7 @@
 import * as THREE from 'three';
 import { HexTile, HexasphereData, ViewMode } from './types';
 import { TileVertexRange } from './geometryBuilder';
-import { terrainColors, biomeColors } from '../../../utils/index';
+import { terrainColors, biomeColors } from '../../../utils/colors';
 
 /**
  * Manages view mode state and tile coloring

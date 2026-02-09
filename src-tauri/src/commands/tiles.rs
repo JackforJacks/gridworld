@@ -13,16 +13,25 @@ pub struct TileCenter {
 
 /// Calculate tile properties for a batch of tiles from their center coordinates.
 /// This is a port of the server-side calculateTileProperties() function.
+///
+/// Parameters:
+/// - land_water_ratio: 0-100, higher = more land (default: 50)
+/// - roughness: 0-100, higher = more mountainous (default: 50)
 #[tauri::command]
 pub fn calculate_tile_properties(
     state: State<AppState>,
     tiles: Vec<TileCenter>,
+    land_water_ratio: Option<f64>,
+    roughness: Option<f64>,
 ) -> Vec<TileProperties> {
     let seed = *state.seed.lock().unwrap();
+    let land_water_ratio = land_water_ratio.unwrap_or(50.0).clamp(0.0, 100.0);
+    let roughness = roughness.unwrap_or(50.0).clamp(0.0, 100.0);
+
     tiles
         .iter()
         .map(|tile| {
-            let terrain = calculate_terrain(tile.x, tile.y, tile.z, seed);
+            let terrain = calculate_terrain(tile.x, tile.y, tile.z, seed, land_water_ratio, roughness);
             let biome = calculate_biome(tile.x, tile.y, tile.z, &terrain, seed);
             let fertility = calculate_fertility(tile.x, tile.y, tile.z, biome.as_deref(), &terrain, seed);
             let is_habitable = check_habitable(&terrain, biome.as_deref());
@@ -72,7 +81,7 @@ impl PositionRandom {
     }
 }
 
-fn calculate_terrain(x: f64, y: f64, z: f64, seed: u32) -> String {
+fn calculate_terrain(x: f64, y: f64, z: f64, seed: u32, land_water_ratio: f64, roughness: f64) -> String {
     let seed_f = seed as f64;
     let p1 = position_hash(seed_f, seed_f * 0.7, seed_f * 0.3, 0.0) * std::f64::consts::TAU;
     let p2 = position_hash(seed_f * 0.5, seed_f, seed_f * 0.9, 0.0) * std::f64::consts::TAU;
@@ -85,20 +94,50 @@ fn calculate_terrain(x: f64, y: f64, z: f64, seed: u32) -> String {
     let c4 = (x * 0.22 + z * 0.18 + p4).sin() * 0.25;
 
     let continent_mask = c1 + c2 + c3 + c4;
-    let land_threshold = -0.05;
+
+    // Map land_water_ratio (0-100) to threshold (2.5 to -2.5)
+    // continent_mask ranges roughly from -2.25 to +2.25
+    // land_water_ratio = 0 (100% water) → threshold = 2.5 (all tiles become ocean)
+    // land_water_ratio = 100 (100% land) → threshold = -2.5 (no tiles become ocean)
+    // land_water_ratio = 50 (balanced) → threshold = 0.0 (balanced mix)
+    let land_threshold = 2.5 - (land_water_ratio / 100.0) * 5.0;
 
     if continent_mask < land_threshold {
         return "ocean".into();
     }
 
     let land_height = continent_mask - land_threshold;
-    let detail1 = (x * 0.35 + z * 0.30 + p1).sin() * (y * 0.32 + p2).cos() * 0.12;
+
+    // Apply roughness multiplier to terrain detail
+    // roughness 0-100 maps to 0.5-2.0 multiplier
+    let roughness_multiplier = 0.5 + (roughness / 100.0) * 1.5;
+    let detail1 = (x * 0.35 + z * 0.30 + p1).sin() * (y * 0.32 + p2).cos() * 0.12 * roughness_multiplier;
     let detail2 = position_hash(x, y, z, seed_f) * 0.08 - 0.04;
     let elevation = land_height + detail1 + detail2;
 
-    if elevation > 0.7 {
+    // Adjust elevation thresholds based on roughness
+    // roughness = 0-5: all flats (thresholds impossibly high)
+    // roughness = 95-100: all mountains (mountain threshold impossibly low)
+    // roughness = 50: balanced mix
+    let mountain_threshold = if roughness > 95.0 {
+        -10.0 // All land becomes mountains
+    } else if roughness < 5.0 {
+        10.0 // No mountains (all flats)
+    } else {
+        0.7 - ((roughness - 5.0) / 90.0) * 0.9
+    };
+
+    let hill_threshold = if roughness < 5.0 {
+        10.0 // No hills (all flats)
+    } else if roughness > 95.0 {
+        -10.0 // Even hills become mountains
+    } else {
+        0.4 - ((roughness - 5.0) / 90.0) * 0.3
+    };
+
+    if elevation > mountain_threshold {
         "mountains".into()
-    } else if elevation > 0.4 {
+    } else if elevation > hill_threshold {
         "hills".into()
     } else {
         "flats".into()
