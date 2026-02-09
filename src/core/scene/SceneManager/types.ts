@@ -19,6 +19,7 @@ export interface HexTile {
     id: number | string;
     terrainType?: string;
     biome?: string;
+    fertility?: number;
     population?: number;
     boundary: BoundaryPoint[];
     centerPoint: BoundaryPoint & { getLatLon?: () => { lat: number; lon: number } };
@@ -68,6 +69,9 @@ export interface TileProperties {
     lat: number;
     lon: number;
 }
+
+/** View mode types for tile visualization */
+export type ViewMode = 'terrain' | 'biome' | 'fertility' | 'population';
 
 // Extend Window interface for global properties
 declare global {

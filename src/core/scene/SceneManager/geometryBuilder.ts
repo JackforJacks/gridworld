@@ -6,12 +6,19 @@ import { BoundaryPoint, HexTile, TileColorInfo, TileDataResponse, HexasphereData
 import { getBiomeColorCached } from './colorUtils';
 import { isHabitable } from '../../../utils/tileUtils';
 
+/** Mapping from tile ID to vertex index range */
+export interface TileVertexRange {
+    startIndex: number;  // First vertex index for this tile
+    count: number;       // Number of vertices (boundary.length)
+}
+
 /** Result from building tiles */
 export interface BuildTilesResult {
     hexasphere: HexasphereData;
     habitableTileIds: (number | string)[];
     tileColorIndices: Map<string, TileColorInfo>;
     geometry: THREE.BufferGeometry;
+    tileVertexRanges: Map<string, TileVertexRange>;
 }
 
 /**
@@ -79,7 +86,8 @@ export function validateTileBoundary(tile: HexTile): THREE.Vector3[] | null {
 function buildIndexedGeometry(
     tiles: HexTile[],
     tileColorIndices: Map<string, TileColorInfo>,
-    habitableTileIds: (number | string)[]
+    habitableTileIds: (number | string)[],
+    tileVertexRanges: Map<string, TileVertexRange>
 ): THREE.BufferGeometry {
     // Phase 1: Count totals for pre-allocation
     let totalVertices = 0;
@@ -146,6 +154,12 @@ function buildIndexedGeometry(
             indices[idxIdx++] = baseVertex + i + 1;
         }
 
+        // Track tile-to-vertex mapping for view mode color updates
+        tileVertexRanges.set(tileIdStr, {
+            startIndex: baseVertex,
+            count: bLen
+        });
+
         baseVertex += bLen;
     }
 
@@ -183,16 +197,18 @@ export function buildTilesFromData(tileData: TileDataResponse): BuildTilesResult
     const hexasphere: HexasphereData = { tiles: tileData.tiles };
     const habitableTileIds: (number | string)[] = [];
     const tileColorIndices = new Map<string, TileColorInfo>();
+    const tileVertexRanges = new Map<string, TileVertexRange>();
 
-    const geometry = buildIndexedGeometry(tileData.tiles, tileColorIndices, habitableTileIds);
+    const geometry = buildIndexedGeometry(tileData.tiles, tileColorIndices, habitableTileIds, tileVertexRanges);
 
-    return { hexasphere, habitableTileIds, tileColorIndices, geometry };
+    return { hexasphere, habitableTileIds, tileColorIndices, geometry, tileVertexRanges };
 }
 
 /** Compact tile state from server */
 export interface CompactTileState {
-    t: string;      // terrainType
+    t: string;        // terrainType
     b: string | null; // biome
+    f: number;        // fertility
 }
 
 /** Interface for locally-generated Hexasphere tiles */
@@ -233,6 +249,7 @@ export function buildTilesFromLocalHexasphere(
 
         const terrainType = state?.t ?? localTile.terrainType ?? 'unknown';
         const biome = state?.b ?? localTile.biome ?? undefined;
+        const fertility = state?.f ?? 0;
 
         return {
             id: tileId,
@@ -240,6 +257,7 @@ export function buildTilesFromLocalHexasphere(
             centerPoint: localTile.centerPoint,
             terrainType,
             biome,
+            fertility,
             population: localTile.population ?? 0
         };
     });
@@ -247,10 +265,11 @@ export function buildTilesFromLocalHexasphere(
     const hexasphereData: HexasphereData = { tiles };
     const habitableTileIds: (number | string)[] = [];
     const tileColorIndices = new Map<string, TileColorInfo>();
+    const tileVertexRanges = new Map<string, TileVertexRange>();
 
-    const geometry = buildIndexedGeometry(tiles, tileColorIndices, habitableTileIds);
+    const geometry = buildIndexedGeometry(tiles, tileColorIndices, habitableTileIds, tileVertexRanges);
 
-    return { hexasphere: hexasphereData, habitableTileIds, tileColorIndices, geometry };
+    return { hexasphere: hexasphereData, habitableTileIds, tileColorIndices, geometry, tileVertexRanges };
 }
 
 /**

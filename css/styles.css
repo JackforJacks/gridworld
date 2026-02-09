@@ -1684,21 +1684,30 @@ kbd {
 
 
 /* ==========================================================================
-   9. View Mode Selector
+   9. View Mode Selector - Custom Dropdown (Opens Upward Only)
    ========================================================================== */
 .view-mode-selector {
     position: fixed;
     bottom: 24px;
     left: 16px;
-    z-index: 100;
+    z-index: 1500;
+    pointer-events: auto;
 }
 
 .view-mode-selector.hidden {
     display: none;
 }
 
-.view-mode-select {
-    padding: 12px 48px 12px 20px;
+.custom-select-wrapper {
+    position: relative;
+    min-width: 180px;
+}
+
+.custom-select-trigger {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 12px 20px;
     border: 2px solid rgba(255, 255, 255, 0.2);
     border-radius: 8px;
     background: rgba(0, 0, 0, 0.6);
@@ -1706,22 +1715,84 @@ kbd {
     font-size: 20px;
     font-family: inherit;
     cursor: pointer;
-    appearance: none;
-    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='16' height='16' viewBox='0 0 16 16'%3E%3Ccircle cx='6' cy='6' r='5' fill='none' stroke='rgba(255,255,255,0.6)' stroke-width='1.5'/%3E%3Cpath d='M10 10l5 5' stroke='rgba(255,255,255,0.6)' stroke-width='1.5' stroke-linecap='round'/%3E%3C/svg%3E");
-    background-repeat: no-repeat;
-    background-position: right 16px center;
-    min-width: 160px;
+    width: 100%;
+    transition: all 0.2s ease;
+    position: relative;
+    z-index: 10;
+    pointer-events: auto;
 }
 
-.view-mode-select:hover {
+.custom-select-trigger:hover {
     border-color: rgba(255, 255, 255, 0.4);
+    background: rgba(0, 0, 0, 0.75);
 }
 
-.view-mode-select option {
-    background: #1a1a2e;
+.custom-select-trigger:focus {
+    outline: none;
+    border-color: rgba(255, 255, 255, 0.6);
+}
+
+#view-mode-current {
+    flex: 1;
+    text-align: left;
+}
+
+.custom-select-arrow {
+    margin-left: 12px;
+    font-size: 16px;
+    transition: transform 0.2s ease;
+}
+
+.custom-select-wrapper.open .custom-select-arrow {
+    transform: rotate(180deg);
+}
+
+/* Dropdown opens UPWARD ONLY */
+.custom-select-dropdown {
+    position: absolute;
+    bottom: 100%;
+    left: 0;
+    right: 0;
+    margin-bottom: 8px;
+    background: rgba(20, 20, 40, 0.95);
+    border: 2px solid rgba(255, 255, 255, 0.3);
+    border-radius: 8px;
+    overflow: hidden;
+    max-height: 0;
+    opacity: 0;
+    transform: translateY(10px);
+    transition: all 0.3s ease;
+    pointer-events: none;
+    backdrop-filter: blur(10px);
+}
+
+.custom-select-wrapper.open .custom-select-dropdown {
+    max-height: 300px;
+    opacity: 1;
+    transform: translateY(0);
+    pointer-events: auto;
+}
+
+.custom-select-option {
+    padding: 12px 20px;
     color: #fff;
-    font-size: 20px;
-    padding: 10px;
+    font-size: 18px;
+    cursor: pointer;
+    transition: background 0.2s ease;
+    border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+}
+
+.custom-select-option:last-child {
+    border-bottom: none;
+}
+
+.custom-select-option:hover {
+    background: rgba(76, 175, 80, 0.3);
+}
+
+.custom-select-option.selected {
+    background: rgba(76, 175, 80, 0.5);
+    font-weight: bold;
 }
 
 /* ==========================================================================

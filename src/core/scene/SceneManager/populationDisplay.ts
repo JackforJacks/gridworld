@@ -2,7 +2,6 @@
 // Handles population visualization and statistics
 import populationManager from '../../../managers/population/PopulationManager';
 import { HexTile, HexasphereData, TileColorInfo, PopulationStats, BiomeStats } from './types';
-import { TileOverlayManager } from './tileOverlays';
 import { isHabitable } from '../../../utils/tileUtils';
 
 /** Population threshold for "high population" designation */
@@ -32,19 +31,16 @@ export function updateTilePopulations(hexasphere: HexasphereData | null): void {
 }
 
 /**
- * Check population thresholds and update overlay visibility.
- * Collects populated tile IDs and calls updateVisibility (zero geometry allocation).
+ * Check population thresholds and update color info.
  */
 export function checkPopulationThresholds(
     hexasphere: HexasphereData | null,
-    tileColorIndices: Map<string, TileColorInfo>,
-    overlayManager: TileOverlayManager
+    tileColorIndices: Map<string, TileColorInfo>
 ): void {
     if (!hexasphere?.tiles) return;
 
     const tiles = hexasphere.tiles;
     const tileCount = tiles.length;
-    const populatedTileIds = new Set<string>();
 
     for (let i = 0; i < tileCount; i++) {
         const tile = tiles[i];
@@ -57,13 +53,7 @@ export function checkPopulationThresholds(
         if (!colorInfo) continue;
 
         colorInfo.isHighlighted = population > 0;
-        if (population > 0) {
-            populatedTileIds.add(tileIdStr);
-        }
     }
-
-    // Update overlay visibility (writes alpha buffer, no geometry allocation)
-    overlayManager.updateVisibility(populatedTileIds);
 }
 
 /**
@@ -71,13 +61,9 @@ export function checkPopulationThresholds(
  */
 export function resetTileColors(
     hexasphere: HexasphereData | null,
-    tileColorIndices: Map<string, TileColorInfo>,
-    overlayManager: TileOverlayManager
+    tileColorIndices: Map<string, TileColorInfo>
 ): void {
     if (!hexasphere?.tiles) return;
-
-    // Hide all overlays
-    overlayManager.hideAll();
 
     for (const tile of hexasphere.tiles) {
         const colorInfo = tileColorIndices.get(String(tile.id));
@@ -150,13 +136,12 @@ export function getPopulationStats(
 export async function initializeTilePopulations(
     _habitableTileIds: (number | string)[],
     hexasphere: HexasphereData | null,
-    tileColorIndices: Map<string, TileColorInfo>,
-    overlayManager: TileOverlayManager
+    tileColorIndices: Map<string, TileColorInfo>
 ): Promise<void> {
     try {
         await populationManager.refreshTilePopulations();
         updateTilePopulations(hexasphere);
-        checkPopulationThresholds(hexasphere, tileColorIndices, overlayManager);
+        checkPopulationThresholds(hexasphere, tileColorIndices);
     } catch (error: unknown) {
         console.error('❌ Failed to initialize tile populations:', error);
         throw error;
@@ -169,8 +154,7 @@ export async function initializeTilePopulations(
 export async function reinitializePopulation(
     hexasphere: HexasphereData | null,
     habitableTileIds: (number | string)[],
-    tileColorIndices: Map<string, TileColorInfo>,
-    overlayManager: TileOverlayManager
+    tileColorIndices: Map<string, TileColorInfo>
 ): Promise<(number | string)[]> {
     let ids = habitableTileIds;
     if (!ids || ids.length === 0) {
@@ -189,7 +173,7 @@ export async function reinitializePopulation(
     try {
         await populationManager.refreshTilePopulations();
         updateTilePopulations(hexasphere);
-        checkPopulationThresholds(hexasphere, tileColorIndices, overlayManager);
+        checkPopulationThresholds(hexasphere, tileColorIndices);
     } catch (error: unknown) {
         console.error('❌ Failed to reinitialize population:', error);
     }

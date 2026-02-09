@@ -375,6 +375,9 @@ class GridWorldApp {
             // Initialize input handler (enables mouse/keyboard interaction)
             this.inputHandler = new InputHandler(this.renderer!, this.cameraController!, this.tileSelector);
 
+            // Set up view mode selector event listener
+            this.setupViewModeSelector();
+
             // Initialize calendar system
             await this.initializeCalendar();
             await this.startCalendar();
@@ -464,6 +467,22 @@ class GridWorldApp {
             menu.classList.remove('hidden');
             menu.classList.remove('fade-out');
         }
+    }
+
+    /**
+     * Set up view mode selector event listener
+     */
+    private setupViewModeSelector(): void {
+        document.addEventListener('viewModeChange', (e: Event) => {
+            const customEvent = e as CustomEvent<{ value: string; text: string }>;
+            const mode = customEvent.detail.value as 'terrain' | 'biome' | 'fertility' | 'population';
+
+            console.log(`[ViewMode] Changing to: ${mode}`);
+
+            if (this.sceneManager) {
+                this.sceneManager.setViewMode(mode);
+            }
+        });
     }
 
     setGlobalReferences(): void {

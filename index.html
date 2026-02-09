@@ -54,12 +54,18 @@
     </div>
     <!-- View Mode Selector -->
     <div id="view-mode-selector" class="view-mode-selector hidden">
-        <select id="view-mode-select" class="view-mode-select">
-            <option value="terrain">Terrain</option>
-            <option value="biome">Biome</option>
-            <option value="fertility">Fertility</option>
-            <option value="population">Population</option>
-        </select>
+        <div class="custom-select-wrapper">
+            <button class="custom-select-trigger" id="view-mode-trigger">
+                <span id="view-mode-current">Terrain</span>
+                <span class="custom-select-arrow">🔍</span>
+            </button>
+            <div class="custom-select-dropdown" id="view-mode-dropdown">
+                <div class="custom-select-option" data-value="terrain">Terrain</div>
+                <div class="custom-select-option" data-value="biome">Biome</div>
+                <div class="custom-select-option" data-value="fertility">Fertility</div>
+                <div class="custom-select-option" data-value="population">Population</div>
+            </div>
+        </div>
     </div>
     <div id="container">
     </div>
@@ -101,6 +107,100 @@
     </div>
     <!-- Chart.js for statistics charts -->
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <script>
+        // Custom View Mode Selector (Opens Upward Only)
+        (function() {
+            let currentValue = 'terrain';
+
+            function initializeViewModeSelector() {
+                const wrapper = document.querySelector('.custom-select-wrapper');
+                const trigger = document.getElementById('view-mode-trigger');
+                const dropdown = document.getElementById('view-mode-dropdown');
+                const currentText = document.getElementById('view-mode-current');
+                const options = document.querySelectorAll('.custom-select-option');
+
+                if (!wrapper || !trigger || !dropdown || !currentText) {
+                    console.warn('View mode selector elements not found');
+                    return;
+                }
+
+                console.log('View mode selector initialized');
+
+                // Toggle dropdown
+                trigger.addEventListener('click', function(e) {
+                    e.preventDefault();
+                    e.stopPropagation();
+                    console.log('Trigger clicked, toggling dropdown');
+                    wrapper.classList.toggle('open');
+                });
+
+                // Also handle mousedown for better responsiveness
+                trigger.addEventListener('mousedown', function(e) {
+                    e.stopPropagation();
+                });
+
+                // Select option
+                options.forEach(function(option) {
+                    option.addEventListener('click', function(e) {
+                        e.preventDefault();
+                        e.stopPropagation();
+                        const value = this.getAttribute('data-value');
+                        const text = this.textContent;
+
+                        console.log('Option selected:', value);
+
+                        // Update current selection
+                        currentValue = value;
+                        currentText.textContent = text;
+
+                        // Update selected state
+                        options.forEach(function(opt) {
+                            opt.classList.remove('selected');
+                        });
+                        this.classList.add('selected');
+
+                        // Close dropdown
+                        wrapper.classList.remove('open');
+
+                        // Dispatch custom event for other code to listen to
+                        const event = new CustomEvent('viewModeChange', {
+                            detail: { value: value, text: text }
+                        });
+                        document.dispatchEvent(event);
+                    });
+                });
+
+                // Close dropdown when clicking outside
+                document.addEventListener('click', function(e) {
+                    if (!wrapper.contains(e.target)) {
+                        wrapper.classList.remove('open');
+                    }
+                });
+
+                // Set initial selected state
+                const initialOption = dropdown.querySelector('[data-value="terrain"]');
+                if (initialOption) {
+                    initialOption.classList.add('selected');
+                }
+
+                // Make globally accessible for debugging
+                window.viewModeSelector = {
+                    wrapper: wrapper,
+                    trigger: trigger,
+                    currentValue: function() { return currentValue; },
+                    toggle: function() { wrapper.classList.toggle('open'); }
+                };
+            }
+
+            // Initialize on DOM ready
+            if (document.readyState === 'loading') {
+                document.addEventListener('DOMContentLoaded', initializeViewModeSelector);
+            } else {
+                // DOM already loaded
+                initializeViewModeSelector();
+            }
+        })();
+    </script>
     <script>
         // Info panel tab/page switching logic
         (function () {

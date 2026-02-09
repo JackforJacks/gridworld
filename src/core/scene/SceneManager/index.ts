@@ -5,21 +5,20 @@ import { getAppContext } from '../../AppContext';
 import populationManager from '../../../managers/population/PopulationManager';
 import { getApiClient } from '../../../services/api/ApiClient';
 import Hexasphere from '../../hexasphere/HexaSphere';
-import { isHabitable } from '../../../utils/tileUtils';
 
 // Import types
-import type { HexTile, HexasphereData, TileColorInfo, PopulationEventType } from './types';
+import type { HexTile, HexasphereData, TileColorInfo, PopulationEventType, ViewMode } from './types';
 
 // Import modules
 import { initializeColorCaches, getBiomeColor, getTerrainColor } from './colorUtils';
 import { buildTilesFromLocalHexasphere, createHexasphereMesh, calculateTileProperties, normalizePoint } from './geometryBuilder';
 import type { LocalHexasphere, CompactTileState } from './geometryBuilder';
-import { TileOverlayManager } from './tileOverlays';
 import { updateTilePopulations, checkPopulationThresholds, getPopulationStats, resetTileColors, initializeTilePopulations, reinitializePopulation } from './populationDisplay';
 import { addLighting, updateCameraLight, disposeLighting, createLightingState, LightingState } from './lighting';
+import { ViewModeManager } from './viewModeManager';
 
 // Re-export types for external consumers
-export type { BoundaryPoint, HexTile, TileColorInfo, HexasphereData, TileDataResponse, PopulationStats, TileProperties } from './types';
+export type { BoundaryPoint, HexTile, TileColorInfo, HexasphereData, TileDataResponse, PopulationStats, TileProperties, ViewMode } from './types';
 
 class SceneManager {
     // Three.js scene objects
@@ -37,7 +36,7 @@ class SceneManager {
 
     // State tracking
     private tileColorIndices: Map<string, TileColorInfo>;
-    private overlayManager: TileOverlayManager | null;
+    private viewModeManager: ViewModeManager | null;
     private populationUnsubscribe: (() => void) | null;
 
     // Population update batching (RAF-throttled)
@@ -54,7 +53,7 @@ class SceneManager {
         this.tileColorIndices = new Map();
         this.hexasphereMesh = null;
         this.habitableTileIds = [];
-        this.overlayManager = null;
+        this.viewModeManager = null;
         this.populationUpdatePending = false;
         this.populationUpdateRafId = null;
 
@@ -67,7 +66,7 @@ class SceneManager {
         this.renderer.setSize(width, height);
         this.renderer.setClearColor(0x000000, 0);
         this.scene = new THREE.Scene();
-        this.overlayManager = new TileOverlayManager(this.scene);
+        this.viewModeManager = new ViewModeManager();
 
         this.populationUnsubscribe = populationManager.subscribe((eventType: PopulationEventType, _data: unknown) => {
             if (eventType === 'populationUpdate') {
@@ -98,8 +97,11 @@ class SceneManager {
 
             // Perform the actual update (iterates all tiles twice)
             updateTilePopulations(this.hexasphere);
-            if (this.overlayManager) {
-                checkPopulationThresholds(this.hexasphere, this.tileColorIndices, this.overlayManager);
+            checkPopulationThresholds(this.hexasphere, this.tileColorIndices);
+
+            // Refresh view mode colors if in population mode
+            if (this.viewModeManager?.getCurrentMode() === 'population') {
+                this.viewModeManager.updateAllTileColors();
             }
 
             // Trigger render via AppContext (render-on-demand)
@@ -163,6 +165,7 @@ class SceneManager {
                     tileState[String(prop.id)] = {
                         t: prop.terrain_type,
                         b: prop.biome,
+                        f: prop.fertility,
                     };
                 }
                 const fetchTime = (performance.now() - fetchStart).toFixed(2);
@@ -199,26 +202,23 @@ class SceneManager {
         this.scene!.add(mesh);
         getAppContext().currentTiles = this.currentTiles;
 
-        if (this.overlayManager && this.hexasphere?.tiles) {
-            // Create thin black borders between tiles
-            this.overlayManager.createBorders(this.hexasphere.tiles);
-
-            // Build overlay geometry once for all habitable tiles (zero runtime allocation)
-            const habitableTiles = this.hexasphere.tiles.filter(t => isHabitable(t.terrainType || 'unknown', t.biome));
-            this.overlayManager.initOverlays(habitableTiles);
+        // Initialize view mode manager
+        if (this.viewModeManager) {
+            this.viewModeManager.initialize(mesh, result.hexasphere, result.tileVertexRanges);
         }
 
         // Apply population data
         updateTilePopulations(this.hexasphere);
-        if (this.overlayManager) {
-            checkPopulationThresholds(this.hexasphere, this.tileColorIndices, this.overlayManager);
+        checkPopulationThresholds(this.hexasphere, this.tileColorIndices);
+
+        // Refresh view mode colors if in population mode
+        if (this.viewModeManager?.getCurrentMode() === 'population') {
+            this.viewModeManager.updateAllTileColors();
         }
     }
 
     async initializeTilePopulations(habitableTileIds: (number | string)[]): Promise<void> {
-        if (this.overlayManager) {
-            await initializeTilePopulations(habitableTileIds, this.hexasphere, this.tileColorIndices, this.overlayManager);
-        }
+        await initializeTilePopulations(habitableTileIds, this.hexasphere, this.tileColorIndices);
     }
 
     updateTilePopulations(): void {
@@ -226,12 +226,13 @@ class SceneManager {
     }
 
     checkPopulationThresholds(): void {
-        if (!this.hexasphereMesh || !this.overlayManager) return;
-        checkPopulationThresholds(this.hexasphere, this.tileColorIndices, this.overlayManager);
-    }
+        if (!this.hexasphereMesh) return;
+        checkPopulationThresholds(this.hexasphere, this.tileColorIndices);
 
-    clearTileOverlays(): void {
-        this.overlayManager?.clear();
+        // Refresh view mode colors if in population mode
+        if (this.viewModeManager?.getCurrentMode() === 'population') {
+            this.viewModeManager.updateAllTileColors();
+        }
     }
 
     /** 
@@ -239,8 +240,8 @@ class SceneManager {
      * Returns the tile's center point if found, null otherwise
      */
     searchTile(tileId: number | string): { x: number; y: number; z: number } | null {
-        if (!this.hexasphere || !this.overlayManager) {
-            console.warn('Cannot search tile: hexasphere or overlayManager not ready');
+        if (!this.hexasphere) {
+            console.warn('Cannot search tile: hexasphere not ready');
             return null;
         }
 
@@ -259,9 +260,6 @@ class SceneManager {
             return null;
         }
 
-        // Flash the tile
-        this.overlayManager.flashTile(tile);
-
         // Return the center point for camera targeting
         const cp = normalizePoint(tile.centerPoint);
         return {
@@ -272,17 +270,15 @@ class SceneManager {
     }
 
     resetTileColors(): void {
-        if (!this.hexasphere || !this.hexasphereMesh || !this.overlayManager) return;
-        resetTileColors(this.hexasphere, this.tileColorIndices, this.overlayManager);
+        if (!this.hexasphere || !this.hexasphereMesh) return;
+        resetTileColors(this.hexasphere, this.tileColorIndices);
     }
 
     async reinitializePopulation(): Promise<void> {
-        if (!this.overlayManager) return;
         this.habitableTileIds = await reinitializePopulation(
             this.hexasphere,
             this.habitableTileIds,
-            this.tileColorIndices,
-            this.overlayManager
+            this.tileColorIndices
         );
     }
 
@@ -304,7 +300,6 @@ class SceneManager {
             await this.applyCalendarState();
 
             // Rebuild hexasphere with fresh tile state
-            this.clearTileOverlays();
             await this.createHexasphere();
         } catch (error: unknown) {
             console.error('Failed to regenerate tiles:', error);
@@ -345,6 +340,22 @@ class SceneManager {
         return getBiomeColor(tile);
     }
 
+    /**
+     * Set the view mode for tile coloring
+     */
+    setViewMode(mode: ViewMode): void {
+        if (!this.viewModeManager) return;
+        this.viewModeManager.setViewMode(mode);
+        getAppContext().requestRender();
+    }
+
+    /**
+     * Get the current view mode
+     */
+    getCurrentViewMode(): ViewMode | null {
+        return this.viewModeManager?.getCurrentMode() ?? null;
+    }
+
     clearTiles(): void {
         if (this.currentTiles?.length > 0) {
             for (const tileMesh of this.currentTiles) {
@@ -374,11 +385,6 @@ class SceneManager {
                 }
             }
             this.hexasphereMesh = null;
-        }
-
-        // Clear tile borders
-        if (this.overlayManager) {
-            this.overlayManager.clearBorders();
         }
 
         this.tileColorIndices.clear();
@@ -437,7 +443,7 @@ class SceneManager {
         if (this.scene) {
             disposeLighting(this.scene, this.lightingState);
         }
-        this.overlayManager?.clear();
+        this.viewModeManager?.dispose();
         this.clearTiles();
 
         // Force WebGL context loss to free GPU memory
