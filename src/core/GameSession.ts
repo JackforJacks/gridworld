@@ -13,8 +13,10 @@ import CalendarManager from '../managers/calendar/CalendarManager';
 import CalendarDisplay from '../components/dashboard/CalendarDisplay';
 import HeapMeter from '../components/dashboard/HeapMeter';
 import populationManager from '../managers/population/PopulationManager';
+import { getApiClient } from '../services/api/ApiClient';
 
 import type { GameConfig, AppSettings } from '../ui/MainMenu';
+import type { WorldConfig } from '../services/api/ApiClient';
 
 export class GameSession {
     private inputHandler: InputHandler | null = null;
@@ -66,6 +68,27 @@ export class GameSession {
                     config.landWaterRatio, config.roughness, config.precipitation
                 );
                 this.requestRender();
+
+                // Seed population on habitable tiles with density config
+                const habitableIds = this.sceneManager.getHabitableTileIds();
+                await getApiClient().restartWorld(
+                    habitableIds,
+                    undefined,
+                    config.populationTilePercent,
+                    config.populationMin,
+                    config.populationMax,
+                );
+
+                // Store configs for save/load and restart
+                const ctx = getAppContext();
+                ctx.worldConfig = {
+                    name: config.name,
+                    subdivisions: config.subdivisions,
+                    land_water_ratio: config.landWaterRatio,
+                    roughness: config.roughness,
+                    precipitation: config.precipitation,
+                };
+                ctx.gameConfig = config;
             }
 
             // Connect population manager
@@ -152,6 +175,9 @@ export class GameSession {
         const ctx = getAppContext();
         ctx.calendarManager = null;
         ctx.calendarDisplay = null;
+
+        // Reset view mode to biome
+        this.sceneManager.setViewMode('biome');
 
         // Hide game UI
         const dashboard = document.getElementById('dashboard');

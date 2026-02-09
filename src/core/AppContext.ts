@@ -6,6 +6,8 @@
  */
 
 import * as THREE from 'three';
+import type { WorldConfig } from '../services/api/ApiClient';
+import type { GameConfig } from '../ui/MainMenu';
 
 // Forward declarations to avoid circular dependencies
 // These interfaces define the subset of methods actually accessed through AppContext
@@ -88,6 +90,11 @@ interface IAppContext {
     mouseState: MouseState;
     rotationState: RotationState;
 
+    // World config for save/load
+    worldConfig: WorldConfig | null;
+    // Full game config (terrain + population) for restart
+    gameConfig: GameConfig | null;
+
     // App state flags
     sceneInitialized: boolean;
     debug: boolean;
@@ -140,6 +147,11 @@ class AppContext implements IAppContext {
         target: { x: 0, y: 0 },
         autoRotate: true
     };
+
+    // World config for save/load
+    public worldConfig: WorldConfig | null = null;
+    // Full game config (terrain + population) for restart
+    public gameConfig: GameConfig | null = null;
 
     // App state flags
     public sceneInitialized: boolean = false;
@@ -194,6 +206,8 @@ class AppContext implements IAppContext {
             target: { x: 0, y: 0 },
             autoRotate: true
         };
+        this.worldConfig = null;
+        this.gameConfig = null;
         this.sceneInitialized = false;
         this.tileSelectorJustClosed = undefined;
         this.tileSelectorDebug = false;

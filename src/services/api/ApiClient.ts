@@ -124,6 +124,15 @@ export interface TilePopulationData {
     count: number;
 }
 
+/** World configuration persisted in save files */
+export interface WorldConfig {
+    name: string;
+    subdivisions: number;
+    land_water_ratio: number;
+    roughness: number;
+    precipitation: number;
+}
+
 /** Save result from Rust */
 export interface SaveResult {
     population: number;
@@ -136,6 +145,7 @@ export interface LoadResult {
     partners: number;
     calendar_year: number;
     seed: number;
+    world_config: WorldConfig;
 }
 
 /** Memory usage from Rust process */
@@ -283,16 +293,32 @@ class ApiClient {
         return invoke<TickEvent>('tick', { count });
     }
 
-    async saveWorld(filePath: string): Promise<SaveResult> {
-        return invoke<SaveResult>('save_world', { filePath });
+    async saveWorld(filePath: string, worldConfig?: WorldConfig): Promise<SaveResult> {
+        return invoke<SaveResult>('save_world', { filePath, worldConfig });
     }
 
     async loadWorld(filePath: string): Promise<LoadResult> {
         return invoke<LoadResult>('load_world', { filePath });
     }
 
-    async restartWorld(habitableTileIds: number[], newSeed?: number): Promise<RestartResult> {
-        return invoke<RestartResult>('restart_world', { habitableTileIds, newSeed });
+    async checkSaveExists(filePath: string): Promise<boolean> {
+        return invoke<boolean>('check_save_exists', { filePath });
+    }
+
+    async restartWorld(
+        habitableTileIds: number[],
+        newSeed?: number,
+        tilePercent?: number,
+        popMin?: number,
+        popMax?: number,
+    ): Promise<RestartResult> {
+        return invoke<RestartResult>('restart_world', {
+            habitableTileIds,
+            newSeed,
+            tilePercent,
+            popMin,
+            popMax,
+        });
     }
 
     // ==================== MEMORY ====================

@@ -1,4 +1,4 @@
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 use simulation::calendar_runner::CalendarRunner;
 use simulation::world::SimulationWorld;
 use std::sync::{Arc, Mutex};
@@ -98,6 +98,25 @@ pub struct TilePopulationData {
     pub count: u32,
 }
 
+#[derive(Serialize, Deserialize, Clone, Default)]
+pub struct WorldConfig {
+    #[serde(default)]
+    pub name: String,
+    #[serde(default = "default_subdivisions")]
+    pub subdivisions: u32,
+    #[serde(default = "default_land_water_ratio")]
+    pub land_water_ratio: f64,
+    #[serde(default = "default_roughness")]
+    pub roughness: f64,
+    #[serde(default = "default_precipitation")]
+    pub precipitation: f64,
+}
+
+fn default_subdivisions() -> u32 { 12 }
+fn default_land_water_ratio() -> f64 { 35.0 }
+fn default_roughness() -> f64 { 25.0 }
+fn default_precipitation() -> f64 { 75.0 }
+
 #[derive(Serialize, Clone)]
 pub struct SaveResult {
     pub population: u32,
@@ -110,6 +129,7 @@ pub struct LoadResult {
     pub partners: u32,
     pub calendar_year: i32,
     pub seed: u32,
+    pub world_config: WorldConfig,
 }
 
 #[derive(Serialize, Clone)]

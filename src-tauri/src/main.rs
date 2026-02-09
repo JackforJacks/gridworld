@@ -32,6 +32,7 @@ fn main() {
             commands::world::save_world,
             commands::world::load_world,
             commands::world::restart_world,
+            commands::world::check_save_exists,
             // Population
             commands::population::get_population,
             commands::population::get_demographics,

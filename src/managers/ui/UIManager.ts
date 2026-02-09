@@ -17,7 +17,11 @@ import {
 interface SceneManagerLike {
     getPopulationStats(): Record<string, unknown>;
     regenerateTiles(): Promise<void>;
-    createHexasphere(): Promise<void>;
+    createHexasphere(
+        radius?: number | null, subdivisions?: number | null,
+        tileWidthRatio?: number | null, forceRegenerate?: boolean,
+        landWaterRatio?: number, roughness?: number, precipitation?: number
+    ): Promise<void>;
     searchTile(tileId: number | string): { x: number; y: number; z: number } | null;
 }
 
@@ -288,7 +292,8 @@ class UIManager {
         saveButton!.innerHTML = '\u23F3 Saving...';
 
         try {
-            await getApiClient().saveWorld('saves/world.bin');
+            const worldConfig = getAppContext().worldConfig ?? undefined;
+            await getApiClient().saveWorld('saves/world.bin', worldConfig);
             saveButton!.classList.remove('saving');
             saveButton!.classList.add('saved');
             saveButton!.innerHTML = '\u2705 Saved!';
@@ -318,11 +323,18 @@ class UIManager {
         loadButton.innerHTML = '\u23F3 Loading...';
 
         try {
-            await getApiClient().loadWorld('saves/world.bin');
+            const result = await getApiClient().loadWorld('saves/world.bin');
+            const wc = result.world_config;
+
+            // Store loaded world config
+            const ctx = getAppContext();
+            ctx.worldConfig = wc;
 
             if (this.sceneManager) {
-                await this.sceneManager.createHexasphere();
-                const ctx = getAppContext();
+                await this.sceneManager.createHexasphere(
+                    null, wc.subdivisions, null, true,
+                    wc.land_water_ratio, wc.roughness, wc.precipitation
+                );
                 if (ctx.calendarManager?.initialize) {
                     await ctx.calendarManager.initialize();
                 }

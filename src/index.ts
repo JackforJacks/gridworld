@@ -18,6 +18,7 @@ import { loseAllWebGLContexts } from './utils';
 import { RenderLoop } from './core/RenderLoop';
 import { MainMenu, type GameConfig, type AppSettings } from './ui/MainMenu';
 import { GameSession } from './core/GameSession';
+import type { WorldConfig } from './services/api/ApiClient';
 import { initializeViewModeSelector } from './ui/ViewModeSelector';
 import { initializeInfoPanelTabs } from './ui/InfoPanelTabs';
 import { initializeSliders } from './ui/SliderControls';
@@ -96,6 +97,7 @@ class GridWorldApp {
             const mainMenu = new MainMenu(
                 appSettings,
                 (config) => this.startGame(config),
+                (worldConfig) => this.loadGame(worldConfig),
                 () => this.gameSession?.getHeapMeter() ?? null,
                 (meter) => this.gameSession?.setHeapMeter(meter)
             );
@@ -123,6 +125,31 @@ class GridWorldApp {
         );
 
         await this.gameSession.start(config);
+    }
+
+    private async loadGame(worldConfig: WorldConfig): Promise<void> {
+        this.removeMenuResizeHandler();
+
+        // Rebuild hexasphere with loaded world config (world already loaded by Rust)
+        await this.sceneManager!.createHexasphere(
+            null, worldConfig.subdivisions, null, true,
+            worldConfig.land_water_ratio, worldConfig.roughness, worldConfig.precipitation
+        );
+        this.renderLoop.requestRender();
+
+        // Store world config in context
+        getAppContext().worldConfig = worldConfig;
+
+        this.gameSession = new GameSession(
+            this.scene!, this.camera!, this.renderer!,
+            this.sceneManager!, this.cameraController!,
+            appSettings,
+            () => this.renderLoop.requestRender(),
+            () => this.returnToMenu()
+        );
+
+        // Start game session without config (null = skip world generation, just connect systems)
+        await this.gameSession.start(null);
     }
 
     private returnToMenu(): void {

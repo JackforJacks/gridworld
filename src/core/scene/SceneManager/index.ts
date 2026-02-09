@@ -35,6 +35,9 @@ class SceneManager {
     private habitableTileIds: (number | string)[];
 
     // State tracking
+    getHabitableTileIds(): number[] {
+        return this.habitableTileIds.map(id => typeof id === 'string' ? parseInt(id, 10) : id);
+    }
     private tileColorIndices: Map<string, TileColorInfo>;
     private viewModeManager: ViewModeManager | null;
     private populationUnsubscribe: (() => void) | null;
@@ -313,15 +316,24 @@ class SceneManager {
         if (!confirmed) return;
 
         try {
-            // Restart world via Tauri with current habitable tile IDs
+            const cfg = getAppContext().gameConfig;
+            const wc = getAppContext().worldConfig;
+
+            // Rebuild hexasphere with same terrain config
+            await this.createHexasphere(
+                null, wc?.subdivisions ?? null, null, true,
+                wc?.land_water_ratio, wc?.roughness, wc?.precipitation
+            );
+
+            // Restart world via Tauri with current habitable tile IDs + population config
             const numericIds = this.habitableTileIds.map(id => typeof id === 'string' ? parseInt(id, 10) : id);
-            await getApiClient().restartWorld(numericIds);
+            await getApiClient().restartWorld(
+                numericIds, undefined,
+                cfg?.populationTilePercent, cfg?.populationMin, cfg?.populationMax
+            );
 
             // Refresh calendar state
             await this.applyCalendarState();
-
-            // Rebuild hexasphere with fresh tile state
-            await this.createHexasphere();
 
             // Fetch and apply newly generated population data
             await this.initializeTilePopulations(this.habitableTileIds);

@@ -174,10 +174,14 @@ fn calculate_fertility(x: f64, y: f64, z: f64, biome: Option<&str>, terrain: &st
         _ => return 0,
     };
 
+    // Desert has 0 fertility (no variation)
+    if biome == "desert" {
+        return 0;
+    }
+
     let base: i32 = match biome {
         "grassland" => 80,
         "plains" => 70,
-        "desert" => 20,
         "tundra" => 30,
         "alpine" => 25,
         _ => 50,
