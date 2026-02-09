@@ -16,7 +16,6 @@ import populationManager from '../managers/population/PopulationManager';
 import { getApiClient } from '../services/api/ApiClient';
 
 import type { GameConfig, AppSettings } from '../ui/MainMenu';
-import type { WorldConfig } from '../services/api/ApiClient';
 
 export class GameSession {
     private inputHandler: InputHandler | null = null;
