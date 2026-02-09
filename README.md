@@ -1,6 +1,6 @@
 # GridWorld
 
-A Tauri v2 desktop application featuring an interactive 3D hexasphere world simulation with real-time population dynamics, built with Three.js and a Rust ECS simulation engine.
+An Open Source Tauri v2 desktop application featuring an interactive 3D hexasphere world simulation with real-time population dynamics, built with Three.js and a Rust ECS simulation engine.
 
 ![GridWorld Demo](demo.png)
 
