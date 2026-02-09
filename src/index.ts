@@ -20,9 +20,11 @@ import UIManager from './managers/ui/UIManager';
 import CalendarManager from './managers/calendar/CalendarManager';
 import CalendarDisplay from './components/dashboard/CalendarDisplay';
 import HeapMeter from './components/dashboard/HeapMeter';
+import BackgroundStars from './core/renderer/BackgroundStars';
 import type { HexTile } from './components/controls/TileSelector/types';
 import { loseAllWebGLContexts } from './utils';
 import populationManager from './managers/population/PopulationManager';
+import { invoke } from '@tauri-apps/api/core';
 
 // Extend Window interface for GC hint used in forceCleanup
 declare global {
@@ -78,6 +80,10 @@ class GridWorldApp {
         this.renderer = null;
     }
 
+    /**
+     * Phase 1: Visual setup only — scene, sphere, stars, camera with auto-rotate.
+     * Shows main menu overlay on top. No interactivity or simulation yet.
+     */
     async initialize(): Promise<boolean> {
         if (typeof THREE === 'undefined') {
             console.error("THREE.js not detected. Ensure THREE.js is loaded before the application.");
@@ -85,71 +91,191 @@ class GridWorldApp {
         }
 
         try {
-            // Initialize population manager (Tauri IPC)
-            await populationManager.connect();
-
-            // Initialize scene manager first, as UIManager might depend on it
             const width = window.innerWidth;
-            const height = window.innerHeight - 10; // Adjust for potential UI elements
+            const height = window.innerHeight;
 
+            // Create scene + renderer
             this.sceneManager = new SceneManager();
             const { scene, renderer } = this.sceneManager.initialize(width, height);
             this.scene = scene;
             this.renderer = renderer;
 
-            // Initialize UI manager, passing sceneManager if needed
-            this.uiManager = new UIManager(this.sceneManager); // Pass sceneManager to UIManager constructor
-            this.uiManager.initialize(); // Initialize UI components
-            this.uiManager.showLoadingIndicator('Initializing GridWorld...');
-
-            // Get container element
-            const container = this.uiManager.getContainer();
-            if (!container) return false;
-
-            // Create camera
+            // Create camera + auto-rotating controller (no user input yet)
             this.camera = new THREE.PerspectiveCamera(45, width / height, 1, 200);
-
-            // Initialize camera controller with render-on-demand callback
             this.cameraController = new CameraController(this.camera, this.requestRender.bind(this));
+            this.cameraController.reset(); // Enable auto-rotate for menu background
 
-            // Pass camera controller to UI manager for tile search feature
-            this.uiManager.setCameraController(this.cameraController);
-
-            // Initialize tile selector with scene, camera, and sceneManager
-            this.tileSelector = new TileSelector(this.scene, this.camera, this.sceneManager, this.requestRender.bind(this));
-
-            // Initialize input handler with references to other modules
-            this.inputHandler = new InputHandler(this.renderer, this.cameraController, this.tileSelector);
-
-            // Register render callback with AppContext for render-on-demand
+            // Register render callback
             getAppContext().setRequestRenderCallback(() => this.requestRender());
 
             // Append renderer to container
+            const container = document.getElementById('container');
+            if (!container) return false;
             container.appendChild(this.renderer.domElement);
 
-            // Set global references for compatibility with existing code
+            // Set global references
             this.setGlobalReferences();
 
-            // Add lighting to scene, bind to camera
-            this.sceneManager.addLighting(this.camera, 30); // 30 is the default sphere radius
+            // Background stars + lighting
+            BackgroundStars();
+            this.sceneManager.addLighting(this.camera, 30);
 
-            // Initialize the game data and create hexasphere
+            // Build the hexasphere (visible behind the blurred menu)
             await this.initializeGameData();
 
-            // Initialize calendar system (but don't start it yet)
-            await this.initializeCalendar();
+            // Wire up main menu buttons
+            this.setupMainMenu();
 
-            // Start calendar after all initialization is complete
-            await this.startCalendar();
-
-            if (this.uiManager) this.uiManager.hideLoadingIndicator();
             return true;
 
         } catch (error: unknown) {
             console.error('Failed to initialize GridWorld:', error);
-            if (this.uiManager) this.uiManager.hideLoadingIndicator();
-            if (this.uiManager) this.uiManager.showMessage('Failed to initialize GridWorld', 'error');
             return false;
+        }
+    }
+
+    /**
+     * Wire up main menu button handlers
+     */
+    private setupMainMenu(): void {
+        const btnSingleplayer = document.getElementById('btn-singleplayer');
+        const btnExit = document.getElementById('btn-exit');
+
+        if (btnSingleplayer) {
+            btnSingleplayer.addEventListener('click', () => this.startGame());
+        }
+        if (btnExit) {
+            btnExit.addEventListener('click', async () => {
+                try {
+                    await invoke('exit_app');
+                } catch { /* fallback: do nothing */ }
+            });
+        }
+    }
+
+    /**
+     * Phase 2: Start the game — initialize all interactive systems,
+     * hide the main menu, show the dashboard.
+     */
+    async startGame(): Promise<void> {
+        const menu = document.getElementById('main-menu');
+        if (menu) {
+            menu.classList.add('fade-out');
+            setTimeout(() => menu.classList.add('hidden'), 500);
+        }
+
+        // Stop auto-rotate for interactive gameplay
+        if (this.cameraController) this.cameraController.setAutoRotate(false);
+
+        // Show dashboard and shift container down
+        const dashboard = document.getElementById('dashboard');
+        if (dashboard) dashboard.classList.remove('hidden');
+        const container = document.getElementById('container');
+        if (container) container.classList.add('with-dashboard');
+
+        try {
+            // Connect population manager (Tauri IPC)
+            await populationManager.connect();
+
+            // Initialize UI manager
+            this.uiManager = new UIManager(this.sceneManager!);
+            this.uiManager.initialize();
+
+            // Set UIManager in AppContext
+            getAppContext().uiManager = this.uiManager;
+
+            // Pass camera controller to UI manager for tile search
+            this.uiManager.setCameraController(this.cameraController!);
+
+            // Initialize tile selector
+            this.tileSelector = new TileSelector(this.scene!, this.camera!, this.sceneManager!, this.requestRender.bind(this));
+
+            // Initialize input handler (enables mouse/keyboard interaction)
+            this.inputHandler = new InputHandler(this.renderer!, this.cameraController!, this.tileSelector);
+
+            // Initialize calendar system
+            await this.initializeCalendar();
+            await this.startCalendar();
+
+            // Wire up "Back to Menu" button in the in-game menu modal
+            const backBtn = document.getElementById('back-to-menu');
+            if (backBtn) {
+                backBtn.addEventListener('click', () => this.returnToMenu());
+            }
+
+        } catch (error: unknown) {
+            console.error('Failed to start game:', error);
+        }
+    }
+
+    /**
+     * Tear down game systems and return to the main menu.
+     */
+    private returnToMenu(): void {
+        // Close the menu modal
+        const modalOverlay = document.getElementById('menu-modal-overlay');
+        if (modalOverlay) modalOverlay.classList.add('hidden');
+
+        // Stop calendar
+        if (this.calendarManager) {
+            this.calendarManager.stop();
+            this.calendarManager.destroy();
+            this.calendarManager = null;
+        }
+
+        // Destroy calendar display
+        if (this.calendarDisplay) {
+            this.calendarDisplay.destroy();
+            this.calendarDisplay = null;
+        }
+
+        // Destroy heap meter
+        if (this.heapMeter) {
+            this.heapMeter.destroy();
+            this.heapMeter = null;
+        }
+
+        // Destroy input handler
+        if (this.inputHandler) {
+            this.inputHandler.destroy();
+            this.inputHandler = null;
+        }
+
+        // Destroy tile selector
+        if (this.tileSelector) {
+            this.tileSelector.destroy();
+            this.tileSelector = null;
+        }
+
+        // Cleanup UI manager
+        if (this.uiManager) {
+            this.uiManager.cleanup();
+            this.uiManager = null;
+            getAppContext().uiManager = null;
+        }
+
+        // Disconnect population manager
+        populationManager.disconnect();
+
+        // Clear AppContext calendar refs
+        const ctx = getAppContext();
+        ctx.calendarManager = null;
+        ctx.calendarDisplay = null;
+
+        // Hide dashboard, remove container offset
+        const dashboard = document.getElementById('dashboard');
+        if (dashboard) dashboard.classList.add('hidden');
+        const container = document.getElementById('container');
+        if (container) container.classList.remove('with-dashboard');
+
+        // Re-enable auto-rotate for menu background
+        if (this.cameraController) this.cameraController.setAutoRotate(true);
+
+        // Show main menu
+        const menu = document.getElementById('main-menu');
+        if (menu) {
+            menu.classList.remove('hidden');
+            menu.classList.remove('fade-out');
         }
     }
 

@@ -18,8 +18,6 @@ interface CalendarState {
     day?: number;
     currentDate?: CalendarDateInfo;
     isRunning?: boolean;
-    isPaused?: boolean;
-    currentSpeed?: string;
 }
 
 /**
@@ -133,8 +131,8 @@ class CalendarDisplay {
         const rightElements = document.getElementById('dashboard-right-elements');
         if (!rightElements) return;
 
-        // Insert dynamic elements (controls + year label) before the menu button
-        const menuBtn = document.getElementById('menu-btn');
+        // Insert dynamic elements (controls + year label) before the help button
+        const helpBtn = document.getElementById('toggle-help');
 
         // Create control button (start/stop/fast)
         const controlsContainer = document.createElement('div');
@@ -154,9 +152,9 @@ class CalendarDisplay {
         yearLabel.id = 'calendar-year-inline';
         yearLabel.className = 'calendar-year-inline';
 
-        // Insert before menu button (or append if menu button not found)
-        rightElements.insertBefore(controlsContainer, menuBtn);
-        rightElements.insertBefore(yearLabel, menuBtn);
+        // Insert before help button (or append if not found)
+        rightElements.insertBefore(controlsContainer, helpBtn);
+        rightElements.insertBefore(yearLabel, helpBtn);
     }
 
     /**
@@ -248,24 +246,22 @@ class CalendarDisplay {
 
     /**
      * Update control button states based on calendar state.
-     * Skipped while the calendar is paused by a modal so the saved mode is preserved.
+     * Only reacts to running/stopped transitions — cannot distinguish
+     * 'running' from 'fast' via state alone, so trusts cycleCalendarMode().
      */
     private updateControlButtons(state: CalendarState): void {
         if (this.savedCalendarMode !== null) return;
 
-        const isRunning = state.isRunning !== false && state.isPaused !== true;
-        const currentSpeed = state.currentSpeed || '1_day';
+        const isRunning = state.isRunning !== false;
 
-        // Determine mode from state
-        if (!isRunning) {
+        if (!isRunning && this.calendarMode !== 'stopped') {
             this.calendarMode = 'stopped';
-        } else if (currentSpeed === '1_month' || currentSpeed === '1 Month/sec') {
-            this.calendarMode = 'fast';
-        } else {
+            this.updateModeButton();
+        } else if (isRunning && this.calendarMode === 'stopped') {
+            // Calendar started externally — default to 'running'
             this.calendarMode = 'running';
+            this.updateModeButton();
         }
-
-        this.updateModeButton();
     }
 
     /**

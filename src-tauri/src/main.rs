@@ -49,6 +49,9 @@ fn main() {
             commands::statistics::get_event_count,
             // Tiles
             commands::tiles::calculate_tile_properties,
+            // Memory & App
+            commands::memory::get_memory_usage,
+            commands::memory::exit_app,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

@@ -120,9 +120,12 @@ class InputHandler {
     }
 
     private onMouseDown(event: MouseEvent): void {
-        // If the click is on the info panel, do nothing.
+        // Ignore clicks on UI overlays (dashboard, info panel, modals)
+        const target = event.target as Node;
         const tileInfoPanel = document.getElementById('tileInfoPanel');
-        if (tileInfoPanel && tileInfoPanel.contains(event.target as Node)) {
+        const dashboard = document.getElementById('dashboard');
+        if ((tileInfoPanel && tileInfoPanel.contains(target)) ||
+            (dashboard && dashboard.contains(target))) {
             return;
         }
 

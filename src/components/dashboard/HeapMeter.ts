@@ -1,12 +1,18 @@
 /**
- * HeapMeter - Simple client-side memory display
- * Shows Chrome JS heap usage (when available)
+ * HeapMeter - Combined frontend + backend memory display
+ * Shows JS heap (WebView) and Rust process RSS side by side
  */
+
+import { invoke } from '@tauri-apps/api/core';
 
 declare global {
     interface Performance {
         memory?: { usedJSHeapSize: number };
     }
+}
+
+interface MemoryUsage {
+    physical_mem: number;
 }
 
 class HeapMeter {
@@ -27,9 +33,17 @@ class HeapMeter {
         return b < 1048576 ? `${(b / 1024).toFixed(0)}KB` : `${(b / 1048576).toFixed(1)}MB`;
     }
 
-    private update(): void {
-        if (performance.memory) {
-            this.el.textContent = this.fmt(performance.memory.usedJSHeapSize);
+    private async update(): Promise<void> {
+        const fe = performance.memory ? performance.memory.usedJSHeapSize : 0;
+
+        let be = 0;
+        try {
+            const usage = await invoke<MemoryUsage>('get_memory_usage');
+            be = usage.physical_mem;
+        } catch { /* fallback to 0 */ }
+
+        if (fe || be) {
+            this.el.textContent = `\u{1F5B5} ${this.fmt(fe)}  \u{2699} ${this.fmt(be)}`;
         } else {
             this.el.textContent = '';
         }

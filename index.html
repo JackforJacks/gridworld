@@ -25,22 +25,29 @@
 </head>
 
 <body>
+    <!-- Main Menu Overlay -->
+    <div id="main-menu">
+        <h1 class="menu-title">GridWorld</h1>
+        <div class="menu-buttons">
+            <button id="btn-singleplayer" class="menu-btn">Singleplayer</button>
+            <button id="btn-multiplayer" class="menu-btn" disabled>Multiplayer</button>
+            <button id="btn-store" class="menu-btn" disabled>Store</button>
+            <button id="btn-options" class="menu-btn" disabled>Options</button>
+            <button id="btn-exit" class="menu-btn">Exit</button>
+        </div>
+    </div>
+
     <div id="stars" class="stars"></div>
-    <div id="dashboard">
-        <!-- Dashboard content will go here -->
+    <div id="dashboard" class="hidden">
+        <button id="menu-btn" class="dashboard-button menu-button">☰</button>
         <div id="population" class="dashboard-stat" title="Population">
             <span class="stat-icon">👤</span>
             <span id="pop-value">0</span>
         </div>
-        <div class="tile-search-container">
-            <input type="number" id="tile-search-input" class="tile-search-input" placeholder="Tile ID" min="0">
-            <button id="tile-search-btn" class="dashboard-button search-button">🔍</button>
-        </div>
         <div id="dashboard-right-elements" class="dashboard-right-elements">
-            <button id="toggle-help" class="dashboard-toggle-help">?</button>
             <button id="show-stats" class="dashboard-button stats-button" title="Statistics">📊</button>
             <!-- CalendarDisplay inserts controls + year label here -->
-            <button id="menu-btn" class="dashboard-button menu-button">☰</button>
+            <button id="toggle-help" class="dashboard-toggle-help">?</button>
         </div>
     </div>
     <div id="container">
@@ -132,6 +139,7 @@
                 <button id="reset-data" class="menu-item reset-button">🔄 Restart</button>
                 <button id="save-game" class="menu-item save-button">💾 Save</button>
                 <button id="load-game" class="menu-item load-button">📥 Load</button>
+                <button id="back-to-menu" class="menu-item back-menu-button">🏠 Back to Menu</button>
             </div>
         </div>
     </div>
@@ -154,13 +162,21 @@
                 <div class="help-section">
                     <h4>Interaction</h4>
                     <div class="help-row">Click tile <span>Select &amp; inspect</span></div>
-                    <div class="help-row">Tile search <span>Jump to tile by ID</span></div>
+                    <div class="help-row"><kbd>F</kbd> <span>Search tile by ID</span></div>
+                    <div class="help-row"><kbd>Esc</kbd> <span>Toggle menu</span></div>
                 </div>
                 <div class="help-section">
                     <h4>Time</h4>
                     <div class="help-row">Moon button <span>Cycle: Stop / Daily / Monthly</span></div>
                 </div>
             </div>
+        </div>
+    </div>
+    <!-- Tile Search Modal (toggled with F key) -->
+    <div id="tile-search-modal" class="tile-search-modal hidden">
+        <div class="tile-search-modal-content">
+            <input type="text" id="tile-search-input" class="tile-search-input" placeholder="Tile ID" inputmode="numeric" autocomplete="off">
+            <button id="tile-search-btn" class="tile-search-go">Go</button>
         </div>
     </div>
     <!-- Population updates handled via Socket.IO events in UIManager -->

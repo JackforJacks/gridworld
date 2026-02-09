@@ -138,6 +138,11 @@ export interface LoadResult {
     seed: number;
 }
 
+/** Memory usage from Rust process */
+export interface MemoryUsage {
+    physical_mem: number;
+}
+
 /** Restart result from Rust */
 export interface RestartResult {
     seed: number;
@@ -278,6 +283,12 @@ class ApiClient {
 
     async restartWorld(habitableTileIds: number[], newSeed?: number): Promise<RestartResult> {
         return invoke<RestartResult>('restart_world', { habitableTileIds, newSeed });
+    }
+
+    // ==================== MEMORY ====================
+
+    async getMemoryUsage(): Promise<MemoryUsage> {
+        return invoke<MemoryUsage>('get_memory_usage');
     }
 }
 

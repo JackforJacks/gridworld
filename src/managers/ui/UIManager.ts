@@ -79,6 +79,7 @@ class UIManager {
     private currentTotalPopulation: number;
     private loadingIndicator: HTMLElement | null;
     private messageTimeout: ReturnType<typeof setTimeout> | null;
+    private gameKeyHandler: ((e: KeyboardEvent) => void) | null;
 
     constructor(sceneManager: SceneManagerLike | null) {
         this.populationUnsubscribe = null;
@@ -87,6 +88,7 @@ class UIManager {
         this.currentTotalPopulation = 0;
         this.loadingIndicator = null;
         this.messageTimeout = null;
+        this.gameKeyHandler = null;
     }
 
     /** Set the camera controller for tile search functionality */
@@ -167,12 +169,10 @@ class UIManager {
 
         const open = () => {
             overlay.classList.remove('hidden');
-            getAppContext().calendarDisplay?.pauseCalendar();
         };
 
         const close = () => {
             overlay.classList.add('hidden');
-            getAppContext().calendarDisplay?.resumeCalendar();
         };
 
         btn.addEventListener('click', () => {
@@ -206,15 +206,12 @@ class UIManager {
         const showStatsButton = document.getElementById('show-stats');
         const saveGameButton = document.getElementById('save-game');
         const loadGameButton = document.getElementById('load-game');
-        const tileSearchInput = document.getElementById('tile-search-input') as HTMLInputElement | null;
-        const tileSearchBtn = document.getElementById('tile-search-btn');
 
         if (resetDataButton) {
             resetDataButton.addEventListener('click', () => {
                 const menuOverlay = document.getElementById('menu-modal-overlay');
                 if (menuOverlay && !menuOverlay.classList.contains('hidden')) {
                     menuOverlay.classList.add('hidden');
-                    getAppContext().calendarDisplay?.resumeCalendar();
                 }
                 this.handleResetData();
             });
@@ -238,32 +235,75 @@ class UIManager {
             });
         }
 
-        const handleTileSearch = () => {
-            if (tileSearchInput) {
-                const tileId = tileSearchInput.value.trim();
-                if (tileId) {
-                    this.handleSearchTile(tileId);
-                }
+        this.setupTileSearchModal();
+        this.setupMenuModal();
+    }
+
+    private setupTileSearchModal(): void {
+        const modal = document.getElementById('tile-search-modal');
+        const input = document.getElementById('tile-search-input') as HTMLInputElement | null;
+        const btn = document.getElementById('tile-search-btn');
+        if (!modal || !input) return;
+
+        const doSearch = () => {
+            const tileId = input.value.trim();
+            if (tileId) {
+                this.handleSearchTile(tileId);
+                input.value = '';
+                modal.classList.add('hidden');
             }
         };
 
-        if (tileSearchBtn) {
-            tileSearchBtn.addEventListener('click', handleTileSearch);
-        }
+        btn?.addEventListener('click', doSearch);
 
-        if (tileSearchInput) {
-            tileSearchInput.addEventListener('keydown', (e) => {
-                if (e.key === 'Enter') {
-                    handleTileSearch();
-                }
-            });
-        }
-
-        this.setupMenuModal();
+        input.addEventListener('keydown', (e) => {
+            if (e.key === 'Enter') {
+                doSearch();
+            } else if (e.key === 'Escape') {
+                modal.classList.add('hidden');
+            }
+        });
     }
 
     private setupMenuModal(): void {
         this.setupModal('menu-btn', 'menu-modal-overlay', '.menu-modal-close');
+
+        const menuOverlay = document.getElementById('menu-modal-overlay');
+        const searchModal = document.getElementById('tile-search-modal');
+        const searchInput = document.getElementById('tile-search-input') as HTMLInputElement | null;
+
+        this.gameKeyHandler = (e: KeyboardEvent) => {
+            // Don't handle keys when typing in an input
+            if (e.target instanceof HTMLInputElement) return;
+
+            if (e.key === 'Escape' && menuOverlay) {
+                // Close search modal if open
+                if (searchModal && !searchModal.classList.contains('hidden')) {
+                    searchModal.classList.add('hidden');
+                    return;
+                }
+                // Toggle menu modal
+                if (menuOverlay.classList.contains('hidden')) {
+                    menuOverlay.classList.remove('hidden');
+                } else {
+                    menuOverlay.classList.add('hidden');
+                }
+            }
+
+            if (e.key === 'f' && searchModal && searchInput) {
+                // Don't open if menu modal is showing
+                if (menuOverlay && !menuOverlay.classList.contains('hidden')) return;
+
+                if (searchModal.classList.contains('hidden')) {
+                    searchModal.classList.remove('hidden');
+                    searchInput.value = '';
+                    searchInput.focus();
+                } else {
+                    searchModal.classList.add('hidden');
+                }
+            }
+        };
+        window.addEventListener('keydown', this.gameKeyHandler);
     }
 
     async handleSaveGame(): Promise<void> {
@@ -425,7 +465,6 @@ class UIManager {
 
     showStatsModal(stats: StatsData, demographics?: Demographics | null, vitalStats?: VitalStatistics | null): void {
         document.getElementById('stats-modal-overlay')?.remove();
-        getAppContext().calendarDisplay?.pauseCalendar();
 
         const overlay = document.createElement('div');
         overlay.id = 'stats-modal-overlay';
@@ -544,7 +583,6 @@ class UIManager {
 
         const closeStats = () => {
             overlay.remove();
-            getAppContext().calendarDisplay?.resumeCalendar();
         };
 
         if (closeBtn) {
@@ -655,6 +693,10 @@ class UIManager {
         if (this.populationUnsubscribe) {
             this.populationUnsubscribe();
             this.populationUnsubscribe = null;
+        }
+        if (this.gameKeyHandler) {
+            window.removeEventListener('keydown', this.gameKeyHandler);
+            this.gameKeyHandler = null;
         }
     }
 }

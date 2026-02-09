@@ -61,7 +61,7 @@ class CameraController {
 
         // Auto-rotate if enabled
         if (this.autoRotate) {
-            this.targetRotation.y += 0.005;
+            this.targetRotation.y += 0.0025;
         }
 
         // Check if rotation changed significantly
@@ -82,6 +82,10 @@ class CameraController {
     // Check if auto-rotate is enabled
     isAutoRotating(): boolean {
         return this.autoRotate;
+    }
+
+    setAutoRotate(enabled: boolean): void {
+        this.autoRotate = enabled;
     }
 
     // Handle mouse movement (for orbit controls)

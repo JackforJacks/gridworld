@@ -17,7 +17,6 @@ src-tauri/target/
 # Tauri
 src-tauri/gen/
 src-tauri/WixTools/
-src-tauri/icons/
 *.exe
 *.msi
 

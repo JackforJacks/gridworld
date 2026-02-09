@@ -1,5 +1,6 @@
 pub mod calendar;
 pub mod config;
+pub mod memory;
 pub mod people;
 pub mod population;
 pub mod statistics;
