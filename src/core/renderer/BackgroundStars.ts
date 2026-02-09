@@ -11,6 +11,7 @@ const STARS_CONFIG = {
 };
 
 let starsCreated = false;
+let animatedStars: HTMLDivElement[] = []; // Store references to animated stars
 
 /**
  * Create star background with optimized DOM insertion
@@ -25,6 +26,7 @@ function createStars() {
 
     // Clear existing stars first
     starsContainer.innerHTML = '';
+    animatedStars = [];
 
     // Use CSS instead of individual DOM elements where possible
     // Create a single CSS gradient for most stars, only animate a few
@@ -33,12 +35,12 @@ function createStars() {
     for (let i = 0; i < STARS_CONFIG.COUNT; i++) {
         const star = document.createElement('div');
         star.className = 'star';
-        
+
         // Use CSS custom properties sparingly
         const size = STARS_CONFIG.SIZE.min + Math.random() * (STARS_CONFIG.SIZE.max - STARS_CONFIG.SIZE.min);
         const left = Math.random() * 100;
         const top = Math.random() * 100;
-        
+
         // Batch style changes
         star.style.cssText = `
             position: absolute;
@@ -53,14 +55,43 @@ function createStars() {
 
         // Only animate 20% of stars to reduce GPU load
         if (i < STARS_CONFIG.COUNT * 0.2) {
-            star.style.animation = `twinkle ${STARS_CONFIG.ANIMATION.DURATION_MIN + Math.random() * (STARS_CONFIG.ANIMATION.DURATION_MAX - STARS_CONFIG.ANIMATION.DURATION_MIN)}s infinite alternate`;
-            star.style.animationDelay = `${Math.random() * STARS_CONFIG.ANIMATION.DELAY_MAX}s`;
+            const duration = STARS_CONFIG.ANIMATION.DURATION_MIN + Math.random() * (STARS_CONFIG.ANIMATION.DURATION_MAX - STARS_CONFIG.ANIMATION.DURATION_MIN);
+            const delay = Math.random() * STARS_CONFIG.ANIMATION.DELAY_MAX;
+
+            star.style.animation = `twinkle ${duration}s infinite alternate`;
+            star.style.animationDelay = `${delay}s`;
+
+            // Store reference and animation properties
+            star.dataset.animationDuration = `${duration}`;
+            star.dataset.animationDelay = `${delay}`;
+            animatedStars.push(star);
         }
 
         fragment.appendChild(star);
     }
 
     starsContainer.appendChild(fragment);
+}
+
+/**
+ * Control star animation on/off
+ * @param enabled - Whether to enable or disable star animation
+ */
+export function setStarsAnimation(enabled: boolean): void {
+    if (!starsCreated) return; // Stars not created yet
+
+    animatedStars.forEach(star => {
+        if (enabled) {
+            // Re-enable animation
+            const duration = star.dataset.animationDuration || '2.5';
+            const delay = star.dataset.animationDelay || '0';
+            star.style.animation = `twinkle ${duration}s infinite alternate`;
+            star.style.animationDelay = `${delay}s`;
+        } else {
+            // Disable animation
+            star.style.animation = 'none';
+        }
+    });
 }
 
 // Initialize stars when DOM is loaded

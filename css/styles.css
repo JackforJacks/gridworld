@@ -132,13 +132,10 @@ kbd {
     position: absolute;
     background: var(--star-color, #fff);
     border-radius: 50%;
-    animation: twinkle var(--star-animation-duration, 2s) infinite alternate;
-    animation-delay: var(--star-animation-delay, 0s);
     left: var(--star-left, 50%);
     top: var(--star-top, 50%);
     width: var(--star-size, 2px);
     height: var(--star-size, 2px);
-    box-shadow: 0 0 var(--star-shadow-size, 4px) var(--star-color, #fff);
 }
 
 /* ==========================================================================
@@ -694,7 +691,8 @@ kbd {
     font-size: 1.1em;
 }
 
-.menu-modal-close {
+.menu-modal-close,
+.options-modal-close {
     background: none;
     border: none;
     font-size: 1.6em;
@@ -704,7 +702,8 @@ kbd {
     line-height: 1;
 }
 
-.menu-modal-close:hover {
+.menu-modal-close:hover,
+.options-modal-close:hover {
     color: #fff;
 }
 
@@ -754,6 +753,44 @@ kbd {
 
 .menu-item.back-menu-button {
     background: #607D8B;
+}
+
+/* Options Modal Content */
+.options-modal-content {
+    padding: 20px;
+    overflow-y: auto;
+}
+
+.options-section {
+    display: flex;
+    flex-direction: column;
+    gap: 16px;
+}
+
+.option-item {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    padding: 12px;
+    background: rgba(255, 255, 255, 0.05);
+    border-radius: 6px;
+    cursor: pointer;
+    transition: background 0.2s;
+}
+
+.option-item:hover {
+    background: rgba(255, 255, 255, 0.1);
+}
+
+.option-item input[type="checkbox"] {
+    width: 20px;
+    height: 20px;
+    cursor: pointer;
+}
+
+.option-item span {
+    color: #fff;
+    font-size: 15px;
 }
 
 /* Help Modal Content */
@@ -1594,12 +1631,40 @@ kbd {
     font-weight: 500;
     letter-spacing: 2px;
     text-transform: uppercase;
+    text-align: center;
     color: #fff;
     background: #555;
     border: none;
     border-radius: 6px;
     cursor: pointer;
     transition: background 0.2s, box-shadow 0.2s;
+}
+
+/* Animation properties for buttons that need to hide/show */
+#btn-multiplayer,
+#btn-store,
+.submenu-btn {
+    max-height: 100px;
+    opacity: 1;
+    transform: scaleY(1);
+    transform-origin: top;
+    transition: all 0.3s ease-out;
+}
+
+#btn-multiplayer.hidden,
+#btn-store.hidden,
+.submenu-btn.hidden {
+    max-height: 0;
+    min-height: 0;
+    height: 0;
+    opacity: 0;
+    transform: scaleY(0);
+    padding: 0;
+    margin: 0;
+    border: 0;
+    overflow: hidden;
+    pointer-events: none;
+    display: none;
 }
 
 .menu-btn:hover:not(:disabled) {
@@ -1615,6 +1680,48 @@ kbd {
     color: rgba(255, 255, 255, 0.3);
     background: rgba(85, 85, 85, 0.5);
     cursor: default;
+}
+
+
+/* ==========================================================================
+   9. View Mode Selector
+   ========================================================================== */
+.view-mode-selector {
+    position: fixed;
+    bottom: 24px;
+    left: 16px;
+    z-index: 100;
+}
+
+.view-mode-selector.hidden {
+    display: none;
+}
+
+.view-mode-select {
+    padding: 12px 48px 12px 20px;
+    border: 2px solid rgba(255, 255, 255, 0.2);
+    border-radius: 8px;
+    background: rgba(0, 0, 0, 0.6);
+    color: #fff;
+    font-size: 20px;
+    font-family: inherit;
+    cursor: pointer;
+    appearance: none;
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='16' height='16' viewBox='0 0 16 16'%3E%3Ccircle cx='6' cy='6' r='5' fill='none' stroke='rgba(255,255,255,0.6)' stroke-width='1.5'/%3E%3Cpath d='M10 10l5 5' stroke='rgba(255,255,255,0.6)' stroke-width='1.5' stroke-linecap='round'/%3E%3C/svg%3E");
+    background-repeat: no-repeat;
+    background-position: right 16px center;
+    min-width: 160px;
+}
+
+.view-mode-select:hover {
+    border-color: rgba(255, 255, 255, 0.4);
+}
+
+.view-mode-select option {
+    background: #1a1a2e;
+    color: #fff;
+    font-size: 20px;
+    padding: 10px;
 }
 
 /* ==========================================================================

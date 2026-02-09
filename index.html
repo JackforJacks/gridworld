@@ -31,8 +31,10 @@
         <div class="menu-buttons">
             <button id="btn-singleplayer" class="menu-btn">Singleplayer</button>
             <button id="btn-multiplayer" class="menu-btn" disabled>Multiplayer</button>
+            <button id="btn-new-game" class="menu-btn submenu-btn hidden">New Game</button>
             <button id="btn-store" class="menu-btn" disabled>Store</button>
-            <button id="btn-options" class="menu-btn" disabled>Options</button>
+            <button id="btn-load-game" class="menu-btn submenu-btn hidden">Load Game</button>
+            <button id="btn-options" class="menu-btn">Options</button>
             <button id="btn-exit" class="menu-btn">Exit</button>
         </div>
     </div>
@@ -49,6 +51,15 @@
             <!-- CalendarDisplay inserts controls + year label here -->
             <button id="toggle-help" class="dashboard-toggle-help">?</button>
         </div>
+    </div>
+    <!-- View Mode Selector -->
+    <div id="view-mode-selector" class="view-mode-selector hidden">
+        <select id="view-mode-select" class="view-mode-select">
+            <option value="terrain">Terrain</option>
+            <option value="biome">Biome</option>
+            <option value="fertility">Fertility</option>
+            <option value="population">Population</option>
+        </select>
     </div>
     <div id="container">
     </div>
@@ -125,6 +136,7 @@
                         switchPage(i);
                     });
                 }
+
             });
         })();
     </script>
@@ -168,6 +180,27 @@
                 <div class="help-section">
                     <h4>Time</h4>
                     <div class="help-row">Moon button <span>Cycle: Stop / Daily / Monthly</span></div>
+                </div>
+            </div>
+        </div>
+    </div>
+    <!-- Options Modal -->
+    <div id="options-modal-overlay" class="menu-modal-overlay hidden">
+        <div class="menu-modal" style="width: 33.33vw; height: 100vh; max-height: 100vh; margin: 0;">
+            <div class="menu-modal-header">
+                <strong>Options</strong>
+                <button class="options-modal-close">&times;</button>
+            </div>
+            <div class="options-modal-content">
+                <div class="options-section">
+                    <label class="option-item">
+                        <input type="checkbox" id="option-animate-stars">
+                        <span>Animate background with stars</span>
+                    </label>
+                    <label class="option-item">
+                        <input type="checkbox" id="option-show-memory">
+                        <span>See memory consumption</span>
+                    </label>
                 </div>
             </div>
         </div>

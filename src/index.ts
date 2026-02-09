@@ -20,7 +20,7 @@ import UIManager from './managers/ui/UIManager';
 import CalendarManager from './managers/calendar/CalendarManager';
 import CalendarDisplay from './components/dashboard/CalendarDisplay';
 import HeapMeter from './components/dashboard/HeapMeter';
-import BackgroundStars from './core/renderer/BackgroundStars';
+import BackgroundStars, { setStarsAnimation } from './core/renderer/BackgroundStars';
 import type { HexTile } from './components/controls/TileSelector/types';
 import { loseAllWebGLContexts } from './utils';
 import populationManager from './managers/population/PopulationManager';
@@ -32,6 +32,12 @@ declare global {
         gc?: () => void;
     }
 }
+
+// Global settings for UI features
+const appSettings = {
+    showHeapMeter: false,
+    animateBackgroundStars: true,
+};
 
 class GridWorldApp {
     // State tracking
@@ -60,6 +66,9 @@ class GridWorldApp {
 
     // Render-on-demand: only render when something changes
     private needsRender = true;
+
+    // Menu phase resize handler (before InputHandler takes over)
+    private menuResizeHandler: (() => void) | null = null;
 
     constructor() {
         this.lastTime = Date.now();
@@ -120,11 +129,17 @@ class GridWorldApp {
             BackgroundStars();
             this.sceneManager.addLighting(this.camera, 30);
 
+            // Apply initial star animation setting (after stars are created)
+            setTimeout(() => setStarsAnimation(appSettings.animateBackgroundStars), 100);
+
             // Build the hexasphere (visible behind the blurred menu)
             await this.initializeGameData();
 
             // Wire up main menu buttons
             this.setupMainMenu();
+
+            // Set up resize handler for menu phase
+            this.setupMenuResizeHandler();
 
             return true;
 
@@ -139,17 +154,179 @@ class GridWorldApp {
      */
     private setupMainMenu(): void {
         const btnSingleplayer = document.getElementById('btn-singleplayer');
+        const btnNewGame = document.getElementById('btn-new-game');
+        const btnLoadGame = document.getElementById('btn-load-game');
+        const btnMultiplayer = document.getElementById('btn-multiplayer');
+        const btnStore = document.getElementById('btn-store');
+        const btnOptions = document.getElementById('btn-options');
         const btnExit = document.getElementById('btn-exit');
 
+        let submenuExpanded = false;
+
+        // Helper to hide button with display:none after animation
+        const hideButton = (btn: HTMLElement) => {
+            btn.style.display = 'block'; // Ensure it's visible for animation
+            btn.classList.add('hidden');
+            // Set display:none after animation completes to remove from flex gap
+            setTimeout(() => {
+                if (btn.classList.contains('hidden')) {
+                    btn.style.display = 'none';
+                }
+            }, 300); // Match CSS transition duration
+        };
+
+        // Helper to show button by removing display:none before animation
+        const showButton = (btn: HTMLElement) => {
+            btn.style.display = 'block'; // Remove display:none first
+            // Let browser paint, then remove hidden class for animation
+            requestAnimationFrame(() => {
+                btn.classList.remove('hidden');
+            });
+        };
+
+        // Toggle submenu on singleplayer click
         if (btnSingleplayer) {
-            btnSingleplayer.addEventListener('click', () => this.startGame());
+            btnSingleplayer.addEventListener('click', () => {
+                submenuExpanded = !submenuExpanded;
+
+                if (submenuExpanded) {
+                    // Show submenu buttons
+                    if (btnNewGame) showButton(btnNewGame);
+                    if (btnLoadGame) showButton(btnLoadGame);
+                    // Hide other menu items
+                    if (btnMultiplayer) hideButton(btnMultiplayer);
+                    if (btnStore) hideButton(btnStore);
+                } else {
+                    // Hide submenu buttons
+                    if (btnNewGame) hideButton(btnNewGame);
+                    if (btnLoadGame) hideButton(btnLoadGame);
+                    // Show other menu items
+                    if (btnMultiplayer) showButton(btnMultiplayer);
+                    if (btnStore) showButton(btnStore);
+                }
+            });
         }
+
+        // New Game button - starts the game
+        if (btnNewGame) {
+            btnNewGame.addEventListener('click', () => {
+                this.startGame();
+            });
+        }
+
+        // Load Game button - triggers load game dialog
+        if (btnLoadGame) {
+            btnLoadGame.addEventListener('click', () => {
+                // Trigger the load game functionality
+                const loadButton = document.getElementById('load-game');
+                if (loadButton) {
+                    loadButton.click();
+                }
+            });
+        }
+
+        // Options button - show options modal
+        if (btnOptions) {
+            btnOptions.addEventListener('click', () => {
+                const modalOverlay = document.getElementById('options-modal-overlay');
+                if (modalOverlay) {
+                    modalOverlay.classList.remove('hidden');
+                }
+            });
+        }
+
+        // Options modal close button
+        const optionsModalOverlayForClose = document.getElementById('options-modal-overlay');
+        const optionsModalClose = optionsModalOverlayForClose?.querySelector('.options-modal-close');
+        if (optionsModalClose) {
+            optionsModalClose.addEventListener('click', () => {
+                if (optionsModalOverlayForClose) {
+                    optionsModalOverlayForClose.classList.add('hidden');
+                }
+            });
+        }
+
+        // Close options modal when clicking overlay
+        const optionsModalOverlay = document.getElementById('options-modal-overlay');
+        if (optionsModalOverlay) {
+            optionsModalOverlay.addEventListener('click', (e) => {
+                if (e.target === optionsModalOverlay) {
+                    optionsModalOverlay.classList.add('hidden');
+                }
+            });
+        }
+
+        // Options checkbox: Animate background stars
+        const animateStarsCheckbox = document.getElementById('option-animate-stars') as HTMLInputElement;
+        if (animateStarsCheckbox) {
+            animateStarsCheckbox.checked = appSettings.animateBackgroundStars;
+            animateStarsCheckbox.addEventListener('change', () => {
+                appSettings.animateBackgroundStars = animateStarsCheckbox.checked;
+                console.log('Background stars animation:', appSettings.animateBackgroundStars);
+
+                // Apply animation setting immediately
+                setStarsAnimation(appSettings.animateBackgroundStars);
+            });
+        }
+
+        // Options checkbox: Show memory consumption
+        const showMemoryCheckbox = document.getElementById('option-show-memory') as HTMLInputElement;
+        if (showMemoryCheckbox) {
+            showMemoryCheckbox.checked = appSettings.showHeapMeter;
+            showMemoryCheckbox.addEventListener('change', () => {
+                appSettings.showHeapMeter = showMemoryCheckbox.checked;
+                console.log('Show heap meter:', appSettings.showHeapMeter);
+
+                // Dynamically show/hide HeapMeter if game is running
+                if (showMemoryCheckbox.checked) {
+                    // Create HeapMeter if it doesn't exist
+                    if (!this.heapMeter) {
+                        this.heapMeter = new HeapMeter();
+                    }
+                } else {
+                    // Destroy HeapMeter if it exists
+                    if (this.heapMeter) {
+                        this.heapMeter.destroy();
+                        this.heapMeter = null;
+                    }
+                }
+            });
+        }
+
         if (btnExit) {
             btnExit.addEventListener('click', async () => {
                 try {
                     await invoke('exit_app');
                 } catch { /* fallback: do nothing */ }
             });
+        }
+    }
+
+    /**
+     * Set up resize handler for menu phase (before InputHandler takes over)
+     */
+    private setupMenuResizeHandler(): void {
+        this.menuResizeHandler = () => {
+            if (!this.renderer || !this.cameraController) return;
+
+            const width = window.innerWidth;
+            const height = window.innerHeight;
+
+            this.renderer.setSize(width, height);
+            this.cameraController.handleResize(width, height);
+            this.requestRender();
+        };
+
+        window.addEventListener('resize', this.menuResizeHandler);
+    }
+
+    /**
+     * Remove menu resize handler (called when InputHandler takes over)
+     */
+    private removeMenuResizeHandler(): void {
+        if (this.menuResizeHandler) {
+            window.removeEventListener('resize', this.menuResizeHandler);
+            this.menuResizeHandler = null;
         }
     }
 
@@ -167,9 +344,11 @@ class GridWorldApp {
         // Stop auto-rotate for interactive gameplay
         if (this.cameraController) this.cameraController.setAutoRotate(false);
 
-        // Show dashboard and shift container down
+        // Show dashboard, view mode selector, and shift container down
         const dashboard = document.getElementById('dashboard');
         if (dashboard) dashboard.classList.remove('hidden');
+        const viewModeSelector = document.getElementById('view-mode-selector');
+        if (viewModeSelector) viewModeSelector.classList.remove('hidden');
         const container = document.getElementById('container');
         if (container) container.classList.add('with-dashboard');
 
@@ -189,6 +368,9 @@ class GridWorldApp {
 
             // Initialize tile selector
             this.tileSelector = new TileSelector(this.scene!, this.camera!, this.sceneManager!, this.requestRender.bind(this));
+
+            // Remove menu resize handler before InputHandler takes over
+            this.removeMenuResizeHandler();
 
             // Initialize input handler (enables mouse/keyboard interaction)
             this.inputHandler = new InputHandler(this.renderer!, this.cameraController!, this.tileSelector);
@@ -262,14 +444,19 @@ class GridWorldApp {
         ctx.calendarManager = null;
         ctx.calendarDisplay = null;
 
-        // Hide dashboard, remove container offset
+        // Hide dashboard and view mode selector, remove container offset
         const dashboard = document.getElementById('dashboard');
         if (dashboard) dashboard.classList.add('hidden');
+        const viewModeSelector = document.getElementById('view-mode-selector');
+        if (viewModeSelector) viewModeSelector.classList.add('hidden');
         const container = document.getElementById('container');
         if (container) container.classList.remove('with-dashboard');
 
         // Re-enable auto-rotate for menu background
         if (this.cameraController) this.cameraController.setAutoRotate(true);
+
+        // Re-add menu resize handler (since InputHandler was destroyed)
+        this.setupMenuResizeHandler();
 
         // Show main menu
         const menu = document.getElementById('main-menu');
@@ -350,8 +537,10 @@ class GridWorldApp {
             ctx.calendarManager = this.calendarManager;
             ctx.calendarDisplay = this.calendarDisplay;
 
-            // Initialize heap meter
-            this.heapMeter = new HeapMeter();
+            // Initialize heap meter (only if enabled in settings)
+            if (appSettings.showHeapMeter) {
+                this.heapMeter = new HeapMeter();
+            }
 
         } catch (error: unknown) {
             console.error('Failed to initialize calendar system:', error);
@@ -562,6 +751,9 @@ class GridWorldApp {
     destroy(): void {
         // Stop render loop first
         this.stopRenderLoop();
+
+        // Clean up menu resize handler if active
+        this.removeMenuResizeHandler();
 
         // Clean up input handler (removes window/canvas event listeners)
         if (this.inputHandler) {
